@@ -9,6 +9,8 @@ server/uploads/
 server/test-run.log
 server/run*.out
 *.log
+# 变更日志仅本地保留，不上传
+CHANGELOG.md
 # 数据库备份（含全量数据与哈希）
 deploy/backups/
 # 本地 MySQL 数据目录
