@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- 跨域 DNS/TLS 预热：Gravatar 头像（评论区首屏常用） -->
+    <link rel="preconnect" href="https://www.gravatar.com" crossorigin />
+    <link rel="dns-prefetch" href="https://www.gravatar.com" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+    <!-- RSS 自动发现：订阅器/浏览器可识别订阅源 -->
+    <link rel="alternate" type="application/rss+xml" title="Xalor的小站" href="/api/rss.xml" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Xalor的小站 - 记录技术、生活与思考的个人博客" />
+    <meta name="theme-color" content="#e4573d" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Xalor的小站" />
+    <!-- 页面级 CSP：仅允许同源脚本（无 unsafe-inline —— 主题初始化已移至外部文件）+
+         同源/Gravatar 图片；即使内容层 XSS 逃逸，也无法注入脚本读取令牌，外部数据外传
+         通道（connect/font/media）全被阻断 -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    />
+    <!-- Open Graph：首页社交分享 -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Xalor的小站" />
+    <meta property="og:description" content="记录技术、生活与思考的个人博客" />
+    <meta property="og:site_name" content="Xalor的小站" />
+    <meta property="og:image" content="/logo.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Xalor的小站" />
+    <meta name="twitter:description" content="记录技术、生活与思考的个人博客" />
+    <title>Xalor的小站</title>
+    <!-- 主题初始化（外部文件，同步阻塞加载防闪烁；配合 script-src 'self' 无内联脚本） -->
+    <script src=/theme-init.js></script>
+    <!-- 反调试：最早加载，防 DevTools 分析 -->
+    <script src="/anti-debug.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+# Xalor的小站 robots.txt
+User-agent: *
+# 禁止抓取 API / 上传目录 / 哈希路由（含秘钥后台）
+Disallow: /api/
+Disallow: /uploads/
+Disallow: /#/
+
+# 放行：RSS / Sitemap / 分享页（真实 HTML，利于收录与社交预览）
+Allow: /api/rss.xml
+Allow: /api/sitemap.xml
+Allow: /api/share/
+
+Sitemap: /api/sitemap.xml

@@ -1,0 +1,25 @@
+# Xalor 小站后端 systemd 服务（Linux 部署）
+# 用法：sudo cp xalor-blog.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now xalor-blog
+[Unit]
+Description=Xalor Blog API Server
+After=network.target mysql.service
+
+[Service]
+Type=simple
+# 生产必须设置：JWT_SECRET（32+ 随机串）· NODE_ENV=production · TRUST_PROXY=1（Nginx 后）
+# ALLOWED_HOSTS=你的域名 · CORS_ORIGINS=https://你的前端域名
+EnvironmentFile=/path/to/xalorblog/server/.env
+# 注意：.env 含 JWT_SECRET / DB_PASSWORD 等密钥，权限必须收紧（chmod 600 server/.env，
+# 属主为运行用户），否则同机任意用户可读密钥直接劫持会话
+WorkingDirectory=/path/to/xalorblog/server
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=3
+# 安全加固：最小权限（上传目录需可写）
+User=www-data
+Group=www-data
+# 资源限制
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

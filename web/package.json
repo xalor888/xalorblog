@@ -1,0 +1,30 @@
+{
+  "name": "xalor-blog-web",
+  "version": "1.0.0",
+  "description": "Xalor的小站 - 博客前端",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "axios": "^1.7.7",
+    "dompurify": "^3.1.7",
+    "element-plus": "^2.8.4",
+    "highlight.js": "^11.10.0",
+    "lucide-vue-next": "^1.0.0",
+    "marked": "^14.1.2",
+    "pinia": "^2.2.4",
+    "vue": "^3.5.12",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.8",
+    "terser": "^5.49.0",
+    "unplugin-auto-import": "^21.0.0",
+    "unplugin-vue-components": "^32.1.0",
+    "vite": "^7.3.6"
+  }
+}
