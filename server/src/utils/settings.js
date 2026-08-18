@@ -76,8 +76,6 @@ async function saveSettings(entries) {
       safeValue = value === true || value === 'true' || value === 1 || value === '1';
     } else if (typeof value === 'string') {
       safeValue = value.slice(0, 5000);
-    } else if (typeof value === 'number' && Number.isFinite(value)) {
-      safeValue = value;
     } else {
       continue;
     }
