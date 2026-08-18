@@ -75,6 +75,8 @@ async function suite() {
 
   console.log('\n=== 2. 生成 TOTP 密钥 ===');
   r = await c.req('POST', '/api/auth/2fa/setup', { body: {}, ticket, headers: authHeaders });
+  assert('无当前密码生成密钥被拒', r.status === 400, `status=${r.status} ${r.body && r.body.message}`);
+  r = await c.req('POST', '/api/auth/2fa/setup', { body: { password: 'admin123' }, ticket, headers: authHeaders });
   assert('生成密钥', r.status === 200 && /^[A-Z2-7]{32}$/.test(r.body.data.secret), `status=${r.status} ${r.body && r.body.message}`);
   const secret = r.body.data.secret;
 
@@ -87,7 +89,7 @@ async function suite() {
   assert('正确验证码启用成功', r.status === 200, `status=${r.status} ${r.body && r.body.message}`);
 
   console.log('\n=== 4b. 已启用后 setup 必须提供当前动态码 ===');
-  r = await c.req('POST', '/api/auth/2fa/setup', { body: {}, ticket, headers: authHeaders });
+  r = await c.req('POST', '/api/auth/2fa/setup', { body: { password: 'admin123' }, ticket, headers: authHeaders });
   assert('无动态码重新生成密钥被拒', r.status === 400, `status=${r.status} ${r.body && r.body.message}`);
 
   console.log('\n=== 5. 启用后登录需验证码 ===');

@@ -207,7 +207,7 @@ export const authApi = {
   logoutAll: () => request.post('/auth/logout-all'),
   // 两步验证（TOTP）
   twoFaStatus: () => request.get('/auth/2fa/status'),
-  twoFaSetup: () => request.post('/auth/2fa/setup'),
+  twoFaSetup: (password) => request.post('/auth/2fa/setup', { password }),
   twoFaVerify: (code) => request.post('/auth/2fa/verify', { code }),
   twoFaDisable: (code) => request.post('/auth/2fa/disable', { code }),
 };

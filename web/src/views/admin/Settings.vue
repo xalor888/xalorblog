@@ -418,9 +418,23 @@ async function copyTwoFaSecret() {
 
 /** 生成两步验证密钥 */
 async function setupTwoFa() {
+  let password = '';
+  try {
+    const prompt = await ElMessageBox.prompt('请输入当前登录密码，用于确认开启两步验证', '安全确认', {
+      inputType: 'password',
+      inputPlaceholder: '当前登录密码',
+      confirmButtonText: '确认',
+      cancelButtonText: '取消',
+    });
+    password = String(prompt.value || '');
+  } catch (e) {
+    return; // 用户取消
+  }
+  if (!password) return ElMessage.warning('请输入当前登录密码');
+
   twoFaLoading.value = true;
   try {
-    const res = await authApi.twoFaSetup();
+    const res = await authApi.twoFaSetup(password);
     twoFaSecret.value = res.secret;
     twoFaSetupUri.value = res.uri;
     ElMessage.success('密钥已生成，请在验证器应用中添加');

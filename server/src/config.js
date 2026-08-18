@@ -4,8 +4,11 @@ const crypto = require('crypto');
 
 const isProd = process.env.NODE_ENV === 'production';
 
-if (isProd && (!process.env.DB_PASSWORD || process.env.DB_PASSWORD === 'xalor2026')) {
-  throw new Error('生产环境必须配置强随机 DB_PASSWORD（禁止使用仓库默认密码）');
+if (!process.env.DB_PASSWORD) {
+  throw new Error('必须配置 DB_PASSWORD（生产环境请使用强随机密码）');
+}
+if (isProd && process.env.DB_PASSWORD === 'xalor2026') {
+  throw new Error('生产环境禁止使用仓库默认 DB_PASSWORD');
 }
 
 // 生产环境必须显式提供密钥；开发环境可自动生成（重启失效，不影响体验）
@@ -40,7 +43,7 @@ module.exports = {
     host: process.env.DB_HOST || '127.0.0.1',
     port: Number(process.env.DB_PORT || 3306),
     user: process.env.DB_USER || 'xalor',
-    password: process.env.DB_PASSWORD || 'xalor2026',
+    password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME || 'xalor_blog',
   },
   jwt: {

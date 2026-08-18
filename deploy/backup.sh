@@ -6,8 +6,12 @@
 #   DB_USER / DB_PASS - 数据库账号（默认 root 空密码）
 set -euo pipefail
 
+# 备份文件可能包含全量业务数据，默认仅属主可读写
+umask 077
+
 BACKUP_DIR="${1:-$(dirname "$0")/backups}"
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 DB_USER="${DB_USER:-root}"
 DB_PASS="${DB_PASS:-}"
@@ -29,14 +33,16 @@ if [ -z "$MYSQLDUMP" ]; then
   exit 1
 fi
 
-PW_ARGS=()
-[ -n "$DB_PASS" ] && PW_ARGS=("-p$DB_PASS")
+# 通过环境变量传密码，避免出现在进程列表/日志中
+if [ -n "$DB_PASS" ]; then
+  export MYSQL_PWD="$DB_PASS"
+fi
 
 # 数据库（含 ip_bans / sessions / 全部业务数据）
 # --no-tablespaces：MySQL 8 的 mysqldump 默认尝试导出表空间元数据，
 # 需要 PROCESS 权限，普通业务账号会报 Access denied 警告（数据本身不受影响）——
 # 博客数据无需表空间信息，显式跳过使备份对最小权限账号零告警
-"$MYSQLDUMP" -u "$DB_USER" "${PW_ARGS[@]}" --single-transaction --no-tablespaces --routines --triggers xalor_blog \
+"$MYSQLDUMP" -u "$DB_USER" --single-transaction --no-tablespaces --routines --triggers xalor_blog \
   > "$BACKUP_DIR/xalor_db_$STAMP.sql" \
   || { echo "✗ 数据库备份失败（请检查 mysqldump 凭据）" >&2; exit 1; }
 

@@ -288,6 +288,10 @@ router.get('/2fa/status', authRequired, async (req, res) => {
 router.post('/2fa/setup', authRequired, async (req, res) => {
   try {
     const user = await db('users').where('id', req.user.sub).first();
+    // 首次启用或重新生成都必须验证当前密码：防仅持会话者替账号绑定自己控制的 TOTP
+    const password = String(req.body.password || '');
+    const passwordOk = user && (await bcrypt.compare(password, user.password));
+    if (!passwordOk) return fail(res, '当前密码错误', 400);
     // 已启用 2FA 时重新生成密钥必须先验证当前动态码，防止仅持会话即可静默剥离 2FA
     if (user && user.totp_enabled) {
       const code = String(req.body.code || '').trim();
