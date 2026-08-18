@@ -183,7 +183,10 @@ async function llmModeration(text) {
     // 响应体大小限制：流式读取上限 4KB（防异常 API 返回超大 body 耗尽内存）
     const MAX_BODY = 4096;
     const reader = res.body?.getReader();
-    if (!reader) return null;
+    if (!reader) {
+      llmCalls.pop(); // 无法读取响应体：退还令牌
+      return null;
+    }
     let size = 0;
     const chunks = [];
     for (;;) {
@@ -193,6 +196,7 @@ async function llmModeration(text) {
       size += value.length;
       if (size > MAX_BODY) {
         await reader.cancel();
+        llmCalls.pop(); // 异常超大响应：退还令牌
         return null;
       }
     }
@@ -200,6 +204,7 @@ async function llmModeration(text) {
     try {
       data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     } catch (e) {
+      llmCalls.pop(); // 响应不是合法 JSON：退还令牌
       return null;
     }
     // 严格输出解析：仅精确匹配单个判定词（剥离空白/标点），

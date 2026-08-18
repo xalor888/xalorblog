@@ -12,8 +12,13 @@ const { localDateStr, localDateTimeStr } = require('./utils/datetime');
 // admin123 仅用于本地演示且公开于文档 —— 生产环境若忘记设置 SEED_ADMIN_PASSWORD，
 // 初始管理员即弱凭据（攻击者直接尝试 admin/admin123 即可入侵后台）
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || 'admin123';
-if (config.isProd && !process.env.SEED_ADMIN_PASSWORD) {
-  console.error('[seed] ✗ 生产环境必须设置 SEED_ADMIN_PASSWORD 环境变量（默认 admin123 仅限本地演示）');
+const isWeakSeedPassword =
+  ADMIN_PASSWORD.length < 12 ||
+  /^\d+$/.test(ADMIN_PASSWORD) ||
+  /^[a-zA-Z]+$/.test(ADMIN_PASSWORD) ||
+  ['admin123', '12345678', 'password', 'password1', 'passw0rd'].includes(ADMIN_PASSWORD.toLowerCase());
+if (config.isProd && (!process.env.SEED_ADMIN_PASSWORD || isWeakSeedPassword)) {
+  console.error('[seed] ✗ 生产环境必须设置强 SEED_ADMIN_PASSWORD（≥12 位，且不能纯数字/纯字母/常见弱密码）');
   process.exit(1);
 }
 

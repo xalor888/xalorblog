@@ -79,6 +79,9 @@ function send(subject, text, to) {
       port: cfg.port,
       secure: cfg.secure,
       requireTLS: cfg.requireTls,
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 15000,
       auth: { user: cfg.user, pass: cfg.pass },
     });
 
