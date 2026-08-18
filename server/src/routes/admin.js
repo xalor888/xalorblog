@@ -454,6 +454,10 @@ router.post('/articles/admin/import', async (req, res) => {
     let skipped = 0;
     await db.transaction(async (trx) => {
       for (const it of items) {
+        if (!it || typeof it !== 'object' || Array.isArray(it)) {
+          skipped += 1;
+          continue;
+        }
         const title = cleanLine(it.title, 200);
         if (!title) { skipped += 1; continue; }
         const content = String(it.content || '');
