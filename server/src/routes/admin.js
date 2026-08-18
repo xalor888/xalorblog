@@ -474,6 +474,9 @@ router.post('/articles/admin/import', async (req, res) => {
         let category_id = null;
         if (it.category && typeof it.category === 'object' && it.category.name) {
           const cname = cleanLine(it.category.name, 50);
+          if (!cname) {
+            category_id = null;
+          } else {
           let cat = await trx('categories').where('name', cname).first('id');
           if (!cat) {
             const [cid] = await trx('categories').insert({
@@ -483,6 +486,7 @@ router.post('/articles/admin/import', async (req, res) => {
             cat = { id: cid };
           }
           category_id = cat.id;
+          }
         }
         const now = db.fn.now();
         const [aid] = await trx('articles').insert({
