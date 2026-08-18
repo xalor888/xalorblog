@@ -413,7 +413,7 @@ router.post('/articles/batch-update', async (req, res) => {
     }
     else if (action === 'add-tag') {
       // 批量追加标签：查找或创建标签，为选中文章批量关联（已存在自动忽略）
-      const tagName = String(req.body.tagName || '').trim().slice(0, 50);
+      const tagName = cleanLine(req.body.tagName, 50);
       if (!tagName) return fail(res, '请提供标签名');
       let tagRow = await db('tags').where('name', tagName).first();
       let tagId;
