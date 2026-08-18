@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS = {
 
 /** 允许保存的键白名单（防止任意键注入） */
 const ALLOWED_KEYS = new Set(Object.keys(DEFAULT_SETTINGS));
+const BOOL_KEYS = new Set(['comment_moderation', 'message_moderation', 'rss_full_content']);
 
 // 设置缓存：读多写少，保存时失效
 let settingsCache = null;
@@ -70,7 +71,9 @@ async function saveSettings(entries) {
     if ((key === 'social_github' || key === 'social_weibo') && value && !/^https?:\/\/[^\s]+$/i.test(raw)) continue;
     // 联系邮箱用于 security.txt / mailto 链接，拒绝空格/换行/角括号等异常值
     if (key === 'social_email' && value && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(raw)) continue;
-    const safeValue = typeof value === 'string' ? value.slice(0, 5000) : value;
+    const safeValue = BOOL_KEYS.has(key)
+      ? value === true || value === 'true' || value === 1 || value === '1'
+      : typeof value === 'string' ? value.slice(0, 5000) : value;
     const json = JSON.stringify(safeValue);
     await db('settings')
       .insert({ key, value: json })
