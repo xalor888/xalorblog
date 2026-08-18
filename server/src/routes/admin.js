@@ -197,7 +197,7 @@ router.post('/articles', async (req, res) => {
       });
 
       for (const name of tags) {
-        const t = String(name).trim();
+        const t = cleanLine(name, 50);
         if (!t) continue;
         const existing = await trx('tags').where('name', t).first();
         let tagId;
@@ -274,7 +274,7 @@ router.put('/articles/:id', async (req, res) => {
       if (Array.isArray(tags)) {
         await trx('article_tags').where('article_id', id).del();
         for (const name of tags) {
-          const t = String(name).trim();
+          const t = cleanLine(name, 50);
           if (!t) continue;
           let tagRow = await trx('tags').where('name', t).first();
           let tagId;
@@ -551,7 +551,7 @@ function toBool(value, fallback) {
 /** 封面只允许 http(s) 外链或站内绝对路径，拒绝协议相对/路径穿越 */
 function safeCover(input) {
   if (typeof input !== 'string') return '';
-  const v = input.trim().slice(0, 500);
+  const v = input.trim().replace(/[\r\n]+/g, '').slice(0, 500);
   if (!v) return '';
   if (v.startsWith('/') && !v.startsWith('//') && !v.includes('..')) return v;
   return safeUrl(v, 500);
