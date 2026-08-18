@@ -198,7 +198,7 @@ const SCANNER_UA_PATTERNS = [
   'insomnia', 'playwright', 'puppeteer', 'phantomjs', 'selenium',
   'headless', 'webdriver', 'lighthouse', 'expanse', 'censys', 'shodan',
   'zoomeye', 'fofa', 'quake', 'netcraft', 'semrush', 'ahrefs', 'mj12bot',
-  'dotbot', 'dataforseo', 'claudebot', 'gptbot', 'ccbot', 'facebookexternalhit', 'domaincrawler',
+  'dotbot', 'dataforseo', 'claudebot', 'gptbot', 'ccbot', 'domaincrawler',
   'sitedomain',
   // 2023-2026 活跃扫描器/工具补充
   'feroxbuster', 'wfuzz', 'katana', 'arjun', 'dalfox', 'xsstrike', 'commix',
