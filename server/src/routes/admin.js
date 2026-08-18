@@ -261,12 +261,7 @@ router.put('/articles/:id', async (req, res) => {
     }
     // 手动调整发布时间（补发旧文/时间线归档）：严格格式校验
     if (published_at !== undefined && typeof published_at === 'string' && published_at) {
-      if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(published_at)) {
-        return fail(res, '发布时间格式不正确', 400);
-      }
-      if (Number.isNaN(new Date(published_at.replace(' ', 'T')).getTime())) {
-        return fail(res, '发布时间不是有效日期', 400);
-      }
+      if (!isValidDateTime(published_at)) return fail(res, '发布时间不是有效日期', 400);
       patch.published_at = published_at;
     }
     // 事务：正文更新与标签重建原子执行（中途失败整体回滚）
@@ -551,8 +546,16 @@ function toBool(value, fallback) {
 }
 
 function isValidDateTime(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return false;
-  return !Number.isNaN(new Date(value.replace(' ', 'T')).getTime());
+  if (typeof value !== 'string') return false;
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+  if (!m) return false;
+  const d = new Date(value.replace(' ', 'T'));
+  return d.getFullYear() === Number(m[1])
+    && d.getMonth() + 1 === Number(m[2])
+    && d.getDate() === Number(m[3])
+    && d.getHours() === Number(m[4])
+    && d.getMinutes() === Number(m[5])
+    && d.getSeconds() === Number(m[6]);
 }
 
 /** 封面只允许 http(s) 外链或站内绝对路径，拒绝协议相对/路径穿越 */
