@@ -32,7 +32,7 @@ function safeUrl(input, maxLen = 500) {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
     // 拒绝 URL 内嵌凭据（https://user:pass@host 既是钓鱼样式，也可能被后续抓取滥用）
     if (url.username || url.password) return '';
-    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
     // 主机名黑名单：localhost 及其变体、mDNS 本地域名
     const privateSuffixes = ['.local', '.localhost', '.localdomain', '.internal', '.lan', '.home'];
     if (!host || host === 'localhost' || privateSuffixes.some((s) => host.endsWith(s))) return '';
