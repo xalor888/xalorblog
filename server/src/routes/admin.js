@@ -495,12 +495,7 @@ router.post('/articles/admin/import', async (req, res) => {
           content,
           // 封面：允许站内相对路径（/uploads/xxx.png，本站导出格式），
           // 其余必须通过 safeUrl（http/https + 非内网 + 无危险协议）
-          cover: (() => {
-            const c = String(it.cover || '').slice(0, 500);
-            if (!c) return '';
-            if (c.startsWith('/')) return c;
-            return safeUrl(c);
-          })(),
+          cover: safeCover(it.cover),
           status: it.status === 'published' ? 'published' : 'draft',
           is_top: !!it.is_top,
           views: Math.max(0, Math.min(9999999, Number(it.views) || 0)),
