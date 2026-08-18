@@ -132,7 +132,11 @@ async function loadPersistedBans() {
   if (dbLoaded) return;
   dbLoaded = true;
   try {
-    const rows = await db('ip_bans').where('banned_until', '>', db.fn.now()).select('ip', 'banned_until', 'ban_count', 'reason');
+    const rows = await db('ip_bans')
+      .where('banned_until', '>', db.fn.now())
+      .orderBy('updated_at', 'desc')
+      .limit(REPUTATION_MAX)
+      .select('ip', 'banned_until', 'ban_count', 'reason');
     const now = Date.now();
     for (const r of rows) {
       const until = new Date(r.banned_until).getTime();
@@ -143,6 +147,9 @@ async function loadPersistedBans() {
           lastBanReason: String(r.reason || ''),
         });
       }
+    }
+    if (rows.length === REPUTATION_MAX) {
+      console.warn(`[ipGuard] 持久化封禁达到恢复上限 ${REPUTATION_MAX}，更早封禁暂未加载`);
     }
     if (rows.length) console.log(`[ipGuard] 已恢复 ${rows.length} 个持久化封禁`);
   } catch (e) {
