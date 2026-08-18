@@ -114,7 +114,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { messageApi } from '@/api';
 import { useAdminStore } from '@/stores/admin';
 import { getCachedAdminPath } from '@/utils/adminPath';
-import { getTicket } from '@/utils/pass';
+import { getTicket, ensurePass } from '@/utils/pass';
 import { getFingerprint } from '@/utils/fingerprint';
 import { formatDateTime } from '@/utils/format';
 
@@ -213,6 +213,7 @@ async function exportCsv() {
   if (exporting.value) return;
   exporting.value = true;
   try {
+    await ensurePass();
     const key = getCachedAdminPath();
     const params = new URLSearchParams();
     if (status.value !== 'all') params.set('status', status.value);

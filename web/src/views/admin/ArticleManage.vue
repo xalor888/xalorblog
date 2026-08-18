@@ -142,7 +142,7 @@ import { articleApi, categoryApi } from '@/api';
 import { formatDate } from '@/utils/format';
 import { adminHref } from '@/utils/adminPath';
 import { getCachedAdminPath } from '@/utils/adminPath';
-import { getTicket } from '@/utils/pass';
+import { getTicket, ensurePass } from '@/utils/pass';
 import { getFingerprint } from '@/utils/fingerprint';
 
 const router = useRouter();
@@ -191,6 +191,7 @@ async function exportBackup() {
   if (exporting.value) return;
   exporting.value = true;
   try {
+    await ensurePass();
     const key = getCachedAdminPath();
     const resp = await fetch(`/api/${key}/articles/admin/export`, {
       headers: {

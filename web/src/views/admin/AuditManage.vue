@@ -73,7 +73,7 @@ import { Search } from '@element-plus/icons-vue';
 import { auditApi } from '@/api';
 import { formatDateTime } from '@/utils/format';
 import { getCachedAdminPath } from '@/utils/adminPath';
-import { getTicket } from '@/utils/pass';
+import { getTicket, ensurePass } from '@/utils/pass';
 import { getFingerprint } from '@/utils/fingerprint';
 
 const list = ref([]);
@@ -139,6 +139,7 @@ async function exportCsv() {
   if (exporting.value) return;
   exporting.value = true;
   try {
+    await ensurePass();
     const key = getCachedAdminPath();
     const params = new URLSearchParams();
     if (keyword.value.trim()) params.set('keyword', keyword.value.trim());

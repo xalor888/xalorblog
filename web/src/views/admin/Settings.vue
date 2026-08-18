@@ -284,7 +284,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { settingsApi, uploadApi, authApi } from '@/api';
 import { renderMarkdown } from '@/utils/markdown';
 import { getCachedAdminPath, getAdminPath } from '@/utils/adminPath';
-import { getTicket } from '@/utils/pass';
+import { getTicket, ensurePass } from '@/utils/pass';
 import { getFingerprint } from '@/utils/fingerprint';
 import { useSiteStore } from '@/stores/site';
 
@@ -518,6 +518,7 @@ async function exportBackup() {
   if (backupLoading.value) return;
   backupLoading.value = true;
   try {
+    await ensurePass();
     const key = getCachedAdminPath();
     const resp = await fetch(`/api/${key}/settings/export`, {
       headers: {
