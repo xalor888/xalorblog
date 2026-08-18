@@ -499,7 +499,7 @@ router.post('/articles/admin/import', async (req, res) => {
           // 其余必须通过 safeUrl（http/https + 非内网 + 无危险协议）
           cover: safeCover(it.cover),
           status: it.status === 'published' ? 'published' : 'draft',
-          is_top: !!it.is_top,
+          is_top: toBool(it.is_top, false),
           views: Math.max(0, Math.min(9999999, Number(it.views) || 0)),
           likes: Math.max(0, Math.min(9999999, Number(it.likes) || 0)),
           category_id,
