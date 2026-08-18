@@ -8,6 +8,6 @@
       || (saved !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
     if (dark) document.documentElement.dataset.theme = 'dark';
     var accent = localStorage.getItem('xalor_accent');
-    if (accent) document.documentElement.style.setProperty('--accent', accent);
+    if (accent && /^#[0-9a-f]{6}$/i.test(accent)) document.documentElement.style.setProperty('--accent', accent);
   } catch (e) { /* 忽略 */ }
 })();
