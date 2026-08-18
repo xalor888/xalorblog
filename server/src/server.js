@@ -9,12 +9,15 @@ const { localDateStr } = require('./utils/datetime');
 if (require.main !== module) {
   module.exports = app;
 } else {
-  main();
+  main().catch((e) => {
+    console.error('[startup] 服务启动失败:', e && e.message ? e.message : e);
+    process.exit(1);
+  });
 }
 
-function main() {
-  // 启动时从数据库恢复有效封禁（异步，不阻塞监听）
-  loadPersistedBans();
+async function main() {
+  // 先恢复有效封禁，再监听端口：避免启动瞬间被封禁 IP 乘窗口请求
+  await loadPersistedBans();
 
 // 定时清理（每 6 小时一次，unref 不阻止进程退出）：
 // 过期会话 / 已撤销超 24h 的会话 / 过期封禁 / 90 天前审计日志 / 2 年前访问明细
