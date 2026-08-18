@@ -71,9 +71,16 @@ async function saveSettings(entries) {
     if ((key === 'social_github' || key === 'social_weibo') && value && !/^https?:\/\/[^\s]+$/i.test(raw)) continue;
     // 联系邮箱用于 security.txt / mailto 链接，拒绝空格/换行/角括号等异常值
     if (key === 'social_email' && value && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(raw)) continue;
-    const safeValue = BOOL_KEYS.has(key)
-      ? value === true || value === 'true' || value === 1 || value === '1'
-      : typeof value === 'string' ? value.slice(0, 5000) : value;
+    let safeValue;
+    if (BOOL_KEYS.has(key)) {
+      safeValue = value === true || value === 'true' || value === 1 || value === '1';
+    } else if (typeof value === 'string') {
+      safeValue = value.slice(0, 5000);
+    } else if (typeof value === 'number' && Number.isFinite(value)) {
+      safeValue = value;
+    } else {
+      continue;
+    }
     const json = JSON.stringify(safeValue);
     await db('settings')
       .insert({ key, value: json })
