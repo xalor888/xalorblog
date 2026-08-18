@@ -11,7 +11,7 @@ const BASE = import.meta.env.VITE_API_PREFIX || '/api';
 
 let cached = '';
 try {
-  cached = localStorage.getItem('xalor_admin_path') || '';
+  cached = sanitizePath(localStorage.getItem('xalor_admin_path') || '');
 } catch (e) { /* 隐私模式忽略 */ }
 
 let pending = null;
