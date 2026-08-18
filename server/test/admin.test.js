@@ -108,6 +108,8 @@ async function suite() {
   assert('status=draft 枚举被拒', r.status === 200 && r.body.data.list.length === 0, `status=${r.status} count=${r.body.data && r.body.data.list.length}`);
   r = await c.req('GET', '/api/articles/slug/' + leakSlug, { ticket, silent: true });
   assert('草稿详情公开不可读', r.status === 404, `status=${r.status}`);
+  r = await c.req('GET', '/api/articles/related/' + aid, { ticket, silent: true });
+  assert('草稿相关文章公开不可读', r.status === 404, `status=${r.status}`);
   // 发布
   r = await c.req('PUT', adminBase + '/articles/' + aid, { body: { status: 'published' }, ticket, headers: authHeaders, silent: true });
   assert('发布文章', r.status === 200, `status=${r.status} ${r.body && r.body.message}`);

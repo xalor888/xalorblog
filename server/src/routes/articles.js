@@ -259,7 +259,7 @@ router.get('/related/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
-    const cur = await db('articles').where('id', id).select('category_id').first();
+    const cur = await db('articles').where('id', id).where('status', 'published').select('category_id').first();
     if (!cur) return notFound(res);
 
     const FIELDS = ['a.id', 'a.title', 'a.slug', 'a.cover', 'a.views', 'a.published_at', 'c.name as category_name', 'c.color as category_color'];
