@@ -93,7 +93,7 @@ function channelImageFor(avatar, siteUrl, siteName) {
   return `    <image>
       <url>${esc(url)}</url>
       <title>${esc(siteName)}</title>
-      <link>${siteUrl}/</link>
+      <link>${esc(siteUrl)}/</link>
     </image>`;
 }
 
@@ -201,7 +201,7 @@ router.get('/rss.xml', async (req, res) => {
           const desc = esc(a.summary || plainText(a.content).slice(0, 300));
           // 全文：mdToHtml 内部已做 XML 转义 + URL 绝对化，直接进 CDATA
           const full = mdToHtml(a.content, siteUrl);
-          const link = `${siteUrl}/api/share/${a.slug}`;
+          const link = `${esc(siteUrl)}/api/share/${a.slug}`;
           const pubDate = toRfc822(a.published_at);
           const cats = (tagsByArticle[a.id] || [])
             .map((t) => `      <category>${esc(t)}</category>`)
@@ -229,7 +229,7 @@ ${contentPart}
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:media="http://search.yahoo.com/mrss/">
   <channel>
     <title>${esc(settings.site_name)}</title>
-    <link>${siteUrl}/api/share/</link>
+    <link>${esc(siteUrl)}/api/share/</link>
     <description>${esc(settings.site_desc)}</description>
     <language>zh-cn</language>
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
@@ -268,14 +268,14 @@ router.get('/sitemap.xml', async (req, res) => {
       // 首页 + 归档/标签/关于/收藏等常驻页（hash 路由，分享页为真实 HTML 供抓取）
       const staticPages = ['', 'archive', 'tags', 'about', 'bookmarks', 'links', 'messages']
         .map((p) => `  <url>
-    <loc>${siteUrl}/#/${p}</loc>
+    <loc>${esc(siteUrl)}/#/${p}</loc>
     <priority>${p ? '0.4' : '1.0'}</priority>
   </url>`)
         .join('\n');
 
       const catUrls = categories
         .map((c) => `  <url>
-    <loc>${siteUrl}/#/articles?category=${encodeURIComponent(c.slug)}</loc>
+    <loc>${esc(siteUrl)}/#/articles?category=${encodeURIComponent(c.slug)}</loc>
     <lastmod>${String(c.updated_at || '').slice(0, 10)}</lastmod>
     <priority>0.5</priority>
   </url>`)
@@ -286,7 +286,7 @@ router.get('/sitemap.xml', async (req, res) => {
           // lastmod 优先文章更新时间（内容修改后搜索引擎应重新抓取）
           const lastmod = String(a.updated_at || a.published_at).slice(0, 10);
           return `  <url>
-    <loc>${siteUrl}/api/share/${a.slug}</loc>
+    <loc>${esc(siteUrl)}/api/share/${a.slug}</loc>
     <lastmod>${lastmod}</lastmod>
     <priority>0.6</priority>
   </url>`;

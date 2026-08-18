@@ -30,4 +30,8 @@ for s in $SUITES; do
 done
 echo ""
 echo "===== 总计: $PASS 通过, $FAIL 失败 ====="
-[ -n "$FAILED" ] && echo "失败套件:$FAILED"
+if [ -n "$FAILED" ]; then
+  echo "失败套件:$FAILED"
+  exit 1
+fi
+exit 0

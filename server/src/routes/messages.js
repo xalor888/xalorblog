@@ -9,8 +9,18 @@ const { localDateTimeStr } = require('../utils/datetime');
 const { antiSpam } = require('../utils/antiSpam');
 const { getAdminNicknames } = require('../utils/ownerBadge');
 const { report } = require('../middleware/ipGuard');
+const { authRequired } = require('../middleware/auth');
 
 const router = express.Router();
+
+/** 仅当昵称命中管理员保留名时才要求登录，避免过期 token 阻断普通访客留言 */
+function requireAuthForReservedName(req, res, next) {
+  const nick = String((req.body && req.body.nickname) || '').trim().toLowerCase();
+  if (!nick) return next();
+  return getAdminNicknames()
+    .then((admins) => (admins.has(nick) ? authRequired(req, res, next) : next()))
+    .catch(() => next());
+}
 
 // 留言提交限流（防刷屏）：每 IP 每分钟 6 次（与评论同标准）
 const postLimiter = rateLimit({
@@ -45,7 +55,7 @@ router.get('/', async (req, res) => {
 });
 
 /** 发表留言（限流 + honeypot + 签名令牌防机器人） */
-router.post('/', postLimiter, honeypotCheck, formTokenRequired, async (req, res) => {
+router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForReservedName, async (req, res) => {
   try {
     const { nickname, email = '', content } = req.body;
     const cleanContent = cleanText(content, 2000);
@@ -53,6 +63,12 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, async (req, res)
     const cleanEmail = safeEmail(email, 100);
     if (!cleanNickname) return fail(res, '昵称不能为空');
     if (!cleanContent) return fail(res, '留言内容不能为空');
+
+    // 博主昵称保留：匿名访客不能冒充管理员昵称领取“博主”标识
+    const admins = await getAdminNicknames();
+    if (admins.has(String(cleanNickname).trim().toLowerCase()) && (!req.user || req.user.role !== 'admin')) {
+      return fail(res, '该昵称已被占用，请更换后重试', 403);
+    }
 
     // 反垃圾：敏感词 + 链接数量限制
     const spam = antiSpam(String(content || ''), 1);
@@ -107,7 +123,7 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, async (req, res)
 
 /** AI 复核（误拒恢复/复核）：重跑本地审核引擎，更新状态与标记
  * 管理接口：要求登录 + 管理员角色（未认证调用此前可被利用反复触发 LLM 二判消耗资源） */
-router.post('/:id/re-ai', require('../middleware/auth').authRequired, async (req, res) => {
+router.post('/:id/re-ai', authRequired, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return fail(res, '无权限', 403);
     const id = Number(req.params.id);

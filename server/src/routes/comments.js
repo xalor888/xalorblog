@@ -10,8 +10,18 @@ const { antiSpam } = require('../utils/antiSpam');
 const { send: sendNotify } = require('../utils/notifyMail');
 const { getAdminNicknames } = require('../utils/ownerBadge');
 const { report } = require('../middleware/ipGuard');
+const { authRequired } = require('../middleware/auth');
 
 const router = express.Router();
+
+/** 仅当昵称命中管理员保留名时才要求登录，避免过期 token 阻断普通访客评论 */
+function requireAuthForReservedName(req, res, next) {
+  const nick = String((req.body && req.body.nickname) || '').trim().toLowerCase();
+  if (!nick) return next();
+  return getAdminNicknames()
+    .then((admins) => (admins.has(nick) ? authRequired(req, res, next) : next()))
+    .catch(() => next());
+}
 
 // 评论读取限流（浏览评论）：每 IP 每分钟 60 次
 const readLimiter = rateLimit({
@@ -105,6 +115,8 @@ router.get('/article/:articleId', readLimiter, async (req, res) => {
   try {
     const articleId = Number(req.params.articleId);
     if (!Number.isInteger(articleId) || articleId <= 0) return fail(res, '参数不合法');
+    const article = await db('articles').where('id', articleId).where('status', 'published').select('id').first();
+    if (!article) return notFound(res, '文章不存在');
     // 排序参数：asc=最早在前（默认）/ desc=最新在前；仅影响根评论顺序
     const order = req.query.sort === 'desc' ? 'desc' : 'asc';
     const [rows, admins] = await Promise.all([
@@ -139,7 +151,7 @@ router.get('/article/:articleId', readLimiter, async (req, res) => {
 });
 
 /** 发表评论（honeypot + 签名令牌防机器人） */
-router.post('/', postLimiter, honeypotCheck, formTokenRequired, async (req, res) => {
+router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForReservedName, async (req, res) => {
   try {
     const { article_id, parent_id = null, nickname, email = '', website = '', content } = req.body;
     const numericArticleId = Number(article_id);
@@ -162,7 +174,7 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, async (req, res)
       .first('id');
     if (dup) return fail(res, '内容重复，请勿重复提交', 429);
 
-    const article = await db('articles').where('id', numericArticleId).select('id', 'allow_comment', 'title').first();
+    const article = await db('articles').where('id', numericArticleId).where('status', 'published').select('id', 'allow_comment', 'title').first();
     if (!article) return notFound(res, '文章不存在');
     if (!article.allow_comment) return fail(res, '该文章已关闭评论');
 
@@ -195,6 +207,12 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, async (req, res)
     const cleanWebsite = safeUrl(website, 200);
     if (!cleanNickname) return fail(res, '昵称不能为空');
     if (!cleanContent) return fail(res, '评论内容不能为空');
+
+    // 博主昵称保留：匿名访客不能冒充管理员昵称领取“博主”标识
+    const admins = await getAdminNicknames();
+    if (admins.has(String(cleanNickname).trim().toLowerCase()) && (!req.user || req.user.role !== 'admin')) {
+      return fail(res, '该昵称已被占用，请更换后重试', 403);
+    }
 
     // 是否进入待审：站点开启「评论审核」后新评论默认 pending
     const { getAllSettings } = require('../utils/settings');
@@ -229,7 +247,7 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, async (req, res)
     });
 
     const row = await db('comments').where('id', id[0]).first();
-    row.is_admin = (await getAdminNicknames()).has(String(row.nickname || '').trim().toLowerCase());
+    row.is_admin = admins.has(String(row.nickname || '').trim().toLowerCase());
     // 审核开关状态随响应下发：前端据此提示（避免提示"成功"但内容未显示）
     row.moderated = status === 'pending';
 
@@ -271,6 +289,11 @@ function canCommentLike(ip, commentId) {
     for (const [k, t] of commentLikeGuard) {
       if (t < now) commentLikeGuard.delete(k);
     }
+    while (commentLikeGuard.size > 4000) {
+      const oldest = commentLikeGuard.keys().next().value;
+      if (oldest === undefined) break;
+      commentLikeGuard.delete(oldest);
+    }
   }
   return true;
 }
@@ -285,9 +308,14 @@ router.post('/:id/like', async (req, res) => {
       report(ip, 'rate', `LIKE-FLOOD /comments/${id}`);
       return res.status(429).json({ code: 1, message: '点赞太频繁了，请稍后再试' });
     }
-    const row = await db('comments').where('id', id).select('id', 'status').first();
-    if (!row) return notFound(res);
-    if (row.status !== 'approved') return fail(res, '该评论不可点赞', 404);
+    const row = await db('comments as cm')
+      .join('articles as a', 'cm.article_id', 'a.id')
+      .where('cm.id', id)
+      .where('cm.status', 'approved')
+      .where('a.status', 'published')
+      .select('cm.id', 'cm.status', 'a.status as article_status')
+      .first();
+    if (!row) return notFound(res, '评论不存在');
     await db('comments').where('id', id).increment('likes', 1);
     const updated = await db('comments').where('id', id).select('likes').first();
     return ok(res, { likes: updated ? Number(updated.likes) : 1 });
@@ -298,7 +326,7 @@ router.post('/:id/like', async (req, res) => {
 
 /** AI 复核（误拒恢复/复核）：重跑本地审核引擎，更新状态与标记
  * 管理接口：要求登录 + 管理员角色（未认证调用此前可被利用反复触发 LLM 二判消耗资源） */
-router.post('/:id/re-ai', require('../middleware/auth').authRequired, async (req, res) => {
+router.post('/:id/re-ai', authRequired, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return fail(res, '无权限', 403);
     const id = Number(req.params.id);

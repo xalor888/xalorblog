@@ -4,12 +4,19 @@ const crypto = require('crypto');
 
 const isProd = process.env.NODE_ENV === 'production';
 
+if (isProd && (!process.env.DB_PASSWORD || process.env.DB_PASSWORD === 'xalor2026')) {
+  throw new Error('生产环境必须配置强随机 DB_PASSWORD（禁止使用仓库默认密码）');
+}
+
 // 生产环境必须显式提供密钥；开发环境可自动生成（重启失效，不影响体验）
 // 记忆化：同一进程内多次调用必须返回同一值 —— jwt.secret 与 adminPath 派生
 // 都依赖它，若各自随机生成会得到两个不同密钥（进程内虽一致，属潜在隐患）
 let secretCache = null;
 function resolveSecret() {
   if (secretCache) return secretCache;
+  if (isProd && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
+    throw new Error('生产环境必须配置 JWT_SECRET（至少 32 字符强随机串）');
+  }
   if (process.env.JWT_SECRET && process.env.JWT_SECRET.length >= 32) {
     secretCache = process.env.JWT_SECRET;
     return secretCache;

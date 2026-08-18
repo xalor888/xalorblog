@@ -220,7 +220,7 @@ function exportCsv() {
   // Excel 公式注入防护：= + - @ 制表符/回车开头的值前缀单引号（path/detail 可为攻击者可控文本）
   const esc = (s) => {
     const str = String(s ?? '');
-    const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+    const safe = /^[=+\-@\t\r]/.test(str.trimStart()) ? `'${str}` : str;
     return `"${safe.replace(/"/g, '""')}"`;
   };
   const rows = [
@@ -244,7 +244,7 @@ function exportAuditCsv() {
   // 与 exportCsv 同款公式注入防护
   const esc = (s) => {
     const str = String(s ?? '');
-    const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+    const safe = /^[=+\-@\t\r]/.test(str.trimStart()) ? `'${str}` : str;
     return `"${safe.replace(/"/g, '""')}"`;
   };
   const rows = [

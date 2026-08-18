@@ -187,10 +187,10 @@ function adminPut(path, data) {
   return request.put(url, data);
 }
 
-function adminDelete(path) {
+function adminDelete(path, config) {
   const url = adminUrl(path);
   if (!url) return Promise.reject(new Error('后台路径未加载'));
-  return request.delete(url);
+  return request.delete(url, config);
 }
 
 export default request;
@@ -305,7 +305,7 @@ export const securityApi = {
 
 export const auditApi = {
   list: (params) => adminGet('/audit/logs', params),
-  clear: () => adminDelete('/audit/logs'),
+  clear: () => adminDelete('/audit/logs', { data: { confirm: true } }),
 };
 export const uploadApi = {
   upload: (file) => {

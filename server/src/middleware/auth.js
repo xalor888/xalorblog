@@ -121,6 +121,9 @@ async function authRequired(req, res, next) {
       const session = await db('sessions').where('jti', payload.jti).first();
       if (!session) return res.status(401).json({ code: 1, message: '会话不存在，请重新登录' });
       if (session.revoked) return res.status(401).json({ code: 1, message: '会话已注销，请重新登录' });
+      if (Number(session.user_id) !== Number(payload.sub)) {
+        return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录' });
+      }
       if (new Date(session.expires_at).getTime() < Date.now()) {
         return res.status(401).json({ code: 1, message: '会话已过期，请重新登录' });
       }
@@ -130,21 +133,40 @@ async function authRequired(req, res, next) {
     }
   }
 
-  req.user = payload;
+  // 角色等账号信息以数据库为准：防止 JWT 中的旧 role 在降权后继续生效
+  let userRow;
+  try {
+    userRow = await db('users').where('id', payload.sub).select('id', 'username', 'nickname', 'role').first();
+  } catch (e) {
+    console.error('[auth] 用户信息查询异常，拒绝请求（fail-closed）：', e && e.message);
+    return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录' });
+  }
+  if (!userRow) return res.status(401).json({ code: 1, message: '用户不存在，请重新登录' });
+
+  req.user = {
+    ...payload,
+    role: userRow.role,
+    username: userRow.username,
+    nickname: userRow.nickname,
+  };
   req.jti = payload.jti;
   req.authed = true;
   next();
 }
 
 /** 撤销指定会话 */
-async function revokeSession(jti) {
+async function revokeSession(jti, userId = null) {
   let ok = false;
   try {
     ok = await sessionTableReady();
   } catch (e) { return false; }
   if (!ok) return false;
   try {
-    await db('sessions').where('jti', jti).update({ revoked: true });
+    let query = db('sessions').where('jti', jti);
+    if (userId !== null && userId !== undefined) {
+      query = query.where('user_id', userId);
+    }
+    await query.update({ revoked: true });
     return true;
   } catch (e) {
     return false;

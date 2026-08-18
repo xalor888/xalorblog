@@ -101,14 +101,31 @@ function verifyCode(secret, code, replayGuard, guardKey) {
     if (candidate === code.trim()) {
       // 防重放：同一步成功过则拒绝
       if (replayGuard && guardKey) {
-        const last = replayGuard.get(guardKey);
-        if (last === step + offset) return false;
-        replayGuard.set(guardKey, step + offset);
+        let used = replayGuard.get(guardKey);
+        if (!(used instanceof Set)) {
+          // 兼容旧版只存单个步数的内存态
+          used = new Set(Number.isInteger(used) ? [used] : []);
+          replayGuard.set(guardKey, used);
+        }
+        if (used.has(step + offset)) return false;
+        used.add(step + offset);
+        // 单键即时裁剪：只保留当前 ±1 窗口可能重放的步，防单用户高频登录撑爆内存
+        const current = currentStep();
+        for (const s of used) {
+          if (current - s > 2) used.delete(s);
+        }
         // 定期清理，防内存膨胀
         if (replayGuard.size > 5000) {
           const now = currentStep();
-          for (const [k, v] of replayGuard) {
-            if (now - v > 10) replayGuard.delete(k);
+          for (const [k, steps] of replayGuard) {
+            if (!(steps instanceof Set)) {
+              replayGuard.delete(k);
+              continue;
+            }
+            for (const s of steps) {
+              if (now - s > 2) steps.delete(s);
+            }
+            if (!steps.size) replayGuard.delete(k);
           }
         }
       }

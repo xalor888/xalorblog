@@ -95,13 +95,19 @@ async function suite() {
   console.log('\n=== 9. 文章 CRUD 闭环（创建→发布→前台可见→更新→删除） ===');
   const uniq = Date.now().toString(36);
   const title = `测试文章 ${uniq}`;
+  const leakSlug = `draft-leak-${uniq}`;
   // 创建草稿
-  r = await c.req('POST', adminBase + '/articles', { body: { title, content: '# 标题\n\n正文内容', status: 'draft' }, ticket, headers: authHeaders, silent: true });
+  r = await c.req('POST', adminBase + '/articles', { body: { title, content: '# 标题\n\n正文内容', status: 'draft', slug: leakSlug }, ticket, headers: authHeaders, silent: true });
   assert('创建草稿', r.status === 200 && r.body.data && r.body.data.id > 0, `status=${r.status} ${r.body && r.body.message}`);
   const aid = r.body.data.id;
   // 草稿不应出现在前台
   r = await c.req('GET', '/api/articles?keyword=' + encodeURIComponent(title), { ticket, silent: true });
   assert('草稿前台不可见', r.status === 200 && r.body.data.list.length === 0, `status=${r.status} count=${r.body.data && r.body.data.list.length}`);
+  // 公开接口不能通过 status=draft 枚举草稿，也不能直接读草稿正文
+  r = await c.req('GET', '/api/articles?status=draft&keyword=' + encodeURIComponent(title), { ticket, silent: true });
+  assert('status=draft 枚举被拒', r.status === 200 && r.body.data.list.length === 0, `status=${r.status} count=${r.body.data && r.body.data.list.length}`);
+  r = await c.req('GET', '/api/articles/slug/' + leakSlug, { ticket, silent: true });
+  assert('草稿详情公开不可读', r.status === 404, `status=${r.status}`);
   // 发布
   r = await c.req('PUT', adminBase + '/articles/' + aid, { body: { status: 'published' }, ticket, headers: authHeaders, silent: true });
   assert('发布文章', r.status === 200, `status=${r.status} ${r.body && r.body.message}`);

@@ -188,7 +188,7 @@ router.post('/articles', async (req, res) => {
       [id] = await trx('articles').insert({
         title: cleanTitle, slug, content: cleanContent,
         summary: cleanText(summary || cleanContent.replace(/[#>*_`~\-\[\]()!]/g, '').slice(0, 150), 500),
-        cover: cover || '', category_id: category_id || null,
+        cover: safeCover(cover), category_id: category_id || null,
         status, is_top: !!is_top, allow_comment: allow_comment !== false,
         published_at,
       });
@@ -233,7 +233,7 @@ router.put('/articles/:id', async (req, res) => {
     if (title !== undefined) patch.title = cleanLine(title, 200);
     if (content !== undefined) patch.content = cleanText(content, 100000);
     if (summary !== undefined) patch.summary = cleanText(summary, 500);
-    if (cover !== undefined) patch.cover = cover;
+    if (cover !== undefined) patch.cover = safeCover(cover);
     if (category_id !== undefined) {
       // 边界场景：引用的分类已被删除 → 明确拒绝而非写入孤儿 ID
       if (category_id) {
@@ -535,6 +535,15 @@ function validHexColor(color) {
   return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : '#e4573d';
 }
 
+/** 封面只允许 http(s) 外链或站内绝对路径，拒绝协议相对/路径穿越 */
+function safeCover(input) {
+  if (typeof input !== 'string') return '';
+  const v = input.trim().slice(0, 500);
+  if (!v) return '';
+  if (v.startsWith('/') && !v.startsWith('//') && !v.includes('..')) return v;
+  return safeUrl(v, 500);
+}
+
 /** 创建分类 */
 router.post('/categories', async (req, res) => {
   try {
@@ -732,7 +741,7 @@ router.get('/comments/admin/export', async (req, res) => {
       .select('c.id', 'c.nickname', 'c.email', 'c.content', 'c.status', 'c.ai_reason', 'c.created_at', 'a.title as article_title');
     const esc = (s) => {
       const str = String(s ?? '');
-      const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+      const safe = /^[=+\-@\t\r]/.test(str.trimStart()) ? `'${str}` : str;
       return `"${safe.replace(/"/g, '""')}"`;
     };
     // 状态中文化（导出可读性）
@@ -944,7 +953,7 @@ router.get('/messages/admin/export', async (req, res) => {
       .select('id', 'nickname', 'email', 'content', 'status', 'ai_reason', 'created_at');
     const esc = (s) => {
       const str = String(s ?? '');
-      const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+      const safe = /^[=+\-@\t\r]/.test(str.trimStart()) ? `'${str}` : str;
       return `"${safe.replace(/"/g, '""')}"`;
     };
     // 状态中文化（导出可读性）
@@ -1253,6 +1262,7 @@ router.get('/audit/logs', async (req, res) => {
 /** 清空审计日志（危险操作，需二次确认由前端把关） */
 router.delete('/audit/logs', async (req, res) => {
   try {
+    if (req.body?.confirm !== true) return fail(res, '请确认后重试', 400);
     await db('audit_logs').del();
     return ok(res, null, '审计日志已清空');
   } catch (e) {
@@ -1280,7 +1290,7 @@ router.get('/audit/export', async (req, res) => {
       .select('id', 'username', 'action', 'detail', 'ip', 'created_at');
     const esc = (s) => {
       const str = String(s ?? '');
-      const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+      const safe = /^[=+\-@\t\r]/.test(str.trimStart()) ? `'${str}` : str;
       return `"${safe.replace(/"/g, '""')}"`;
     };
     const header = ['ID', '操作者', '操作', '详情', 'IP', '时间'].map(esc).join(',');
@@ -1333,8 +1343,8 @@ router.post('/upload', (req, res, next) => {
     destination: (req2, file, cb) => cb(null, config.uploadDir),
     filename: (req2, file, cb) => {
       const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
-      // 服务端强制重命名：随机文件名，杜绝路径穿越/重名覆盖
-      const name = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${ext}`;
+      // 服务端强制重命名：加密随机文件名，杜绝路径穿越/重名覆盖/文件名可预测
+      const name = `${Date.now()}-${require('crypto').randomBytes(6).toString('hex')}${ext}`;
       cb(null, name);
     },
   });
@@ -1523,7 +1533,7 @@ router.get('/security', async (req, res) => {
 /** 手动解封 IP */
 router.post('/security/unban', (req, res) => {
   const ip = cleanLine(req.body?.ip, 64);
-  if (!ip) return fail(res, 'IP 地址不能为空');
+  if (!ip || require('net').isIP(ip) === 0) return fail(res, 'IP 地址格式不正确');
   unban(ip);
   return ok(res, null, '已解封');
 });

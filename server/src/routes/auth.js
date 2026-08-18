@@ -93,6 +93,12 @@ function recordFail(key) {
       const unlocked = !v.lockedUntil || v.lockedUntil < now;
       if (unlocked) loginFails.delete(k);
     }
+    // 攻击者可制造大量“仍锁定”的用户名，超限时按最旧丢弃到安全水位
+    while (loginFails.size > 4000) {
+      const oldest = loginFails.keys().next().value;
+      if (oldest === undefined) break;
+      loginFails.delete(oldest);
+    }
   }
 }
 
@@ -119,7 +125,8 @@ router.post('/login', async (req, res) => {
     if (cleanUser) {
       const userRemain = checkLock(lockKey('user', cleanUser));
       if (userRemain) {
-        return res.status(429).json({ code: 1, message: `登录失败过多，请 ${userRemain} 秒后再试` });
+        // 用户名锁定返回与“凭据错误”同形，避免攻击者通过 429 差异枚举有效用户名
+        return res.status(401).json({ code: 1, message: '用户名或密码错误' });
       }
     }
 
@@ -206,7 +213,7 @@ router.delete('/sessions/:jti', authRequired, async (req, res) => {
   try {
     const target = req.params.jti;
     if (target === req.jti) return fail(res, '不能撤销当前会话，请使用退出登录', 400);
-    await revokeSession(target);
+    await revokeSession(target, req.user.sub);
     return ok(res, null, '会话已撤销');
   } catch (e) {
     return fail(res, '撤销会话失败', 500);
@@ -216,7 +223,7 @@ router.delete('/sessions/:jti', authRequired, async (req, res) => {
 /** 退出登录：撤销当前会话 */
 router.post('/logout', authRequired, async (req, res) => {
   try {
-    await revokeSession(req.jti);
+    await revokeSession(req.jti, req.user.sub);
     return ok(res, null, '已退出登录');
   } catch (e) {
     return fail(res, '退出失败', 500);
@@ -228,7 +235,7 @@ router.post('/logout-all', authRequired, async (req, res) => {
   try {
     const sessions = await listSessions(req.user.sub);
     for (const s of sessions) {
-      if (s.jti !== req.jti) await revokeSession(s.jti);
+      if (s.jti !== req.jti) await revokeSession(s.jti, req.user.sub);
     }
     logAuditEvent(req.user.username, 'LOGOUT_ALL', `已撤销 ${sessions.length - 1} 个其他会话`, req.ip, req.headers['x-fp']);
     return ok(res, null, '已退出其他设备');
@@ -255,7 +262,7 @@ router.put('/password', authRequired, async (req, res) => {
     try {
       const sessions = await listSessions(user.id);
       for (const s of sessions) {
-        if (s.jti !== req.jti) await revokeSession(s.jti);
+        if (s.jti !== req.jti) await revokeSession(s.jti, user.id);
       }
     } catch (e) { /* 忽略 */ }
     logAuditEvent(user.username, 'CHANGE_PASSWORD', '修改密码', req.ip, req.headers['x-fp']);
@@ -280,12 +287,20 @@ router.get('/2fa/status', authRequired, async (req, res) => {
 /** 生成新密钥（启用前的第一步；每次调用都会轮换旧密钥） */
 router.post('/2fa/setup', authRequired, async (req, res) => {
   try {
+    const user = await db('users').where('id', req.user.sub).first();
+    // 已启用 2FA 时重新生成密钥必须先验证当前动态码，防止仅持会话即可静默剥离 2FA
+    if (user && user.totp_enabled) {
+      const code = String(req.body.code || '').trim();
+      if (!verifyCode(user.totp_secret, code, totpReplay, `u${user.id}:setup`)) {
+        return fail(res, '请输入当前两步验证码', 400);
+      }
+    }
     const secret = generateSecret(32);
     await db('users').where('id', req.user.sub).update({ totp_secret: secret, totp_enabled: false });
     logAuditEvent(req.user.username, '2FA_SETUP', '生成两步验证密钥', req.ip, req.headers['x-fp']);
     // 2FA 状态变更：撤销其他全部会话，强制重新登录（防攻击者已持会话时被静默旁路）
     const sessions = await listSessions(req.user.sub);
-    for (const s of sessions) if (s.jti !== req.jti) await revokeSession(s.jti);
+    for (const s of sessions) if (s.jti !== req.jti) await revokeSession(s.jti, req.user.sub);
     return ok(res, {
       secret,
       uri: otpauthUri(secret, String(req.user.username || 'admin')),
@@ -310,7 +325,7 @@ router.post('/2fa/verify', authRequired, async (req, res) => {
     logAuditEvent(req.user.username, '2FA_ENABLE', '启用两步验证', req.ip, req.headers['x-fp']);
     // 2FA 状态变更：撤销其他全部会话，强制重新登录
     const sessions = await listSessions(user.id);
-    for (const s of sessions) if (s.jti !== req.jti) await revokeSession(s.jti);
+    for (const s of sessions) if (s.jti !== req.jti) await revokeSession(s.jti, user.id);
     return ok(res, null, '两步验证已启用');
   } catch (e) {
     return fail(res, '启用失败', 500);
@@ -332,7 +347,7 @@ router.post('/2fa/disable', authRequired, async (req, res) => {
     logAuditEvent(req.user.username, '2FA_DISABLE', '关闭两步验证', req.ip, req.headers['x-fp']);
     // 2FA 状态变更：撤销其他全部会话，强制重新登录
     const sessions = await listSessions(user.id);
-    for (const s of sessions) if (s.jti !== req.jti) await revokeSession(s.jti);
+    for (const s of sessions) if (s.jti !== req.jti) await revokeSession(s.jti, user.id);
     return ok(res, null, '两步验证已关闭');
   } catch (e) {
     return fail(res, '关闭失败', 500);

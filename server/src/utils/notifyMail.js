@@ -3,10 +3,12 @@
  * 仅当设置了 SMTP 环境变量时启用；未配置则静默跳过，不影响功能。
  * 环境变量：
  *   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / NOTIFY_EMAIL
- * 使用 Node 内置 net 模块实现最小化 SMTP 发送，不依赖 nodemailer。
+ *   SMTP_SECURE=1  使用隐式 TLS（通常端口 465）
+ *   SMTP_REQUIRE_TLS=0  显式关闭 STARTTLS 强制（默认开启，不推荐关闭）
+ * 使用 nodemailer 收发，默认拒绝不加密的 SMTP 会话。
  */
 
-const net = require('net');
+const nodemailer = require('nodemailer');
 
 const cfg = {
   host: process.env.SMTP_HOST || '',
@@ -14,11 +16,14 @@ const cfg = {
   user: process.env.SMTP_USER || '',
   pass: process.env.SMTP_PASS || '',
   to: process.env.NOTIFY_EMAIL || '',
+  secure: process.env.SMTP_SECURE === '1' || Number(process.env.SMTP_PORT) === 465,
+  requireTls: process.env.SMTP_REQUIRE_TLS !== '0',
 };
 
 /** SMTP 凭据是否就绪（发送任何邮件的前提） */
 function smtpReady() {
-  return !!(cfg.host && cfg.user && cfg.pass);
+  const raw = `${cfg.host}|${cfg.user}|${cfg.pass}|${cfg.to}`;
+  return !!(cfg.host && cfg.user && cfg.pass) && !/[\r\n]/.test(raw);
 }
 
 /** 站长通知是否启用（需配置收件人） */
@@ -57,8 +62,8 @@ function safeSubject(s) {
 }
 
 /**
- * 简单 SMTP 发送（STARTTLS 前 AUTH LOGIN）
- * @param {string} subject 主题（自动清洗 + UTF-8 编码）
+ * 发送邮件：强制 TLS/STARTTLS（默认），避免 SMTP 凭据与内容明文传输。
+ * @param {string} subject 主题（自动清洗 + 截断）
  * @param {string} text 正文（自动清洗）
  * @param {string} [to] 自定义收件人；缺省发给站长（NOTIFY_EMAIL）
  */
@@ -68,72 +73,30 @@ function send(subject, text, to) {
     // 收件人：优先自定义（须通过格式校验），否则回退站长邮箱
     const recipient = validRecipient(to) ? to : cfg.to;
     if (!validRecipient(recipient)) return resolve(false);
-    // 注入防护：正文与主题中的换行一律清洗（DATA 段的 CRLF.CRLF 终止序列）；
-    // 主题另做 RFC 2047 字节截断（encoded-word ≤75 字符）
-    const safeSubject2 = safeSubject(subject);
-    const safeText = sanitizeForSmtp(text);
-    const sock = net.createConnection(cfg.port, cfg.host);
-    let step = 0;
-    let buffer = '';
-    // 每步命令及其期望的服务器响应码前缀：
-    // 响应码不符（如 530 认证失败 / 550 收件人拒绝）→ 终止，避免在错误状态下继续发送
-    const commands = [
-      { cmd: `EHLO xalor-blog\r\n`, expect: ['250'] },
-      { cmd: `AUTH LOGIN\r\n`, expect: ['334'] },
-      { cmd: `${Buffer.from(cfg.user).toString('base64')}\r\n`, expect: ['334'] },
-      { cmd: `${Buffer.from(cfg.pass).toString('base64')}\r\n`, expect: ['235'] },
-      { cmd: `MAIL FROM:<${cfg.user}>\r\n`, expect: ['250'] },
-      { cmd: `RCPT TO:<${recipient}>\r\n`, expect: ['250', '251'] },
-      { cmd: `DATA\r\n`, expect: ['354'] },
-      { cmd: `From: Xalor的小站 <${cfg.user}>\r\nTo: <${recipient}>\r\nSubject: =?UTF-8?B?${Buffer.from(safeSubject2).toString('base64')}?=\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${safeText}\r\n.\r\n`, expect: ['250'], data: true },
-      { cmd: `QUIT\r\n`, expect: ['221'], final: true },
-    ];
-    sock.setEncoding('utf8');
-    let failed = false;
-    sock.on('data', (chunk) => {
-      if (failed) return;
-      buffer += chunk;
-      // 多行响应（250- 前缀）需收完整
-      while (buffer.includes('\r\n')) {
-        const lineEnd = buffer.indexOf('\r\n');
-        const response = buffer.slice(0, lineEnd);
-        buffer = buffer.slice(lineEnd + 2);
-        const code = response.slice(0, 3);
-        // EHLO 多行块（250-...250 ...）继续收下一行
-        if (code === '250' && response[3] === '-' && !buffer.includes('\r\n')) return;
-        const cur = commands[step];
-        if (!cur) { sock.destroy(); return; }
-        if (!cur.expect.some((p) => code.startsWith(p))) {
-          // 服务器拒绝当前命令（认证失败/收件人拒绝等）→ 终止并关闭
-          failed = true;
-          sock.destroy();
-          resolve(false);
-          return;
-        }
-        if (cur.final) {
-          sock.destroy();
-          resolve(true);
-          return;
-        }
-        // DATA 内容发送完成（收到 250）即视为投递成功；后续 QUIT 仅为礼貌收尾
-        if (cur.data) {
-          sock.write(`QUIT\r\n`);
-          sock.destroy();
-          resolve(true);
-          return;
-        }
-        step += 1;
-        if (step < commands.length) {
-          sock.write(commands[step].cmd);
-        } else {
-          sock.destroy();
-          resolve(true);
-        }
-      }
+
+    const transporter = nodemailer.createTransport({
+      host: cfg.host,
+      port: cfg.port,
+      secure: cfg.secure,
+      requireTLS: cfg.requireTls,
+      auth: { user: cfg.user, pass: cfg.pass },
     });
-    sock.on('close', () => resolve(false));
-    sock.on('error', () => resolve(false));
-    sock.setTimeout(15000, () => { sock.destroy(); resolve(false); });
+
+    transporter
+      .sendMail({
+        from: `"Xalor的小站" <${cfg.user}>`,
+        to: recipient,
+        subject: safeSubject(subject),
+        text: sanitizeForSmtp(text),
+      })
+      .then(() => {
+        transporter.close();
+        resolve(true);
+      })
+      .catch(() => {
+        transporter.close();
+        resolve(false);
+      });
   });
 }
 

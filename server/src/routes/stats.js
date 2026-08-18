@@ -26,6 +26,11 @@ function canCountPv(ip) {
     for (const [k, t] of pvGuard) {
       if (t < now) pvGuard.delete(k);
     }
+    while (pvGuard.size > 8000) {
+      const oldest = pvGuard.keys().next().value;
+      if (oldest === undefined) break;
+      pvGuard.delete(oldest);
+    }
   }
   return true;
 }
@@ -62,6 +67,18 @@ router.post('/record', async (req, res) => {
         .ignore();
       isNewUv = Array.isArray(inserted) && Number(inserted[0]) > 0;
       if (isNewUv) uvSeen.add(uvKey);
+    }
+    // UV 内存集合硬上限：超限时先清历史日期，再按最旧丢弃今天的键
+    if (uvSeen.size > 200000) {
+      for (const key of uvSeen) {
+        if (!key.startsWith(today)) uvSeen.delete(key);
+      }
+      let excess = uvSeen.size - 150000;
+      for (const key of uvSeen) {
+        if (excess <= 0) break;
+        uvSeen.delete(key);
+        excess -= 1;
+      }
     }
 
     // PV 防刷窗口内：仅 UV 计一次（避免完全静默，且 UV 本身有日级去重不受影响）

@@ -68,13 +68,14 @@ function verifyToken(req, token, path = '') {
     if (exp > now) return { ok: false, reason: '安全令牌已被使用' };
     USED.delete(nonce);
   }
-  USED.set(nonce, now + TOKEN_TTL);
-  if (USED.size > USED_MAX) {
+  if (USED.size >= USED_MAX) {
     const n = Date.now();
     for (const [k, e] of USED) {
       if (e < n) USED.delete(k);
     }
+    if (USED.size >= USED_MAX) return { ok: false, reason: '系统繁忙，请稍后重试' };
   }
+  USED.set(nonce, now + TOKEN_TTL);
   return { ok: true };
 }
 

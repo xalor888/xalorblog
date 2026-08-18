@@ -30,14 +30,21 @@ function safeUrl(input, maxLen = 500) {
   try {
     const url = new URL(trimmed);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    // 拒绝 URL 内嵌凭据（https://user:pass@host 既是钓鱼样式，也可能被后续抓取滥用）
+    if (url.username || url.password) return '';
     const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
     // 主机名黑名单：localhost 及其变体、mDNS 本地域名
     if (!host || host === 'localhost' || host.endsWith('.local') || host.endsWith('.localhost')) return '';
     // IPv6 字面量：不做解析级校验，直接拒绝（保留/链路本地地址无法廉价区分）
     if (host.includes(':')) return '';
+    // 纯数字/十六进制 IP 简写（2130706433、0x7f000001、127.1）可能解析到回环地址
+    if (/^[\d.]+$/.test(host) || /^0x[0-9a-f]+$/i.test(host)) return '';
+    if (host.includes('%')) return '';
     // IPv4 保留/内网段拒绝：0/8 · 10/8 · 127/8 · 169.254/16 · 172.16/12 ·
     // 192.168/16 · 100.64/10（CGNAT）· 224+（组播/保留）
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+      // 八进制/前导零 IP 变体（0177.0.0.1）在部分解析器中会还原为回环地址
+      if (host.split('.').some((s) => s.length > 1 && s.startsWith('0'))) return '';
       const parts = host.split('.').map(Number);
       if (parts.some((p) => p > 255)) return '';
       const [a, b] = parts;

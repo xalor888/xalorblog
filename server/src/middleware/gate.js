@@ -104,6 +104,11 @@ function trackFpIp(fp, ip) {
     for (const [k, v] of fpIpTracker) {
       if (now - v.windowStart > FP_IP_WINDOW) fpIpTracker.delete(k);
     }
+    while (fpIpTracker.size > FP_IP_MAX * 0.75) {
+      const oldest = fpIpTracker.keys().next().value;
+      if (oldest === undefined) break;
+      fpIpTracker.delete(oldest);
+    }
   }
   // 仅在「跨过阈值瞬间」返回 true（调用方计一次分）；
   // 已标记后的后续签发只拉满难度不再重复计分，防误伤家庭动态 IP 用户被快速封禁
@@ -194,6 +199,12 @@ function issueTicket(ip, fp, ua, renews = 0) {
     for (const [j, t] of issuedJti) {
       if (now - t.ts > TICKET_TTL * 2) issuedJti.delete(j);
     }
+    // 全部票据仍新鲜时按最旧丢弃到安全水位，防止分布式攻击撑爆内存
+    while (issuedJti.size > 18000) {
+      const oldest = issuedJti.keys().next().value;
+      if (oldest === undefined) break;
+      issuedJti.delete(oldest);
+    }
   }
   return { token: [ts, jti, sig].join('.'), jti, ts };
 }
@@ -244,12 +255,14 @@ function consumeNonce(nonce) {
     if (exp > now) return false; // 重放
     usedNonces.delete(nonce);
   }
-  usedNonces.set(nonce, now + SIG_WINDOW);
-  if (usedNonces.size > NONCE_MAX) {
+  if (usedNonces.size >= NONCE_MAX) {
     for (const [k, e] of usedNonces) {
       if (e < now) usedNonces.delete(k);
     }
+    // 清理后仍满：拒绝新 nonce，宁可不放行也不牺牲防重放上限
+    if (usedNonces.size >= NONCE_MAX) return false;
   }
+  usedNonces.set(nonce, now + SIG_WINDOW);
   return true;
 }
 

@@ -25,6 +25,11 @@ function canLike(ip, articleId) {
     for (const [k, t] of likeGuard) {
       if (t < now) likeGuard.delete(k);
     }
+    while (likeGuard.size > 4000) {
+      const oldest = likeGuard.keys().next().value;
+      if (oldest === undefined) break;
+      likeGuard.delete(oldest);
+    }
   }
   return true;
 }
@@ -77,7 +82,9 @@ router.get('/', async (req, res) => {
     const category = qs(req.query.category);
     const tag = qs(req.query.tag);
     const keyword = qs(req.query.keyword);
-    const status = qs(req.query.status) || 'published';
+    // 公开列表只允许已发布文章；status 参数不能作为过滤条件，
+    // 否则访问者可通过 ?status=draft 枚举草稿
+    const status = 'published';
     const sort = qs(req.query.sort) || 'latest';
 
     const base = db('articles as a')
@@ -165,6 +172,11 @@ function shouldCountView(ip, fp, articleId) {
     for (const [k, t] of viewGuard) {
       if (t < now) viewGuard.delete(k);
     }
+    while (viewGuard.size > 8000) {
+      const oldest = viewGuard.keys().next().value;
+      if (oldest === undefined) break;
+      viewGuard.delete(oldest);
+    }
   }
   return true;
 }
@@ -175,6 +187,7 @@ router.get('/slug/:slug', async (req, res) => {
     const row = await db('articles as a')
       .leftJoin('categories as c', 'a.category_id', 'c.id')
       .where('a.slug', req.params.slug)
+      .where('a.status', 'published')
       .select(
         'a.*', 'c.name as category_name', 'c.slug as category_slug', 'c.color as category_color'
       )
@@ -370,9 +383,11 @@ router.post('/:id/like', async (req, res) => {
       report(ip, 'rate', `LIKE-FLOOD /articles/${id}`);
       return fail(res, '点赞太频繁啦，歇一会儿再点吧', 429);
     }
+    const row = await db('articles').where('id', id).select('id', 'status').first();
+    if (!row || row.status !== 'published') return notFound(res, '文章不存在');
     await db('articles').where('id', id).increment('likes', 1);
-    const row = await db('articles').where('id', id).select('likes').first();
-    return ok(res, { likes: row ? row.likes : 0 });
+    const updated = await db('articles').where('id', id).select('likes').first();
+    return ok(res, { likes: updated ? updated.likes : 0 });
   } catch (e) {
     return fail(res, '点赞失败', 500);
   }

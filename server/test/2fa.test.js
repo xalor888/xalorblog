@@ -86,6 +86,10 @@ async function suite() {
   r = await c.req('POST', '/api/auth/2fa/verify', { body: { code: totpAt(secret) }, ticket, headers: authHeaders });
   assert('正确验证码启用成功', r.status === 200, `status=${r.status} ${r.body && r.body.message}`);
 
+  console.log('\n=== 4b. 已启用后 setup 必须提供当前动态码 ===');
+  r = await c.req('POST', '/api/auth/2fa/setup', { body: {}, ticket, headers: authHeaders });
+  assert('无动态码重新生成密钥被拒', r.status === 400, `status=${r.status} ${r.body && r.body.message}`);
+
   console.log('\n=== 5. 启用后登录需验证码 ===');
   // 无验证码登录被拒（计入一次认证失败积分）
   r = await c.req('POST', '/api/auth/login', { body: { username: 'admin', password: 'admin123' }, ticket, headers: loginHdr });

@@ -198,9 +198,8 @@ const SCANNER_UA_PATTERNS = [
   'insomnia', 'playwright', 'puppeteer', 'phantomjs', 'selenium',
   'headless', 'webdriver', 'lighthouse', 'expanse', 'censys', 'shodan',
   'zoomeye', 'fofa', 'quake', 'netcraft', 'semrush', 'ahrefs', 'mj12bot',
-  'dotbot', 'dataforseo', 'claudebot', 'gptbot', 'ccbot', 'bytespider',
-  'petalbot', 'yisou', 'smider', 'facebookexternalhit', 'domaincrawler',
-  'sitedomain', 'spider', 'crawler',
+  'dotbot', 'dataforseo', 'claudebot', 'gptbot', 'ccbot', 'facebookexternalhit', 'domaincrawler',
+  'sitedomain',
   // 2023-2026 活跃扫描器/工具补充
   'feroxbuster', 'wfuzz', 'katana', 'arjun', 'dalfox', 'xsstrike', 'commix',
   'tplmap', 'jwt_tool', 'rustscan', 'naabu', 'amass', 'subfinder', 'afrog',
@@ -363,6 +362,11 @@ function trackUaRotation(ip, ua) {
     for (const [k, v] of uaTracker) {
       if (now - v.windowStart > UA_WINDOW) uaTracker.delete(k);
     }
+    while (uaTracker.size > 2400) {
+      const oldest = uaTracker.keys().next().value;
+      if (oldest === undefined) break;
+      uaTracker.delete(oldest);
+    }
   }
   return rec.uas.size >= UA_DIFF_THRESHOLD;
 }
@@ -399,6 +403,11 @@ function trackMiss(ip) {
   if (scanTracker.size > 2000) {
     for (const [k, v] of scanTracker) {
       if (now - v.windowStart > SCAN_WINDOW) scanTracker.delete(k);
+    }
+    while (scanTracker.size > 1500) {
+      const oldest = scanTracker.keys().next().value;
+      if (oldest === undefined) break;
+      scanTracker.delete(oldest);
     }
   }
   return rec.count >= SCAN_THRESHOLD;
