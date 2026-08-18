@@ -53,7 +53,7 @@ async function suite() {
     'Origin': 'http://localhost:5173', 'Referer': 'http://localhost:5173/',
   };
   const sendReplay = () => new Promise((resolve) => {
-    const u = new URL('http://localhost:3000/api/comments');
+    const u = new URL(c.BASE + '/api/comments');
     const rq = http.request(u, { method: 'POST', headers }, (res) => {
       let b = ''; res.on('data', (x) => (b += x)); res.on('end', () => resolve({ status: res.statusCode, body: b }));
     });

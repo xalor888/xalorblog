@@ -59,7 +59,7 @@ function waitServer() {
     const deadline = Date.now() + 15000;
     const wait = () => {
       if (Date.now() > deadline) { console.error('[run] 服务启动超时'); resolve(); return; }
-      const r = http.get('http://localhost:3000/api/health', (res) => {
+      const r = http.get('http://127.0.0.1:3000/api/health', (res) => {
         res.resume();
         console.log('[run] 服务就绪');
         resolve();

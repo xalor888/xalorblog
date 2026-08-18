@@ -5,7 +5,10 @@
  */
 const http = require('http');
 
-const BASE = process.env.TEST_BASE || 'http://localhost:3000';
+// 默认走 127.0.0.1 而非 localhost：macOS 上 localhost 同时解析 ::1/127.0.0.1，
+// Node Happy Eyeballs 每连接独立选路，长暂停后重拨可能换协议族 → req.ip 突变
+// → 票据 IP 绑定校验失败（403），测试出现不可复现的间歇失败。固定 IPv4 保证确定性。
+const BASE = process.env.TEST_BASE || 'http://127.0.0.1:3000';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 let fp = process.env.TEST_FP || 'a'.repeat(64); // 默认稳定指纹
 
@@ -190,4 +193,4 @@ async function asBotUA(path, ua = 'python-requests/2.31', method = 'GET') {
   return req(method, path, { headers: { 'User-Agent': ua } });
 }
 
-module.exports = { req, getTicket, getFormToken, formPost, uploadFile, get, post, asBotUA, sha256hex, digestHasLeadingZeros, hmac, UA };
+module.exports = { req, getTicket, getFormToken, formPost, uploadFile, get, post, asBotUA, sha256hex, digestHasLeadingZeros, hmac, UA, BASE };
