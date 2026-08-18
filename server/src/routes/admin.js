@@ -462,6 +462,7 @@ router.post('/articles/admin/import', async (req, res) => {
         if (!title) { skipped += 1; continue; }
         const content = String(it.content || '');
         if (!content) { skipped += 1; continue; }
+        if (content.length > 100000) { skipped += 1; continue; }
         // 导入 slug 与创建/更新保持一致的白名单清洗（slugify 输出等价：
         // 小写字母/数字/中文/连字符，≤80）—— 脏 slug（含 / . .. 空格等）若直接
         // 入库会污染 URL 面（分享页路径分裂），此处不符即回退自动生成

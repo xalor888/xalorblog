@@ -53,7 +53,7 @@ async function migrate() {
         t.string('title', 200).notNullable();
         t.string('slug', 220).notNullable().unique();
         t.string('summary', 500).defaultTo('');
-        t.text('content').notNullable(); // Markdown 原文
+        t.mediumtext('content').notNullable(); // Markdown 原文
         t.string('cover', 500).defaultTo(''); // 封面图 URL
         t.integer('category_id').unsigned().references('id').inTable('categories').onDelete('SET NULL');
         t.enum('status', ['draft', 'published']).defaultTo('draft');
@@ -66,6 +66,14 @@ async function migrate() {
         t.timestamp('updated_at').defaultTo(db.fn.now());
       });
       console.log('[migrate] articles 表已创建');
+    } else {
+      const cols = await db('articles').columnInfo();
+      if (cols.content && String(cols.content.type).toLowerCase() === 'text') {
+        await db.schema.alterTable('articles', (t) => {
+          t.mediumtext('content').notNullable().alter();
+        });
+        console.log('[migrate] articles.content 已升级为 mediumtext');
+      }
     }
   });
 
