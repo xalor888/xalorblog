@@ -264,6 +264,9 @@ router.put('/articles/:id', async (req, res) => {
       if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(published_at)) {
         return fail(res, '发布时间格式不正确', 400);
       }
+      if (Number.isNaN(new Date(published_at.replace(' ', 'T')).getTime())) {
+        return fail(res, '发布时间不是有效日期', 400);
+      }
       patch.published_at = published_at;
     }
     // 事务：正文更新与标签重建原子执行（中途失败整体回滚）
@@ -486,7 +489,6 @@ router.post('/articles/admin/import', async (req, res) => {
           }
           category_id = cat.id;
         }
-        const tsRe = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
         const now = db.fn.now();
         const [aid] = await trx('articles').insert({
           title,
@@ -501,8 +503,8 @@ router.post('/articles/admin/import', async (req, res) => {
           views: Math.max(0, Math.min(9999999, Number(it.views) || 0)),
           likes: Math.max(0, Math.min(9999999, Number(it.likes) || 0)),
           category_id,
-          published_at: tsRe.test(String(it.published_at || '')) ? it.published_at : null,
-          created_at: tsRe.test(String(it.created_at || '')) ? it.created_at : now,
+          published_at: isValidDateTime(String(it.published_at || '')) ? it.published_at : null,
+          created_at: isValidDateTime(String(it.created_at || '')) ? it.created_at : now,
           updated_at: now,
         });
         // 标签：按名称查找或创建
@@ -546,6 +548,11 @@ function toBool(value, fallback) {
   if (value === true || value === 'true' || value === 1 || value === '1') return true;
   if (value === false || value === 'false' || value === 0 || value === '0') return false;
   return fallback;
+}
+
+function isValidDateTime(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return false;
+  return !Number.isNaN(new Date(value.replace(' ', 'T')).getTime());
 }
 
 /** 封面只允许 http(s) 外链或站内绝对路径，拒绝协议相对/路径穿越 */
