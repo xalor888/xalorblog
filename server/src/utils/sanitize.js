@@ -32,9 +32,12 @@ function safeUrl(input, maxLen = 500) {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
     // 拒绝 URL 内嵌凭据（https://user:pass@host 既是钓鱼样式，也可能被后续抓取滥用）
     if (url.username || url.password) return '';
-    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
     // 主机名黑名单：localhost 及其变体、mDNS 本地域名
-    if (!host || host === 'localhost' || host.endsWith('.local') || host.endsWith('.localhost')) return '';
+    const privateSuffixes = ['.local', '.localhost', '.localdomain', '.internal', '.lan', '.home'];
+    if (!host || host === 'localhost' || privateSuffixes.some((s) => host.endsWith(s))) return '';
+    const rebindDomains = ['localtest.me', 'lvh.me', 'nip.io', 'sslip.io'];
+    if (rebindDomains.some((d) => host === d || host.endsWith('.' + d))) return '';
     // IPv6 字面量：不做解析级校验，直接拒绝（保留/链路本地地址无法廉价区分）
     if (host.includes(':')) return '';
     // 纯数字/十六进制 IP 简写（2130706433、0x7f000001、127.1）可能解析到回环地址
