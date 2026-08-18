@@ -20,7 +20,7 @@ restart_server() {
   done
   echo "服务启动超时"; tail -5 /tmp/blog-server.log; return 1
 }
-SUITES="${@:-admin.test.js 2fa.test.js session.test.js lockout.test.js journey.test.js waf.test.js requestGuard.test.js likeGuard.test.js security.test.js}"
+SUITES="${@:-admin.test.js 2fa.test.js session.test.js lockout.test.js journey.test.js waf.test.js requestGuard.test.js likeGuard.test.js sanitize.test.js security.test.js}"
 PASS=0; FAIL=0; FAILED=""
 for s in $SUITES; do
   reset_db
