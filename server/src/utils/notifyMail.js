@@ -33,7 +33,7 @@ function enabled() {
 
 /** 校验收件人邮箱格式（防 SMTP 命令注入到 RCPT TO） */
 function validRecipient(to) {
-  return typeof to === 'string' && /^[^\s@<>]{1,64}@[^\s@<>]{1,255}$/.test(to);
+  return typeof to === 'string' && /^[^\s@<>]{1,64}@[^\s@<>]+\.[^\s@<>]{2,}$/.test(to);
 }
 
 /** SMTP 协议清洗：剥离 CR/LF，防评论/留言内容注入 SMTP 命令或伪造邮件 */

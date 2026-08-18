@@ -171,6 +171,9 @@ router.post('/articles', async (req, res) => {
     const cleanContent = cleanText(content, 100000);
     if (!cleanTitle) return fail(res, '标题不能为空');
     if (!cleanContent) return fail(res, '正文不能为空');
+    const cleanStatus = status === 'published' ? 'published' : 'draft';
+    const cleanIsTop = toBool(is_top, false);
+    const cleanAllowComment = toBool(allow_comment, true);
 
     // 边界场景：引用的分类已被删除（如另一管理员同时操作）→ 明确拒绝而非写入孤儿 ID
     if (category_id) {
@@ -179,7 +182,7 @@ router.post('/articles', async (req, res) => {
     }
 
     const slug = slugify(req.body.slug || cleanTitle, await db('articles').pluck('slug'));
-    const published_at = status === 'published' ? localDateTimeStr() : null;
+    const published_at = cleanStatus === 'published' ? localDateTimeStr() : null;
 
     // 事务：文章正文与标签关联原子落库（标签中途失败整体回滚，杜绝半成品文章）
     const trx = await db.transaction();
@@ -189,7 +192,7 @@ router.post('/articles', async (req, res) => {
         title: cleanTitle, slug, content: cleanContent,
         summary: cleanText(summary || cleanContent.replace(/[#>*_`~\-\[\]()!]/g, '').slice(0, 150), 500),
         cover: safeCover(cover), category_id: category_id || null,
-        status, is_top: !!is_top, allow_comment: allow_comment !== false,
+        status: cleanStatus, is_top: cleanIsTop, allow_comment: cleanAllowComment,
         published_at,
       });
 
@@ -242,15 +245,18 @@ router.put('/articles/:id', async (req, res) => {
       }
       patch.category_id = category_id || null;
     }
-    if (is_top !== undefined) patch.is_top = !!is_top;
-    if (allow_comment !== undefined) patch.allow_comment = !!allow_comment;
+    if (is_top !== undefined) patch.is_top = toBool(is_top, row.is_top);
+    if (allow_comment !== undefined) patch.allow_comment = toBool(allow_comment, row.allow_comment);
     if (slug) {
       patch.slug = slugify(slug, (await db('articles').whereNot('id', id).pluck('slug')));
     }
-    if (status !== undefined && status !== row.status) {
-      patch.status = status;
-      if (status === 'published' && !row.published_at) {
-        patch.published_at = localDateTimeStr();
+    if (status !== undefined) {
+      if (!['draft', 'published'].includes(status)) return fail(res, '非法状态', 400);
+      if (status !== row.status) {
+        patch.status = status;
+        if (status === 'published' && !row.published_at) {
+          patch.published_at = localDateTimeStr();
+        }
       }
     }
     // 手动调整发布时间（补发旧文/时间线归档）：严格格式校验
@@ -533,6 +539,13 @@ router.post('/articles/admin/import', async (req, res) => {
  * 经 CSS 变量注入额外声明 —— 管理员虽为信任方，纵深仍应收紧） */
 function validHexColor(color) {
   return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : '#e4573d';
+}
+
+/** 布尔值归一化：兼容 true/'true'/1/'1'，非法值回退默认 */
+function toBool(value, fallback) {
+  if (value === true || value === 'true' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  return fallback;
 }
 
 /** 封面只允许 http(s) 外链或站内绝对路径，拒绝协议相对/路径穿越 */

@@ -356,6 +356,15 @@ const crawlerVerifyCache = new Map(); // ip -> { ok, ts }
 const CRAWLER_CACHE_TTL = 60 * 60 * 1000;
 const CRAWLER_MAX = 5000;
 
+/** 反向 DNS 查询加 3 秒超时，防止不可达 DNS 拖住闸门请求 */
+function reverseDnsWithTimeout(ip) {
+  const timeout = new Promise((_, reject) => {
+    const t = setTimeout(() => reject(new Error('dns timeout')), 3000);
+    if (t.unref) t.unref();
+  });
+  return Promise.race([dns.reverse(ip), timeout]);
+}
+
 // UA 关键词 → 期望的 PTR 域关键词（bytespider 为字节跳动爬虫，PTR 归属 bytedance.com）
 const CRAWLER_DOMAINS = [
   ['googlebot', 'google'],
@@ -385,13 +394,18 @@ async function verifyCrawlerIp(ip, ua) {
     return { ok: cached.ok, checked: true, cached: true };
   }
   try {
-    const hostnames = await dns.reverse(ip);
+    const hostnames = await reverseDnsWithTimeout(ip);
     const ok = hostnames.some((h) => h.toLowerCase().includes(domain));
     crawlerVerifyCache.set(ip, { ok, ts: Date.now() });
     if (crawlerVerifyCache.size > CRAWLER_MAX) {
       const now = Date.now();
       for (const [k, v] of crawlerVerifyCache) {
         if (now - v.ts > CRAWLER_CACHE_TTL) crawlerVerifyCache.delete(k);
+      }
+      while (crawlerVerifyCache.size > CRAWLER_MAX * 0.75) {
+        const oldest = crawlerVerifyCache.keys().next().value;
+        if (oldest === undefined) break;
+        crawlerVerifyCache.delete(oldest);
       }
     }
     return { ok, checked: true };
