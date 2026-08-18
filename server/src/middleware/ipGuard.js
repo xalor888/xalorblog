@@ -19,6 +19,8 @@ const SPAM_WEIGHT = 1;            // 一次垃圾提交
 const BASE_BAN_MS = 15 * 60 * 1000; // 首次封禁 15 分钟
 const DECAY_MS = 30 * 60 * 1000;  // 积分每 30 分钟衰减一半
 const MAX_BAN_MS = 24 * 3600 * 1000; // 最长封禁 24 小时
+const REPUTATION_MAX = 50000;      // 信誉表硬上限
+const REPUTATION_FLOOR = 40000;    // 超限时回落到该水位
 
 /** ip -> { score, updatedAt, strikes, banUntil, banCount } */
 const records = new Map();
@@ -28,6 +30,23 @@ const EVENTS_MAX = 300;
 
 let lastClean = Date.now();
 let dbLoaded = false;
+
+/** 超限时清理未封禁的低价值记录；正在封禁的记录不丢 */
+function pruneReputation(currentIp) {
+  const now = Date.now();
+  for (const [ip, rec] of records) {
+    if (ip === currentIp) continue;
+    if (rec.banUntil && rec.banUntil > now) continue;
+    if (rec.score <= 0) records.delete(ip);
+    if (records.size <= REPUTATION_FLOOR) return;
+  }
+  for (const [ip, rec] of records) {
+    if (ip === currentIp) continue;
+    if (rec.banUntil && rec.banUntil > now) continue;
+    records.delete(ip);
+    if (records.size <= REPUTATION_FLOOR) return;
+  }
+}
 
 function decay() {
   const now = Date.now();
@@ -140,6 +159,7 @@ function report(ip, type, path = '') {
   if (!rec) {
     rec = { score: 0, updatedAt: now, strikes: 0, banUntil: 0, banCount: 0 };
     records.set(ip, rec);
+    if (records.size > REPUTATION_MAX) pruneReputation(ip);
   }
   // 封禁期内的重复上报仅延长事件记录，不叠加
   if (now < rec.banUntil) {
