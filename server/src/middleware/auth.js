@@ -46,11 +46,8 @@ async function signToken(user, req) {
 
   // 写会话表（表缺失时跳过，不影响登录）
   try {
-    const expMs = Date.now() + (typeof expiresIn === 'string'
-      ? (expiresIn.endsWith('d') ? Number(expiresIn.slice(0, -1)) * 86400e3
-        : expiresIn.endsWith('h') ? Number(expiresIn.slice(0, -1)) * 3600e3
-        : Number(expiresIn.slice(0, -1)) * 60e3)
-      : 7200e3);
+    const decoded = jwt.decode(token);
+    const expMs = decoded && decoded.exp ? decoded.exp * 1000 : Date.now() + 7200e3;
     await db('sessions').insert({
       jti,
       user_id: user.id,
