@@ -1,4 +1,5 @@
 const db = require('../db');
+const { safeUrl } = require('./sanitize');
 
 const DEFAULT_SETTINGS = {
   site_name: 'Xalor的小站',
@@ -62,7 +63,10 @@ async function saveSettings(entries) {
     // 展示链路（<a href> / <img src> / OG 分享图 / RSS 链接）
     if (key === 'site_url' && value && !/^https?:\/\/[^\s]+$/i.test(raw)) continue;
     // avatar 允许站内相对路径（/logo.png、/uploads/...），其余必须 http(s)
-    if (key === 'avatar' && value && !/^https?:\/\/[^\s]+$/i.test(raw) && !raw.startsWith('/')) continue;
+    if (key === 'avatar' && value) {
+      const isSitePath = raw.startsWith('/') && !raw.startsWith('//');
+      if (!isSitePath && !safeUrl(raw, 500)) continue;
+    }
     if ((key === 'social_github' || key === 'social_weibo') && value && !/^https?:\/\/[^\s]+$/i.test(raw)) continue;
     // 联系邮箱用于 security.txt / mailto 链接，拒绝空格/换行/角括号等异常值
     if (key === 'social_email' && value && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(raw)) continue;
