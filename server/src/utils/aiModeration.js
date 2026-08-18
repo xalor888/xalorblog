@@ -132,12 +132,18 @@ function localModeration(content, nickname = '', website = '') {
 const LLM_RATE_MAX = 30;          // 每分钟最多 30 次 LLM 调用
 const LLM_RATE_WINDOW = 60 * 1000;
 let llmCalls = [];
-function llmRateAvailable() {
+function llmReserve() {
   const now = Date.now();
-  llmCalls = llmCalls.filter((t) => now - t < LLM_RATE_WINDOW);
-  if (llmCalls.length >= LLM_RATE_MAX) return false;
-  llmCalls.push(now);
-  return true;
+  llmCalls = llmCalls.filter((t) => now - t.ts < LLM_RATE_WINDOW);
+  if (llmCalls.length >= LLM_RATE_MAX) return null;
+  const token = { ts: now };
+  llmCalls.push(token);
+  return token;
+}
+
+function llmRelease(token) {
+  const idx = llmCalls.indexOf(token);
+  if (idx >= 0) llmCalls.splice(idx, 1);
 }
 
 /** LLM 二判（可选）：本地判为中风险时调用，返回 'APPROVED' | 'PENDING' | 'REJECTED' 或 null（失败/未配置/超限） */
@@ -147,7 +153,8 @@ async function llmModeration(text) {
   // baseUrl 协议校验：仅 https（防内容经 http 明文传输、防误配内网地址成为 SSRF 链）
   if (!/^https:\/\//i.test(String(ai.baseUrl || ''))) return null;
   // 令牌桶：超限降级 pending（fail-closed），防成本/配额耗尽
-  if (!llmRateAvailable()) return null;
+  const quota = llmReserve();
+  if (!quota) return null;
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
@@ -177,14 +184,14 @@ async function llmModeration(text) {
     });
     clearTimeout(timer);
     if (!res.ok) {
-      llmCalls.pop(); // 服务端故障：退还令牌，不消耗配额
+      llmRelease(quota); // 服务端故障：退还令牌，不消耗配额
       return null;
     }
     // 响应体大小限制：流式读取上限 4KB（防异常 API 返回超大 body 耗尽内存）
     const MAX_BODY = 4096;
     const reader = res.body?.getReader();
     if (!reader) {
-      llmCalls.pop(); // 无法读取响应体：退还令牌
+      llmRelease(quota); // 无法读取响应体：退还令牌
       return null;
     }
     let size = 0;
@@ -196,7 +203,7 @@ async function llmModeration(text) {
       size += value.length;
       if (size > MAX_BODY) {
         await reader.cancel();
-        llmCalls.pop(); // 异常超大响应：退还令牌
+        llmRelease(quota); // 异常超大响应：退还令牌
         return null;
       }
     }
@@ -204,7 +211,7 @@ async function llmModeration(text) {
     try {
       data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     } catch (e) {
-      llmCalls.pop(); // 响应不是合法 JSON：退还令牌
+      llmRelease(quota); // 响应不是合法 JSON：退还令牌
       return null;
     }
     // 严格输出解析：仅精确匹配单个判定词（剥离空白/标点），
@@ -217,7 +224,7 @@ async function llmModeration(text) {
     if (answer === 'APPROVED') return 'APPROVED';
     return 'PENDING'; // 解析异常：保守待审
   } catch (e) {
-    llmCalls.pop(); // 超时/网络故障：退还令牌
+    llmRelease(quota); // 超时/网络故障：退还令牌
     return null; // LLM 不可用/超时：静默降级为本地判定
   }
 }
