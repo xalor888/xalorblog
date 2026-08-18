@@ -99,7 +99,7 @@ function trackFpIp(fp, ip) {
     fpIpTracker.set(fp, rec);
   }
   const before = rec.ips.size;
-  rec.ips.add(ip);
+  if (before < FP_IP_THRESHOLD) rec.ips.add(ip);
   if (fpIpTracker.size > FP_IP_MAX) {
     for (const [k, v] of fpIpTracker) {
       if (now - v.windowStart > FP_IP_WINDOW) fpIpTracker.delete(k);
