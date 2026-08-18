@@ -357,6 +357,7 @@ function trackUaRotation(ip, ua) {
   // 仅对"声明是浏览器"的 UA 计数（爬虫 UA 已被独立机制拦截，不重复计）
   const lower = ua.toLowerCase();
   if (!/(mozilla|chrome|safari|edge|firefox|opera)/.test(lower)) return false;
+  const before = rec.uas.size;
   if (rec.uas.size < UA_DIFF_THRESHOLD) rec.uas.add(ua.slice(0, 200));
   if (uaTracker.size > 3000) {
     for (const [k, v] of uaTracker) {
