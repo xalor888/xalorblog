@@ -508,7 +508,11 @@ router.post('/articles/admin/import', async (req, res) => {
         });
         // 标签：按名称查找或创建
         const tagNames = Array.isArray(it.tags)
-          ? [...new Set(it.tags.map((t) => cleanLine(String((t && t.name) || t), 50)).filter(Boolean))]
+          ? [...new Set(it.tags.map((t) => {
+              if (t == null) return '';
+              const raw = typeof t === 'object' ? t.name : t;
+              return cleanLine(raw, 50);
+            }).filter(Boolean))]
           : [];
         const tagIds = [];
         for (const tn of tagNames) {
