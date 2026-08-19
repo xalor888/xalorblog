@@ -62,7 +62,7 @@ module.exports = {
     .filter(Boolean),
   // CORS 允许的来源：默认本地开发端口；生产部署可用 CORS_ORIGINS 显式指定
   // （逗号分隔；与 ALLOWED_HOSTS 独立，两者各司其职：Host 校验防投毒，CORS 放行浏览器跨域）
-  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173')
+  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://[::1]:5173,http://localhost:4173,http://127.0.0.1:4173,http://[::1]:4173')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
