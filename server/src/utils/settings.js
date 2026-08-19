@@ -45,9 +45,15 @@ async function getAllSettings() {
   const map = {};
   for (const r of rows) {
     try {
-      map[r.key] = JSON.parse(r.value);
+      let v = JSON.parse(r.value);
+      if (BOOL_KEYS.has(r.key)) {
+        v = v === true || v === 'true' || v === 1 || v === '1';
+      } else if (typeof v !== 'string') {
+        v = String(v ?? '').slice(0, 5000);
+      }
+      map[r.key] = v;
     } catch (e) {
-      map[r.key] = r.value;
+      map[r.key] = BOOL_KEYS.has(r.key) ? false : String(r.value ?? '').slice(0, 5000);
     }
   }
   settingsCache = { ...DEFAULT_SETTINGS, ...map };
