@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { getAllSettings } = require('../utils/settings');
 const { plainText } = require('../utils/markdownText');
+const sanitizeHtml = require('sanitize-html');
 
 const router = express.Router();
 
@@ -150,6 +151,17 @@ function mdToHtml(md = '', siteUrl = '') {
 }
 
 /** robots.txt 内容生成 */
+const RSS_HTML_OPTIONS = {
+  allowedTags: ['h1', 'h2', 'h3', 'h4', 'p', 'ul', 'ol', 'li', 'pre', 'code', 'strong', 'em', 'a', 'img', 'br', 'hr', 'blockquote'],
+  allowedAttributes: { a: ['href'], img: ['src', 'alt'] },
+  allowedSchemes: ['http', 'https'],
+};
+
+/** 清洗 RSS 全文 HTML：剔除正文中残留的裸脚本与事件属性 */
+function sanitizeRssHtml(html) {
+  return sanitizeHtml(html, RSS_HTML_OPTIONS);
+}
+
 async function robotsTxt(req) {
   const siteUrl = await baseSiteUrl(req);
   return `# Xalor的小站 robots.txt
@@ -199,8 +211,8 @@ router.get('/rss.xml', async (req, res) => {
       const items = articles
         .map((a) => {
           const desc = esc(a.summary || plainText(a.content).slice(0, 300));
-          // 全文：mdToHtml 内部已做 XML 转义 + URL 绝对化，直接进 CDATA
-          const full = mdToHtml(a.content, siteUrl);
+          // 全文：mdToHtml 做 XML 转义 + URL 绝对化，sanitizeRssHtml 再做白名单清洗
+          const full = sanitizeRssHtml(mdToHtml(a.content, siteUrl));
           const link = `${esc(siteUrl)}/api/share/${a.slug}`;
           const pubDate = toRfc822(a.published_at);
           const cats = (tagsByArticle[a.id] || [])
@@ -310,3 +322,5 @@ ${postUrls}
 
 module.exports = router;
 module.exports.robotsTxt = robotsTxt;
+module.exports.sanitizeRssHtml = sanitizeRssHtml;
+module.exports.mdToHtml = mdToHtml;

@@ -25,7 +25,7 @@ function run(cmd) {
 async function main() {
   // 1. 清空封禁表 + 重置 TOTP 状态（内存封禁随重启消失；DB 持久化封禁在此清除；
   //    2FA 测试异常中断会残留 totp_enabled，导致后续登录全部需要验证码）
-  run(`"${MYSQL}" -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip = '::1'; DELETE FROM messages WHERE ip = '::1';"`);
+  run(`"${MYSQL}" -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1'); DELETE FROM messages WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1');"`);
 
   // 2. 重启服务（内存封禁权威）
   if (!process.env.TEST_NO_RESTART) {
@@ -76,12 +76,12 @@ async function runTests() {
   // 传参可指定单个文件：node test/run.js security.test.js
   const suites = process.argv[2]
     ? [process.argv[2]]
-    : ['admin.test.js', '2fa.test.js', 'session.test.js', 'lockout.test.js', 'journey.test.js', 'waf.test.js', 'requestGuard.test.js', 'likeGuard.test.js', 'sanitize.test.js', 'security.test.js'];
+    : ['admin.test.js', '2fa.test.js', 'session.test.js', 'lockout.test.js', 'journey.test.js', 'waf.test.js', 'requestGuard.test.js', 'likeGuard.test.js', 'sanitize.test.js', 'feed.test.js', 'security.test.js'];
   for (const s of suites) {
     // 套件间重启服务：隔离信誉积分/限流窗口/票据内存状态
     // （2fa/lockout 套件会留下认证失败积分与持久化封禁，不隔离会污染后续套件）
     console.log(`[run] 重置环境（清库 + 重启服务）…`);
-    run(`"${MYSQL}" -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip = '::1'; DELETE FROM messages WHERE ip = '::1';"`);
+    run(`"${MYSQL}" -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1'); DELETE FROM messages WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1');"`);
     restartServer();
     await waitServer();
     console.log(`\n========== 运行 ${s} ==========`);
