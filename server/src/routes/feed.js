@@ -101,6 +101,7 @@ function channelImageFor(avatar, siteUrl, siteName) {
 /** 仅允许 http(s)/站内/相对 URL（RSS 输出中的 img/link 防 javascript:/data: 注入） */
 function safeRssUrl(url) {
   const u = String(url || '').trim();
+  if (u.startsWith('//')) return ''; // 拒绝协议相对外链
   return /^(https?:\/\/|\/|\.\/|\.\.\/)/i.test(u) ? u : '';
 }
 

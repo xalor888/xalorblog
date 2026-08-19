@@ -1,4 +1,4 @@
-const { sanitizeRssHtml } = require('../src/routes/feed');
+const { sanitizeRssHtml, mdToHtml } = require('../src/routes/feed');
 
 let passed = 0;
 let failed = 0;
@@ -26,6 +26,9 @@ assert('事件属性被移除', !/onerror/i.test(out));
 assert('javascript 链接被移除', !/javascript:/i.test(out));
 assert('iframe 被移除', !/iframe/i.test(out));
 assert('正常链接保留', /href="https:\/\/example\.com"/.test(out));
+
+const protoRelative = sanitizeRssHtml(mdToHtml('[bad](//evil.example)', 'https://site.example'));
+assert('协议相对链接被移除', !/evil\.example/.test(protoRelative));
 
 console.log(`feed 套件结果: ${passed} 通过, ${failed} 失败`);
 if (failed) {
