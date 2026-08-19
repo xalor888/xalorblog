@@ -68,7 +68,12 @@ async function saveSettings(entries) {
     const raw = String(value ?? '');
     // URL 字段协议校验（纵深）：防止 javascript:/data: 等注入型值进入
     // 展示链路（<a href> / <img src> / OG 分享图 / RSS 链接）
-    if (key === 'site_url' && value && !/^https?:\/\/[^\s]+$/i.test(raw)) continue;
+    if (key === 'site_url' && value) {
+      const parsed = safeUrl(raw, 500);
+      if (!parsed) continue;
+      const u = new URL(parsed);
+      if (u.search || u.hash) continue;
+    }
     // avatar 允许站内相对路径（/logo.png、/uploads/...），其余必须 http(s)
     if (key === 'avatar' && value) {
       const isSitePath = raw.startsWith('/') && !raw.startsWith('//');
