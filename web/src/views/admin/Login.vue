@@ -86,17 +86,20 @@ const route = useRoute();
 const auth = useAuthStore();
 
 // 已登录用户访问登录页 → 直达仪表盘（免重复登录；token 有效性由服务端校验兜底）
-if (localStorage.getItem('xalor_token')) {
+const safeGet = (k) => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+const safeSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } };
+const safeRemove = (k) => { try { localStorage.removeItem(k); } catch (e) { /* 隐私模式忽略 */ } };
+if (safeGet('xalor_token')) {
   getAdminPath().then((key) => {
     if (key) router.replace(`/${key}/dashboard`);
   }).catch(() => {});
 }
 
-const form = ref({ username: localStorage.getItem('xalor_remember_user') || '', password: '', totp_code: '' });
+const form = ref({ username: safeGet('xalor_remember_user'), password: '', totp_code: '' });
 const showPass = ref(false);
 const loading = ref(false);
 const needTotp = ref(false);
-const remember = ref(!!localStorage.getItem('xalor_remember_user'));
+const remember = ref(!!safeGet('xalor_remember_user'));
 
 // 2FA 输入框出现时自动聚焦（验证器复制动态码即可输入，免手动点击）
 watch(needTotp, (v) => {
@@ -128,9 +131,9 @@ async function submit() {
     });
     // 记住用户名（下次登录自动填充）
     if (remember.value) {
-      localStorage.setItem('xalor_remember_user', form.value.username.trim());
+      safeSet('xalor_remember_user', form.value.username.trim());
     } else {
-      localStorage.removeItem('xalor_remember_user');
+      safeRemove('xalor_remember_user');
     }
     if (data.is_default_pwd) {
       ElMessage.warning('当前仍在使用初始密码 admin123，请尽快修改！');
