@@ -116,7 +116,14 @@ app.use((req, res, next) => {
 // Host 头校验：防 Host 头注入 / 缓存投毒
 app.use((req, res, next) => {
   const host = req.headers.host || '';
-  const hostname = host.split(':')[0].toLowerCase();
+  let hostname = String(host).toLowerCase();
+  if (hostname.startsWith('[')) {
+    const end = hostname.indexOf(']');
+    hostname = end > 0 ? hostname.slice(1, end) : hostname;
+  } else {
+    hostname = hostname.split(':')[0];
+  }
+  hostname = hostname.replace(/\.+$/, '');
   if (!config.allowedHosts.includes(hostname)) {
     report(req.ip, 'waf', 'HOST 头不合法');
     return res.status(403).json({ code: 1, message: '访问被拒绝' });
