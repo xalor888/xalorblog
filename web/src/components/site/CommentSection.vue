@@ -25,7 +25,7 @@
       <div class="form-row">
         <input v-model="form.nickname" class="form-input" placeholder="昵称 *" maxlength="50" autocomplete="nickname" aria-label="昵称"
           @keydown.enter.prevent="onFieldEnter" />
-        <input v-model="form.email" class="form-input" type="email" placeholder="邮箱（用于 Gravatar 头像）" maxlength="100" autocomplete="email" aria-label="邮箱"
+        <input v-model="form.email" class="form-input" type="email" placeholder="邮箱（仅用于回复通知，不公开）" maxlength="100" autocomplete="email" aria-label="邮箱"
           @keydown.enter.prevent="onFieldEnter" />
       </div>
       <input v-model="form.website" class="form-input" placeholder="网站 / 博客（可选）" maxlength="200" autocomplete="url" aria-label="网站"
@@ -118,6 +118,7 @@ import EmojiPicker from '@/components/ui/EmojiPicker.vue';
 import CommentItem from './CommentItem.vue';
 import { commentApi } from '@/api';
 import { getFormTokenInfo, refreshFormToken, getHpField } from '@/utils/formToken';
+import { readSessionValue, writeSessionValue } from '@/utils/secureStorage';
 
 const props = defineProps({
   articleId: { type: Number, required: true },
@@ -142,13 +143,13 @@ function setSort(order) {
   localStorage.setItem('xalor_csort', order);
   load();
 }
-// 访客信息本地记忆（仅本机存储，避免每次重复输入）
+// 昵称可长期记忆；邮箱只保留在当前标签页，旧 localStorage 值会迁移并清理。
 let savedName = '';
 let savedEmail = '';
 try {
   savedName = localStorage.getItem('xalor_cname') || '';
-  savedEmail = localStorage.getItem('xalor_cemail') || '';
 } catch (e) { /* 隐私模式忽略 */ }
+savedEmail = readSessionValue('xalor_cemail');
 const form = ref({ nickname: savedName, email: savedEmail, website: '', content: '' });
 const formTextarea = ref(null);
 const hpField = ref(getHpField('/comments'));
@@ -325,11 +326,11 @@ async function submit() {
     );
     // 审核开关打开时：提示"等待审核"而非"成功"（内容暂不显示）
     ElMessage.success(created?.moderated ? '评论已提交，等待审核后展示' : '评论成功');
-    // 记忆昵称/邮箱（下次自动预填）
+    // 昵称长期记忆；邮箱仅在当前标签页内自动预填。
     try {
       if (form.value.nickname.trim()) localStorage.setItem('xalor_cname', form.value.nickname.trim().slice(0, 50));
-      if (form.value.email.trim()) localStorage.setItem('xalor_cemail', form.value.email.trim().slice(0, 100));
     } catch (e) { /* 隐私模式忽略 */ }
+    writeSessionValue('xalor_cemail', form.value.email.trim().slice(0, 100));
     form.value.content = '';
     clearDraft(); // 提交成功，清除本地草稿
     if (!replyingTo.value) {

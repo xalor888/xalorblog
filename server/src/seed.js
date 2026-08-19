@@ -8,17 +8,19 @@ const config = require('./config');
 const { DEFAULT_SETTINGS } = require('./utils/settings');
 const { localDateStr, localDateTimeStr } = require('./utils/datetime');
 
-// 初始管理员密码：优先取环境变量（生产部署必须显式设置强密码）。
-// admin123 仅用于本地演示且公开于文档 —— 生产环境若忘记设置 SEED_ADMIN_PASSWORD，
-// 初始管理员即弱凭据（攻击者直接尝试 admin/admin123 即可入侵后台）
-const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || 'admin123';
+// 公开测试凭据仅允许 NODE_ENV=test 使用。其他所有环境（包括漏配 NODE_ENV）
+// 都必须显式提供强 SEED_ADMIN_PASSWORD，避免把“开发模式”误部署到公网。
+const TEST_ADMIN_PASSWORD = 'admin123';
+const isTestEnvironment = process.env.NODE_ENV === 'test';
+const configuredAdminPassword = String(process.env.SEED_ADMIN_PASSWORD || '');
+const ADMIN_PASSWORD = configuredAdminPassword || (isTestEnvironment ? TEST_ADMIN_PASSWORD : '');
 const isWeakSeedPassword =
   ADMIN_PASSWORD.length < 12 ||
   /^\d+$/.test(ADMIN_PASSWORD) ||
   /^[a-zA-Z]+$/.test(ADMIN_PASSWORD) ||
   ['admin123', '12345678', 'password', 'password1', 'passw0rd'].includes(ADMIN_PASSWORD.toLowerCase());
-if (config.isProd && (!process.env.SEED_ADMIN_PASSWORD || isWeakSeedPassword)) {
-  console.error('[seed] ✗ 生产环境必须设置强 SEED_ADMIN_PASSWORD（≥12 位，且不能纯数字/纯字母/常见弱密码）');
+if (!isTestEnvironment && (!configuredAdminPassword || isWeakSeedPassword)) {
+  console.error('[seed] ✗ 除 NODE_ENV=test 外，必须设置强 SEED_ADMIN_PASSWORD（≥12 位，且不能纯数字/纯字母/常见弱密码）');
   process.exit(1);
 }
 
@@ -327,18 +329,32 @@ async function seed() {
   console.log('开始写入种子数据...');
 
   // 用户
-  const userCount = await db('users').count('* as cnt').first();
-  if (Number(userCount.cnt) === 0) {
+  let adminPasswordChanged = false;
+  const existingAdmin = await db('users').where('username', 'admin').first();
+  if (!existingAdmin) {
     const hash = await bcrypt.hash(ADMIN_PASSWORD, 12);
     await db('users').insert({ username: 'admin', password: hash, nickname: 'Xalor', role: 'admin' });
-    // 生产模式不打印密码明文（日志可能被采集归档）
-    if (process.env.NODE_ENV === 'production') {
-      console.log('[seed] 管理员已创建: admin（密码已通过 SEED_ADMIN_PASSWORD 环境变量设置）');
-    } else {
-      console.log(`[seed] 管理员已创建: admin / ${ADMIN_PASSWORD}`);
-    }
+    adminPasswordChanged = true;
+    console.log('[seed] 管理员已创建: admin（密码未写入日志）');
   } else {
-    console.log('[seed] 用户已存在，跳过');
+    const usesPublicTestPassword = await bcrypt.compare(TEST_ADMIN_PASSWORD, existingAdmin.password);
+    if (!isTestEnvironment && usesPublicTestPassword) {
+      const hash = await bcrypt.hash(ADMIN_PASSWORD, 12);
+      // 改密与撤销历史会话必须原子完成；缺少 sessions 表时先迁移并安全失败，
+      // 不能留下“密码已换但旧 JWT 仍有效”的窗口。
+      const sessionsReady = await db.schema.hasTable('sessions');
+      if (!sessionsReady) {
+        throw new Error('检测到默认管理员密码，但 sessions 表不存在；请先执行 npm run migrate 后重试 seed');
+      }
+      await db.transaction(async (trx) => {
+        await trx('users').where('id', existingAdmin.id).update({ password: hash });
+        await trx('sessions').where('user_id', existingAdmin.id).update({ revoked: true });
+      });
+      adminPasswordChanged = true;
+      console.log('[seed] 已替换公开的默认管理员密码并撤销全部旧会话（新密码未写入日志）');
+    } else {
+      console.log('[seed] 管理员已存在，跳过');
+    }
   }
 
   // 分类
@@ -480,17 +496,14 @@ async function seed() {
   console.log('[seed] 访问统计就绪');
 
   console.log('\n✅ 种子数据全部完成！');
-  // 生产模式不打印密码明文（日志可能被采集归档）
-  if (process.env.NODE_ENV === 'production') {
+  if (adminPasswordChanged && !isTestEnvironment) {
     console.log('   后台登录: admin（密码为 SEED_ADMIN_PASSWORD 设置值）');
+  } else if (adminPasswordChanged) {
+    console.log('   后台登录: admin（测试密码未写入日志）');
   } else {
-    console.log(`   后台登录: admin / ${ADMIN_PASSWORD}`);
+    console.log('   后台账号: admin（现有密码未被修改）');
   }
-  const config = require('./config');
   console.log(`   后台地址: /#/${config.adminPath}（秘钥路径，也可点击站点右上角 ⚙️ 进入）`);
-  if (ADMIN_PASSWORD === 'admin123') {
-    console.log('   ⚠ 请尽快修改默认密码，并建议开启两步验证！');
-  }
 }
 
 // 仅直接运行时执行（npm run seed）；被其他模块 require 时不触发

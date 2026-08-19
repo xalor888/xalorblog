@@ -1,7 +1,10 @@
 # ============ 密钥与配置（严禁入库） ============
 # JWT_SECRET / DB_PASSWORD / SMTP 凭据
-server/.env
+.env
+.env.*
+!**/.env.example
 *.env.local
+*.env.*.local
 
 # ============ 运行时数据 ============
 # 用户上传（可能含隐私图片）

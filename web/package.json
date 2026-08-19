@@ -1,6 +1,7 @@
 {
   "name": "xalor-blog-web",
   "version": "1.0.0",
+  "private": true,
   "description": "Xalor的小站 - 博客前端",
   "type": "module",
   "scripts": {

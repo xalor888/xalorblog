@@ -80,6 +80,7 @@ import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { useAuthStore } from '@/stores/auth';
 import { getAdminPath } from '@/utils/adminPath';
+import { getAuthToken } from '@/utils/authSession';
 
 const router = useRouter();
 const route = useRoute();
@@ -89,7 +90,7 @@ const auth = useAuthStore();
 const safeGet = (k) => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
 const safeSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } };
 const safeRemove = (k) => { try { localStorage.removeItem(k); } catch (e) { /* 隐私模式忽略 */ } };
-if (safeGet('xalor_token')) {
+if (getAuthToken()) {
   getAdminPath().then((key) => {
     if (key) router.replace(`/${key}/dashboard`);
   }).catch(() => {});

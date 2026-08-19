@@ -279,6 +279,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { settingsApi, uploadApi, authApi } from '@/api';
@@ -286,8 +287,12 @@ import { renderMarkdown } from '@/utils/markdown';
 import { getCachedAdminPath, getAdminPath } from '@/utils/adminPath';
 import { getTicket, ensurePass } from '@/utils/pass';
 import { getFingerprint } from '@/utils/fingerprint';
+import { getAuthToken } from '@/utils/authSession';
+import { useAuthStore } from '@/stores/auth';
 import { useSiteStore } from '@/stores/site';
 
+const router = useRouter();
+const auth = useAuthStore();
 const form = ref({});
 const saving = ref(false);
 const uploading = ref(false);
@@ -302,6 +307,17 @@ const twoFaSecret = ref('');
 const setupCode = ref('');
 const disableCode = ref('');
 const twoFaLoading = ref(false);
+
+/**
+ * 改密或变更两步验证后，服务端会立即撤销当前令牌。
+ * 此处只清理本地状态并回到实例对应的动态登录路径，不重复发送 logout。
+ */
+async function requireFreshLogin(message) {
+  const key = getCachedAdminPath() || await getAdminPath();
+  auth.clearSession();
+  ElMessage.success(`${message}，请重新登录`);
+  await router.replace(key ? `/${key}/login` : '/');
+}
 
 const aboutHtml = computed(() => renderMarkdown(form.value.about_content || ''));
 
@@ -455,7 +471,7 @@ async function verifyTwoFa() {
     twoFaSetupUri.value = '';
     twoFaSecret.value = '';
     setupCode.value = '';
-    ElMessage.success('两步验证已启用');
+    await requireFreshLogin('两步验证已启用');
   } catch (e) {
     /* 拦截器已提示 */
   } finally {
@@ -471,7 +487,7 @@ async function disableTwoFa() {
     await authApi.twoFaDisable(disableCode.value);
     twoFaEnabled.value = false;
     disableCode.value = '';
-    ElMessage.success('两步验证已关闭');
+    await requireFreshLogin('两步验证已关闭');
   } catch (e) {
     /* 拦截器已提示 */
   } finally {
@@ -522,7 +538,7 @@ async function exportBackup() {
     const key = getCachedAdminPath();
     const resp = await fetch(`/api/${key}/settings/export`, {
       headers: {
-        Authorization: `Bearer ${localStorage.getItem('xalor_token')}`,
+        Authorization: `Bearer ${getAuthToken()}`,
         'X-Pass': getTicket(),
         'X-Fp': await getFingerprint(),
       },
@@ -588,8 +604,8 @@ async function changePassword() {
   pwdLoading.value = true;
   try {
     await authApi.changePassword(pwdForm.value);
-    ElMessage.success('密码修改成功，下次登录请使用新密码');
     pwdForm.value = { oldPassword: '', newPassword: '' };
+    await requireFreshLogin('密码修改成功');
   } catch (e) {
     /* 拦截器已提示 */
   } finally {

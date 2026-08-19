@@ -13,6 +13,7 @@
  */
 
 const crypto = require('crypto');
+const { ipKeyGenerator } = require('express-rate-limit');
 const config = require('../config');
 const { getScore } = require('./ipGuard');
 
@@ -346,68 +347,108 @@ function isSearchBot(ua) {
 }
 
 /**
- * 爬虫 IP 反向 DNS 核验：UA 自称 Googlebot 等主流爬虫时，
- * 必须其来源 IP 的 PTR 记录归属对应搜索引擎（防伪造 UA 批量抓取元数据）
+ * 爬虫 IP FCrDNS 核验：UA 自称 Googlebot 等主流爬虫时，
+ * PTR 必须落在对应官方域，且该主机名的 A/AAAA 必须正向解析回来源 IP。
  * - 校验通过/失败结果缓存 1 小时，避免每请求 DNS 开销
  * - 无法核验的 UA 与 DNS 查询失败一律 fail-closed（拒绝）：安全优先
  */
 const dns = require('dns').promises;
-const crawlerVerifyCache = new Map(); // ip -> { ok, ts }
+const crawlerVerifyCache = new Map(); // bot-family|normalized-ip -> { ok, ts }
 const CRAWLER_CACHE_TTL = 60 * 60 * 1000;
 const CRAWLER_MAX = 5000;
 
-/** 反向 DNS 查询加 3 秒超时，防止不可达 DNS 拖住闸门请求 */
-function reverseDnsWithTimeout(ip) {
-  const timeout = new Promise((_, reject) => {
-    const t = setTimeout(() => reject(new Error('dns timeout')), 3000);
-    if (t.unref) t.unref();
-  });
-  return Promise.race([dns.reverse(ip), timeout]);
+/** IPv4、IPv4-mapped IPv6 和压缩 IPv6 统一为可稳定比较/缓存的形式。 */
+function normalizeIpAddress(ip) {
+  try {
+    return ipKeyGenerator(String(ip || '').trim(), 128).replace(/\/128$/, '').toLowerCase();
+  } catch (e) {
+    return String(ip || '').trim().toLowerCase();
+  }
 }
 
-// UA 关键词 → 期望的 PTR 域关键词（bytespider 为字节跳动爬虫，PTR 归属 bytedance.com）
-const CRAWLER_DOMAINS = [
-  ['googlebot', 'google'],
-  ['bingbot', 'bing'],
-  ['baiduspider', 'baidu'],
-  ['sogou', 'sogou'],
-  ['yandex', 'yandex'],
-  ['duckduckbot', 'duckduckgo'],
-  ['bytespider', 'bytedance'],
-  // 国内爬虫：神马（sm.cn）/ 华为（huawei.com）/ 360（360.cn）
-  ['smider', 'sm.cn'],
-  ['petalbot', 'huawei'],
-  ['360spider', '360'],
+/** DNS 查询加 3 秒超时，防止不可达 DNS 拖住闸门请求。 */
+async function dnsWithTimeout(promise) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('dns timeout')), 3000);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function normalizeHostname(hostname) {
+  return String(hostname || '').trim().toLowerCase().replace(/\.+$/, '');
+}
+
+/** exact 或点边界子域；evil-googlebot.com / googlebot.com.evil 均不会命中。 */
+function hostnameInOfficialDomain(hostname, officialDomain) {
+  const host = normalizeHostname(hostname);
+  const domain = normalizeHostname(officialDomain).replace(/^\.+/, '');
+  return !!host && !!domain && (host === domain || host.endsWith(`.${domain}`));
+}
+
+// 仅纳入存在稳定、可 FCrDNS 核验官方域的爬虫；其余搜索 UA 仍会被识别，
+// 但不会获得免 PoW 白名单资格（fail-closed）。
+const CRAWLER_RULES = [
+  { family: 'googlebot', keyword: 'googlebot', domains: ['googlebot.com', 'google.com'] },
+  { family: 'bingbot', keyword: 'bingbot', domains: ['search.msn.com'] },
+  { family: 'baiduspider', keyword: 'baiduspider', domains: ['baidu.com'] },
+  { family: 'sogou', keyword: 'sogou', domains: ['sogou.com'] },
+  { family: 'yandex', keyword: 'yandex', domains: ['yandex.ru', 'yandex.net', 'yandex.com'] },
+  { family: 'duckduckbot', keyword: 'duckduckbot', domains: ['duckduckgo.com'] },
 ];
+
+function cacheCrawlerResult(key, ok) {
+  crawlerVerifyCache.set(key, { ok, ts: Date.now() });
+  if (crawlerVerifyCache.size <= CRAWLER_MAX) return;
+  const now = Date.now();
+  for (const [k, v] of crawlerVerifyCache) {
+    if (now - v.ts > CRAWLER_CACHE_TTL) crawlerVerifyCache.delete(k);
+  }
+  while (crawlerVerifyCache.size > CRAWLER_MAX * 0.75) {
+    const oldest = crawlerVerifyCache.keys().next().value;
+    if (oldest === undefined) break;
+    crawlerVerifyCache.delete(oldest);
+  }
+}
 
 async function verifyCrawlerIp(ip, ua) {
   const lower = String(ua || '').toLowerCase();
-  const entry = CRAWLER_DOMAINS.find(([kw]) => lower.includes(kw));
+  const rule = CRAWLER_RULES.find((item) => lower.includes(item.keyword));
   // 无法核验归属的爬虫 UA 一律拒绝（fail-closed）：
   // 攻击者最常见的闸门旁路就是随便声明一个爬虫 UA 免 PoW；
   // 真实搜索引擎爬虫（Google/Bing/Baidu 等）全部有可核验的反向 DNS 域名
-  if (!entry) return { ok: false, checked: false };
-  const domain = entry[1];
+  if (!rule) return { ok: false, checked: false };
+  const normalizedIp = normalizeIpAddress(ip);
+  const cacheKey = `${rule.family}|${normalizedIp}`;
 
-  const cached = crawlerVerifyCache.get(ip);
+  const cached = crawlerVerifyCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CRAWLER_CACHE_TTL) {
     return { ok: cached.ok, checked: true, cached: true };
   }
   try {
-    const hostnames = await reverseDnsWithTimeout(ip);
-    const ok = hostnames.some((h) => h.toLowerCase().includes(domain));
-    crawlerVerifyCache.set(ip, { ok, ts: Date.now() });
-    if (crawlerVerifyCache.size > CRAWLER_MAX) {
-      const now = Date.now();
-      for (const [k, v] of crawlerVerifyCache) {
-        if (now - v.ts > CRAWLER_CACHE_TTL) crawlerVerifyCache.delete(k);
+    const hostnames = await dnsWithTimeout(dns.reverse(normalizedIp));
+    const officialHosts = hostnames
+      .map(normalizeHostname)
+      .filter((host) => rule.domains.some((domain) => hostnameInOfficialDomain(host, domain)));
+
+    // Forward-confirmed reverse DNS：PTR 名称仅是候选，正向 A/AAAA 必须含原 IP。
+    const confirmations = await Promise.all(officialHosts.map(async (hostname) => {
+      try {
+        const addresses = await dnsWithTimeout(dns.lookup(hostname, { all: true, verbatim: true }));
+        return addresses.some((entry) => normalizeIpAddress(entry.address) === normalizedIp);
+      } catch (e) {
+        return false;
       }
-      while (crawlerVerifyCache.size > CRAWLER_MAX * 0.75) {
-        const oldest = crawlerVerifyCache.keys().next().value;
-        if (oldest === undefined) break;
-        crawlerVerifyCache.delete(oldest);
-      }
-    }
+    }));
+    const ok = confirmations.some(Boolean);
+    cacheCrawlerResult(cacheKey, ok);
     return { ok, checked: true };
   } catch (e) {
     // DNS 查询失败：fail-closed（拒绝）。正常浏览器不走此路径（走 PoW），

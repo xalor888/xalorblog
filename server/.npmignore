@@ -1,0 +1,15 @@
+# 纵深防御：即使 package.json 的 files 白名单被移除，也不打包任何运行时秘密/数据。
+.env
+.env.*
+!.env.example
+.npmrc
+
+uploads/
+backups/
+*.log
+*.out
+test-run.log
+
+node_modules/
+coverage/
+test/

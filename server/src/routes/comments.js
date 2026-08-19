@@ -109,8 +109,7 @@ router.get('/recent', readLimiter, async (req, res) => {
   }
 });
 
-/** 某篇文章的评论（公开，仅已审核）
- * 隐私保护：评论者邮箱仅用于内存中计算 Gravatar URL，不下发给访问者 */
+/** 某篇文章的评论（公开，仅已审核）。邮箱仅用于服务端通知，绝不进入公开响应。 */
 router.get('/article/:articleId', readLimiter, async (req, res) => {
   try {
     const articleId = Number(req.params.articleId);
@@ -124,21 +123,11 @@ router.get('/article/:articleId', readLimiter, async (req, res) => {
         .where('article_id', articleId)
         .where('status', 'approved')
         .orderBy([{ column: 'created_at', order: 'asc' }, { column: 'id', order: 'asc' }]) // 同秒评论按 id 稳定排序
-        .select('id', 'parent_id', 'nickname', 'email', 'website', 'content', 'likes', 'created_at'),
+        .select('id', 'parent_id', 'nickname', 'website', 'content', 'likes', 'created_at'),
       getAdminNicknames(),
     ]);
-    // 邮箱 → Gravatar URL（md5 摘要），随后剥离邮箱字段
-    const crypto = require('crypto');
-    const safeRows = rows.map((r) => {
-      const email = String(r.email || '').trim().toLowerCase();
-      const gravatar = email
-        ? `https://www.gravatar.com/avatar/${crypto.createHash('md5').update(email).digest('hex')}?d=identicon&s=96`
-        : '';
-      const { email: _drop, ...rest } = r;
-      return { ...rest, gravatar };
-    });
     const tree = buildCommentTree(
-      safeRows.map((r) => ({
+      rows.map((r) => ({
         ...r,
         is_admin: admins.has(String(r.nickname || '').trim().toLowerCase()),
       })),

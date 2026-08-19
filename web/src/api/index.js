@@ -4,6 +4,7 @@ import { ensurePass, getTicket, forceRefresh } from '@/utils/pass';
 import { getFingerprint } from '@/utils/fingerprint';
 import { decryptContent } from '@/utils/crypto';
 import { getCachedAdminPath, getAdminPath, refreshAdminPath } from '@/utils/adminPath';
+import { getAuthToken } from '@/utils/authSession';
 
 // 接口前缀与后端一致（生产可改为随机字符串，前端同环境变量注入）
 const API_PREFIX = import.meta.env.VITE_API_PREFIX || '/api';
@@ -60,8 +61,7 @@ request.interceptors.request.use(async (config) => {
   // 已指向新票据，直接解密会因密钥不匹配而失败（正文渲染为空）
   config._ticket = getTicket();
   // JWT 认证头：后台接口依赖它通过 authRequired
-  let token = '';
-  try { token = localStorage.getItem('xalor_token') || ''; } catch (e) { /* 隐私模式忽略 */ }
+  const token = getAuthToken();
   if (token) config.headers['Authorization'] = `Bearer ${token}`;
   if (['post', 'put', 'delete'].includes((config.method || '').toLowerCase())) {
     const { ts, sig, nonce } = await signRequest(config);

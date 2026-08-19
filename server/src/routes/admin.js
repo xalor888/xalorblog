@@ -1400,7 +1400,7 @@ router.post('/upload', (req, res, next) => {
 
   const upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 20 }, // 5MB，单文件
     fileFilter: (req2, file, cb) => {
       const ext = path.extname(file.originalname || '').toLowerCase();
       if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'].includes(ext)) cb(null, true);

@@ -20,11 +20,19 @@ function assert(name, cond, extra = '') {
 
 async function suite() {
   console.log('\n=== 1. 非法输入拒绝（不计失败计数） ===');
-  const ticket = await c.getTicket();
-  const fp = 'a'.repeat(64);
-  const loginHdr = { 'X-Fp': fp, Origin: 'http://localhost:5173', Referer: 'http://localhost:5173/' };
-  const tryLogin = (password, username = 'admin') =>
-    c.req('POST', '/api/auth/login', { body: { username, password }, ticket, headers: loginHdr, silent: true });
+  let xffCounter = 1;
+  const loginHdr = { Origin: 'http://localhost:5173', Referer: 'http://localhost:5173/' };
+  const tryLogin = async (password, username = 'admin') => {
+    const testIp = `192.0.2.${xffCounter++}`;
+    const testFp = xffCounter.toString(16).padStart(2, '0').repeat(32);
+    const ticket = await c.getTicket(testFp, undefined, { 'X-Forwarded-For': testIp });
+    return c.req('POST', '/api/auth/login', {
+      body: { username, password },
+      ticket,
+      headers: { ...loginHdr, 'X-Fp': testFp, 'X-Forwarded-For': testIp },
+      silent: true,
+    });
+  };
 
   let r = await tryLogin('');
   assert('空密码被拒（400）', r.status === 400, `status=${r.status}`);
@@ -52,12 +60,11 @@ async function suite() {
   assert('第 5 次错误仍 401（锁定已设置）', r.status === 401, `status=${r.status} ${r.body && r.body.message}`);
   // 下一次请求才命中锁定
   r = await tryLogin('brute-6');
-  assert('后续请求触发锁定（429）', r.status === 429, `status=${r.status} ${r.body && r.body.message}`);
-  assert('锁定提示含秒数', /秒后再试/.test(r.body.message || ''), r.body && r.body.message);
+  assert('后续请求触发账号锁定（401）', r.status === 401, `status=${r.status} ${r.body && r.body.message}`);
 
   console.log('\n=== 5. 锁定期内正确密码也被拒 ===');
   r = await tryLogin('admin123');
-  assert('锁定期正确密码 429', r.status === 429, `status=${r.status} ${r.body && r.body.message}`);
+  assert('锁定期正确密码 401', r.status === 401, `status=${r.status} ${r.body && r.body.message}`);
 
   console.log(`\n===== 结果: ${passed} 通过 / ${failed} 失败 =====`);
   if (failures.length) {

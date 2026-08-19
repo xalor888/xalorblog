@@ -141,6 +141,12 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { articleApi, categoryApi, tagApi, uploadApi } from '@/api';
 import { renderMarkdown } from '@/utils/markdown';
 import { adminHref } from '@/utils/adminPath';
+import {
+  migrateLegacyPrefix,
+  readSessionValue,
+  removeStoredValue,
+  writeSessionValue,
+} from '@/utils/secureStorage';
 
 const route = useRoute();
 const router = useRouter();
@@ -255,6 +261,7 @@ const form = ref({
 
 // ---------- 本地自动保存（防误关丢稿） ----------
 const DRAFT_KEY = () => `xalor_draft_${editingId.value || 'new'}`;
+migrateLegacyPrefix('xalor_draft_');
 let autosaveTimer = null;
 // 最近一次自动保存时间（编辑头部显示，确认草稿已落盘）
 const autosavedAt = ref('');
@@ -266,10 +273,8 @@ function scheduleAutosave() {
   dirty.value = true;
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(DRAFT_KEY(), JSON.stringify(form.value));
-      autosavedAt.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-    } catch (e) { /* 隐私模式忽略 */ }
+    writeSessionValue(DRAFT_KEY(), JSON.stringify(form.value));
+    autosavedAt.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   }, 2000);
 }
 
@@ -284,14 +289,12 @@ async function assignForm(next) {
 function clearDraft() {
   dirty.value = false;
   clearTimeout(autosaveTimer);
-  try {
-    localStorage.removeItem(DRAFT_KEY());
-  } catch (e) { /* 忽略 */ }
+  removeStoredValue(DRAFT_KEY());
 }
 
 function restoreDraft() {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY());
+    const raw = readSessionValue(DRAFT_KEY());
     if (!raw) return;
     const saved = JSON.parse(raw);
     // 新文章或有内容的草稿才提示恢复

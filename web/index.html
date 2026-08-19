@@ -2,9 +2,6 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <!-- 跨域 DNS/TLS 预热：Gravatar 头像（评论区首屏常用） -->
-    <link rel="preconnect" href="https://www.gravatar.com" crossorigin />
-    <link rel="dns-prefetch" href="https://www.gravatar.com" />
     <link rel="icon" type="image/png" href="/logo.png" />
     <link rel="apple-touch-icon" href="/logo.png" />
     <!-- RSS 自动发现：订阅器/浏览器可识别订阅源 -->
@@ -15,12 +12,12 @@
     <link rel="manifest" href="/manifest.json" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Xalor的小站" />
-    <!-- 页面级 CSP：仅允许同源脚本（无 unsafe-inline —— 主题初始化已移至外部文件）+
-         同源/Gravatar 图片；即使内容层 XSS 逃逸，也无法注入脚本读取令牌，外部数据外传
-         通道（connect/font/media）全被阻断 -->
+    <!-- 页面级 CSP：仅允许同源脚本（无 unsafe-inline —— 主题初始化已移至外部文件）。
+         注意：frame-ancestors 不能通过 meta CSP 生效；生产反向代理必须在 HTTP 响应头中
+         下发 `Content-Security-Policy: frame-ancestors 'none'`（并建议同时下发 X-Frame-Options: DENY）。 -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
     />
     <!-- Open Graph：首页社交分享 -->
     <meta property="og:type" content="website" />

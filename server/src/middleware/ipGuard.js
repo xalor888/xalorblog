@@ -9,6 +9,7 @@
 
 const config = require('../config');
 const db = require('../db');
+const { ipKeyGenerator } = require('express-rate-limit');
 
 const BAN_SCORE = 10;             // 触发封禁的积分阈值
 const HONEYPOT_WEIGHT = 6;        // 蜜罐命中：2 次即封禁
@@ -22,14 +23,30 @@ const MAX_BAN_MS = 24 * 3600 * 1000; // 最长封禁 24 小时
 const REPUTATION_MAX = 50000;      // 信誉表硬上限
 const REPUTATION_FLOOR = 40000;    // 超限时回落到该水位
 
-/** ip -> { score, updatedAt, strikes, banUntil, banCount } */
+/** canonical IPv4 / IPv6-/56-prefix -> { score, updatedAt, strikes, banUntil, banCount } */
 const records = new Map();
+/** 启动时发现的旧版精确 IPv6 持久化键；迁移失败时供解封/过期清理兜底。 */
+const legacyBanKeys = new Map();
 /** 最近安全事件环形缓冲（后台面板展示） */
 const events = [];
 const EVENTS_MAX = 300;
 
 let lastClean = Date.now();
 let dbLoaded = false;
+
+/**
+ * 与 express-rate-limit 一致地聚合 IPv6 /56；IPv4（含 mapped IPv6）保持单地址。
+ * 去掉展示用的 /56 后缀但保留已清零的网络地址，使后台现有 net.isIP 校验仍可解封。
+ */
+function reputationKey(ip) {
+  const raw = String(ip || '').trim();
+  if (!raw) return '';
+  try {
+    return ipKeyGenerator(raw, 56).replace(/\/56$/, '').toLowerCase();
+  } catch (e) {
+    return raw.toLowerCase();
+  }
+}
 
 /** 超限时清理未封禁的低价值记录；正在封禁的记录不丢 */
 function pruneReputation(currentIp) {
@@ -109,7 +126,7 @@ function flushPersist() {
 
 /** 封禁持久化（异步，失败静默 —— 内存仍是权威） */
 function persistBan(ip, until, count, reason = '') {
-  db('ip_bans')
+  return db('ip_bans')
     .insert({
       ip,
       banned_until: new Date(until),
@@ -127,6 +144,14 @@ function persistBan(ip, until, count, reason = '') {
     .catch(() => {});
 }
 
+/** 删除规范键及启动时记录的旧精确 IPv6 键。 */
+function deletePersistedBan(ip) {
+  const key = reputationKey(ip);
+  const candidates = new Set([key, ...(legacyBanKeys.get(key) || [])]);
+  legacyBanKeys.delete(key);
+  return db('ip_bans').whereIn('ip', [...candidates].filter(Boolean)).del().catch(() => {});
+}
+
 /** 启动时从数据库恢复有效封禁（异步一次） */
 async function loadPersistedBans() {
   if (dbLoaded) return;
@@ -138,20 +163,74 @@ async function loadPersistedBans() {
       .limit(REPUTATION_MAX)
       .select('ip', 'banned_until', 'ban_count', 'reason');
     const now = Date.now();
+    const aggregated = new Map();
     for (const r of rows) {
       const until = new Date(r.banned_until).getTime();
       if (until > now) {
-        records.set(r.ip, {
-          score: 0, updatedAt: now, strikes: 0,
-          banUntil: until, banCount: Number(r.ban_count) || 1,
-          lastBanReason: String(r.reason || ''),
+        const rawIp = String(r.ip || '').trim();
+        const key = reputationKey(rawIp);
+        if (!key) continue;
+        const existing = aggregated.get(key);
+        if (!existing) {
+          aggregated.set(key, {
+            until,
+            count: Number(r.ban_count) || 1,
+            reason: String(r.reason || ''),
+          });
+        } else {
+          existing.count = Math.max(existing.count, Number(r.ban_count) || 1);
+          if (until > existing.until) {
+            existing.until = until;
+            existing.reason = String(r.reason || '');
+          }
+        }
+        if (rawIp !== key) {
+          if (!legacyBanKeys.has(key)) legacyBanKeys.set(key, new Set());
+          legacyBanKeys.get(key).add(rawIp);
+        }
+      }
+    }
+    for (const [key, rec] of aggregated) {
+      records.set(key, {
+        score: 0, updatedAt: now, strikes: 0,
+        banUntil: rec.until, banCount: rec.count,
+        lastBanReason: rec.reason,
+      });
+    }
+
+    // 将旧版“精确 IPv6 地址”原子折叠到 /56 规范键；失败时内存仍按 /56 生效，
+    // legacyBanKeys 也会让手动解封/到期清理覆盖旧行。
+    if (legacyBanKeys.size) {
+      try {
+        await db.transaction(async (trx) => {
+          for (const [key, oldKeys] of legacyBanKeys) {
+            const rec = aggregated.get(key);
+            await trx('ip_bans')
+              .insert({
+                ip: key,
+                banned_until: new Date(rec.until),
+                ban_count: rec.count,
+                reason: String(rec.reason || '').slice(0, 120),
+                updated_at: trx.fn.now(),
+              })
+              .onConflict('ip')
+              .merge({
+                banned_until: new Date(rec.until),
+                ban_count: rec.count,
+                reason: String(rec.reason || '').slice(0, 120),
+                updated_at: trx.fn.now(),
+              });
+            await trx('ip_bans').whereIn('ip', [...oldKeys]).del();
+          }
         });
+      } catch (e) {
+        console.warn('[ipGuard] 旧 IPv6 封禁键迁移失败，已以内存兼容模式加载');
       }
     }
     if (rows.length === REPUTATION_MAX) {
       console.warn(`[ipGuard] 持久化封禁达到恢复上限 ${REPUTATION_MAX}，更早封禁暂未加载`);
     }
-    if (rows.length) console.log(`[ipGuard] 已恢复 ${rows.length} 个持久化封禁`);
+    if (rows.length) console.log(`[ipGuard] 已恢复 ${aggregated.size} 个持久化封禁范围`);
   } catch (e) {
     // 表不存在或数据库不可用：静默降级为纯内存模式
   }
@@ -161,16 +240,18 @@ async function loadPersistedBans() {
 function report(ip, type, path = '') {
   decay();
   if (!ip) return false;
+  const key = reputationKey(ip);
+  if (!key) return false;
   const now = Date.now();
-  let rec = records.get(ip);
+  let rec = records.get(key);
   if (!rec) {
     rec = { score: 0, updatedAt: now, strikes: 0, banUntil: 0, banCount: 0 };
-    records.set(ip, rec);
-    if (records.size > REPUTATION_MAX) pruneReputation(ip);
+    records.set(key, rec);
+    if (records.size > REPUTATION_MAX) pruneReputation(key);
   }
   // 封禁期内的重复上报仅延长事件记录，不叠加
   if (now < rec.banUntil) {
-    logEvent(type, ip, path, '重复攻击（封禁中）');
+    logEvent(type, key, path, '重复攻击（封禁中）');
     return false;
   }
 
@@ -183,7 +264,7 @@ function report(ip, type, path = '') {
   rec.score += weight;
   rec.updatedAt = now;
   rec.strikes += 1;
-  logEvent(type, ip, path);
+  logEvent(type, key, path);
 
   if (rec.score >= BAN_SCORE) {
     rec.banCount += 1;
@@ -192,15 +273,15 @@ function report(ip, type, path = '') {
     rec.score = 0;
     // 记录本次封禁的触发原因（最近一次违规行为）
     rec.lastBanReason = String(path || type || '').slice(0, 120);
-    logEvent('ban', ip, path, `封禁 ${Math.round(duration / 60000)} 分钟`);
-    persistBan(ip, rec.banUntil, rec.banCount, rec.lastBanReason);
+    logEvent('ban', key, path, `封禁 ${Math.round(duration / 60000)} 分钟`);
+    persistBan(key, rec.banUntil, rec.banCount, rec.lastBanReason);
     // 邮件告警（可选）：配置 SMTP 后，每次触发新封禁通知站长；
     // 封禁期内的重复攻击不再告警（104 行提前返回），天然防告警轰炸
     if (config.security.alertOnBan !== false) {
       const { send } = require('../utils/notifyMail');
       send(
         '安全告警：有 IP 被自动封禁',
-        `IP ${ip} 因恶意行为被自动封禁 ${Math.round(duration / 60000)} 分钟\n触发原因：${rec.lastBanReason}\n累计封禁次数：${rec.banCount}\n封禁至：${new Date(rec.banUntil).toLocaleString('zh-CN')}`
+        `IP ${key} 因恶意行为被自动封禁 ${Math.round(duration / 60000)} 分钟\n触发原因：${rec.lastBanReason}\n累计封禁次数：${rec.banCount}\n封禁至：${new Date(rec.banUntil).toLocaleString('zh-CN')}`
       ).catch(() => {});
     }
     return true;
@@ -212,20 +293,21 @@ function report(ip, type, path = '') {
 function isBanned(ip) {
   if (!ip) return false;
   decay();
-  const rec = records.get(ip);
+  const key = reputationKey(ip);
+  const rec = records.get(key);
   if (!rec) return false;
   if (rec.banUntil > Date.now()) return true;
   if (rec.banUntil && rec.banUntil <= Date.now()) {
     rec.banUntil = 0;
     // 解除持久化记录
-    db('ip_bans').where('ip', ip).del().catch(() => {});
+    deletePersistedBan(key);
   }
   return false;
 }
 
 /** 查询封禁剩余秒数 */
 function banRemain(ip) {
-  const rec = records.get(ip);
+  const rec = records.get(reputationKey(ip));
   if (!rec) return 0;
   return Math.max(0, Math.ceil((rec.banUntil - Date.now()) / 1000));
 }
@@ -234,7 +316,7 @@ function banRemain(ip) {
 function getScore(ip) {
   if (!ip) return 0;
   decay();
-  const rec = records.get(ip);
+  const rec = records.get(reputationKey(ip));
   return rec ? rec.score : 0;
 }
 
@@ -245,25 +327,19 @@ function isBannedNow(ip) {
 
 /** 手动解封（后台安全中心） */
 function unban(ip) {
-  records.delete(ip);
-  db('ip_bans').where('ip', ip).del().catch(() => {});
-  logEvent('unban', ip, '后台手动解封');
+  const key = reputationKey(ip);
+  records.delete(key);
+  deletePersistedBan(key);
+  logEvent('unban', key, '后台手动解封');
 }
 
-/** 中间件：被封禁 IP 直接拒绝（放行引导/登录/后台，避免封禁死锁） */
+/** 中间件：被封禁 IP 直接拒绝；仅保留反爬引导通道供客户端获取挑战。 */
 function ipGuard(req, res, next) {
-  // 这些路径自身受密码/签名令牌/双因素保护，必须始终可达：
-  // <prefix>/anti 引导通道、<prefix>/auth/login 登录、<prefix>/<adminPath> 整个后台
-  // 前缀必须用 config.apiPrefix（可配置），硬编码会导致改前缀后死锁
+  // 登录和后台接口不再豁免：否则攻击者在触发信誉封禁后仍可继续爆破
+  // 或访问高价值管理端点。反爬引导本身不授予业务访问权限，继续放行。
   const p = req.originalUrl.split('?')[0];
   const prefix = config.apiPrefix;
-  if (
-    p.startsWith(`${prefix}/anti`) ||
-    p === `${prefix}/auth/login` ||
-    p.startsWith(`${prefix}/${config.adminPath}`)
-  ) {
-    return next();
-  }
+  if (p.startsWith(`${prefix}/anti`)) return next();
   if (isBanned(req.ip)) {
     const remain = banRemain(req.ip);
     res.set('Retry-After', String(remain || 1));
@@ -333,4 +409,5 @@ module.exports = {
   logEvent,
   unban,
   loadPersistedBans,
+  reputationKey,
 };

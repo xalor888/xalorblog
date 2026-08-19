@@ -4,11 +4,35 @@ const crypto = require('crypto');
 
 const isProd = process.env.NODE_ENV === 'production';
 
+function resolveListenHost() {
+  const host = String(process.env.LISTEN_HOST || '127.0.0.1').trim();
+  if (!host || host.length > 253 || /[\s/?#]/.test(host)) {
+    throw new Error('LISTEN_HOST 格式不合法');
+  }
+  return host;
+}
+
+function resolveTrustProxy() {
+  const raw = String(process.env.TRUST_PROXY ?? 'loopback').trim();
+  if (!raw || /^(?:0|false|off|none)$/i.test(raw)) return false;
+
+  // 数字跳数/true 会随网络路径变化而信任到客户端可控的 X-Forwarded-For。
+  // 只接受明确的代理地址、CIDR 或 proxy-addr 的命名网段（如 loopback）。
+  if (/^(?:true|[1-9]\d*)$/i.test(raw)) {
+    throw new Error('TRUST_PROXY 禁止使用 true/代理跳数；请填写 loopback 或明确的代理 IP/CIDR');
+  }
+  const proxies = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!proxies.length || proxies.some((s) => s.length > 128 || /[\s/?#]/.test(s))) {
+    throw new Error('TRUST_PROXY 格式不合法');
+  }
+  return proxies.length === 1 ? proxies[0] : proxies;
+}
+
 const DB_PASSWORD = process.env.DB_PASSWORD || '';
 if (!DB_PASSWORD) {
   throw new Error('必须配置 DB_PASSWORD（请使用强随机密码）');
 }
-if (DB_PASSWORD === 'xalor2026' || DB_PASSWORD === 'CHANGE_ME_STRONG_PASSWORD') {
+if (['xalor2026', 'CHANGE_ME_STRONG_PASSWORD', '__REPLACE_WITH_A_STRONG_RANDOM_PASSWORD__'].includes(DB_PASSWORD)) {
   throw new Error('禁止使用占位/默认 DB_PASSWORD');
 }
 if (DB_PASSWORD.length < 16) {
@@ -38,9 +62,11 @@ function resolveSecret() {
 module.exports = {
   isProd,
   port: Number(process.env.PORT || 3000),
-  // 反向代理信任级数：仅当服务部署在 Nginx 等代理后设置为 1（或代理级数），
-  // 默认 0 —— 不信任任何 X-Forwarded-For，防止无代理部署时伪造 IP 绕过限流/封禁
-  trustProxy: Number(process.env.TRUST_PROXY || 0),
+  // 默认只监听本机回环接口，避免绕过 Nginx/TLS 直连 API。
+  // 容器部署可显式设置 0.0.0.0，但必须同时在网络层限制仅反代可访问该端口。
+  listenHost: resolveListenHost(),
+  // 默认仅信任同机反代。禁止按“跳数”信任，防止不同路径下信任到客户端可控 XFF。
+  trustProxy: resolveTrustProxy(),
   // 动态 API 前缀：不暴露真实接口路径（生产建议通过环境变量改为随机字符串）
   apiPrefix: (process.env.API_PREFIX || '/api').replace(/\/+$/, ''),
   db: {

@@ -41,8 +41,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// 信任反向代理（Nginx 等），使 req.ip 获取真实客户端 IP，限流/UV/暴力破解保护才准确
-// 级数由 TRUST_PROXY 配置（默认 0 不信任 XFF，防无代理部署时伪造 IP 绕过封禁）
+// 信任明确的反向代理地址/CIDR，使 req.ip 获取真实客户端 IP。
+// 默认只信任 loopback，禁止使用跳数，防止直连者伪造 X-Forwarded-For。
 app.set('trust proxy', config.trustProxy);
 
 // ---------- 响应压缩（gzip，Node 自带 zlib 实现，无新增依赖） ----------

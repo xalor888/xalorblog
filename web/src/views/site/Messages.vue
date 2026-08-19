@@ -12,7 +12,7 @@
         <div class="form-row">
           <input v-model="form.nickname" class="form-input" placeholder="昵称 *" maxlength="50" autocomplete="nickname" aria-label="昵称"
             @keydown.enter.prevent="onFieldEnter" />
-          <input v-model="form.email" class="form-input" type="email" placeholder="邮箱（可选）" maxlength="100" autocomplete="email" aria-label="邮箱"
+          <input v-model="form.email" class="form-input" type="email" placeholder="邮箱（仅用于回复通知，不公开）" maxlength="100" autocomplete="email" aria-label="邮箱"
             @keydown.enter.prevent="onFieldEnter" />
         </div>
         <!-- 随机蜜罐字段：字段名由服务端动态签发 -->
@@ -96,6 +96,7 @@ import EmojiPicker from '@/components/ui/EmojiPicker.vue';
 import { messageApi } from '@/api';
 import { getFormTokenInfo, refreshFormToken, getHpField } from '@/utils/formToken';
 import { timeAgo } from '@/utils/format';
+import { readSessionValue, writeSessionValue } from '@/utils/secureStorage';
 
 // 浏览器标签页标题
 watchEffect(() => {
@@ -109,13 +110,13 @@ const total = ref(0);
 const submitting = ref(false);
 const loading = ref(false);
 const hasMore = ref(false);
-// 访客信息本地记忆（仅本机存储，避免每次重复输入）
+// 昵称可长期记忆；邮箱只保留在当前标签页，旧 localStorage 值会迁移并清理。
 let savedName = '';
 let savedEmail = '';
 try {
   savedName = localStorage.getItem('xalor_mname') || '';
-  savedEmail = localStorage.getItem('xalor_memail') || '';
 } catch (e) { /* 隐私模式忽略 */ }
+savedEmail = readSessionValue('xalor_memail');
 const form = ref({ nickname: savedName, email: savedEmail, content: '' });
 const hpField = ref(getHpField('/messages'));
 // 表情面板折叠（与评论区共用偏好）
@@ -243,11 +244,11 @@ async function submit() {
     );
     // 审核开关打开时：提示"等待审核"而非"成功"（内容暂不显示）
     ElMessage.success(res?.moderated ? '留言已提交，等待审核后展示' : '留言成功');
-    // 记住访客信息，清空内容（下次免输入）
+    // 昵称长期记忆；邮箱仅在当前标签页内自动预填。
     try {
       localStorage.setItem('xalor_mname', nickname);
-      localStorage.setItem('xalor_memail', form.value.email.trim());
     } catch (e) { /* 隐私模式忽略 */ }
+    writeSessionValue('xalor_memail', form.value.email.trim().slice(0, 100));
     form.value = { nickname, email: form.value.email.trim(), content: '' };
     clearDraft(); // 提交成功，清除本地草稿
     refreshFormToken('/messages');

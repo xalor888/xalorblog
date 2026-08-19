@@ -15,11 +15,17 @@ const AUDIENCE = 'xalor-web';
 
 /**
  * 检查 sessions 表是否可用
- * @returns {Promise<boolean>} true=可用（须执行会话校验） false=表不存在（初始状态，纯 JWT 降级）
+ * @returns {Promise<boolean>} true=可用（须执行会话校验） false=表不存在（调用方必须拒绝请求）
  * @throws 非预期查询异常（连接中断等）由调用方按 fail-closed 处理 —— 会话撤销能力不可静默失效
  */
 async function sessionTableReady() {
   return await db.schema.hasTable('sessions');
+}
+
+function sessionUnavailableError() {
+  const err = new Error('会话表不可用');
+  err.code = 'SESSION_STORE_UNAVAILABLE';
+  return err;
 }
 
 /** 生成 JWT（含会话记录） */
@@ -44,8 +50,13 @@ async function signToken(user, req) {
     { expiresIn }
   );
 
-  // 写会话表（表缺失时跳过，不影响登录）
-  try {
+  // 所有环境都不允许降级为纯 JWT：否则登出/改密无法立即撤销令牌。
+  // 首次部署必须先执行迁移，缺表时安全地拒绝签发。
+  const sessionTableOk = await sessionTableReady();
+  if (!sessionTableOk) throw sessionUnavailableError();
+
+  // 表存在时写入失败不得吞掉：否则会签发一个后续必然无法通过会话校验的 token。
+  {
     const decoded = jwt.decode(token);
     const expMs = decoded && decoded.exp ? decoded.exp * 1000 : Date.now() + 7200e3;
     await db('sessions').insert({
@@ -55,7 +66,7 @@ async function signToken(user, req) {
       ip: req.ip || '',
       ua: String(req.headers['user-agent'] || '').slice(0, 255),
       expires_at: new Date(expMs),
-    }).catch(() => {});
+    });
     // 会话上限：每用户最多保留 20 个活跃会话，超出撤销最旧的
     // （防会话表无限膨胀；同时清理已过期会话）
     const now = db.fn.now();
@@ -77,7 +88,7 @@ async function signToken(user, req) {
         await db('sessions').whereIn('jti', overflow).update({ revoked: true }).catch(() => {});
       }
     }
-  } catch (e) { /* 表缺失静默降级 */ }
+  }
 
   return token;
 }
@@ -100,12 +111,12 @@ async function authRequired(req, res, next) {
   // 注意：不能「双方都为空才放行」—— 攻击者去掉 X-Fp 头即可绕过；
   // 必须要求请求方提供与签发时一致的指纹
   const curFp = String(req.headers['x-fp'] || '').slice(0, 128);
-  if (!curFp || (payload.fp && payload.fp !== curFp)) {
+  if (!payload.fp || !curFp || payload.fp !== curFp) {
     return res.status(401).json({ code: 1, message: '登录设备发生变化，请重新登录' });
   }
 
   // 服务端会话校验：已撤销/过期即拒绝
-  // 安全原则：校验异常一律 fail-closed（拒绝请求），仅「表不存在」的初始状态允许纯 JWT 降级
+  // 安全原则：校验异常和缺表一律 fail-closed；首次使用前必须先执行迁移。
   let sessionTableOk = false;
   try {
     sessionTableOk = await sessionTableReady();
@@ -121,6 +132,10 @@ async function authRequired(req, res, next) {
       if (Number(session.user_id) !== Number(payload.sub)) {
         return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录' });
       }
+      const sessionFp = String(session.fp || '').slice(0, 128);
+      if (!sessionFp || sessionFp !== payload.fp || sessionFp !== curFp) {
+        return res.status(401).json({ code: 1, message: '登录设备发生变化，请重新登录' });
+      }
       if (new Date(session.expires_at).getTime() < Date.now()) {
         return res.status(401).json({ code: 1, message: '会话已过期，请重新登录' });
       }
@@ -128,6 +143,9 @@ async function authRequired(req, res, next) {
       console.error('[auth] 会话查询异常，拒绝请求（fail-closed）：', e && e.message);
       return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录' });
     }
+  } else {
+    console.error('[auth] 会话表不存在，拒绝纯 JWT 降级');
+    return res.status(503).json({ code: 1, message: '会话服务不可用，请稍后重试' });
   }
 
   // 角色等账号信息以数据库为准：防止 JWT 中的旧 role 在降权后继续生效
@@ -153,38 +171,40 @@ async function authRequired(req, res, next) {
 
 /** 撤销指定会话 */
 async function revokeSession(jti, userId = null) {
-  let ok = false;
-  try {
-    ok = await sessionTableReady();
-  } catch (e) { return false; }
-  if (!ok) return false;
-  try {
-    let query = db('sessions').where('jti', jti);
-    if (userId !== null && userId !== undefined) {
-      query = query.where('user_id', userId);
-    }
-    await query.update({ revoked: true });
-    return true;
-  } catch (e) {
-    return false;
+  const ok = await sessionTableReady();
+  if (!ok) throw sessionUnavailableError();
+  let query = db('sessions').where('jti', jti).where('revoked', false);
+  if (userId !== null && userId !== undefined) {
+    query = query.where('user_id', userId);
   }
+  const affected = await query.update({ revoked: true });
+  return Number(affected) > 0;
+}
+
+/** 撤销用户会话；用于改密/2FA 状态变更时强制所有旧 token 失效 */
+async function revokeUserSessions(userId, { exceptJti = null, executor = db } = {}) {
+  const ok = await sessionTableReady();
+  if (!ok) throw sessionUnavailableError();
+  let query = executor('sessions').where('user_id', userId).where('revoked', false);
+  if (exceptJti) query = query.whereNot('jti', exceptJti);
+  return Number(await query.update({ revoked: true }));
 }
 
 /** 列出用户全部会话 */
 async function listSessions(userId) {
-  let ok = false;
-  try {
-    ok = await sessionTableReady();
-  } catch (e) { return []; }
-  if (!ok) return [];
-  try {
-    return await db('sessions')
-      .where('user_id', userId)
-      .orderBy('created_at', 'desc')
-      .select('jti', 'fp', 'ip', 'ua', 'revoked', 'expires_at', 'created_at');
-  } catch (e) {
-    return [];
-  }
+  const ok = await sessionTableReady();
+  if (!ok) throw sessionUnavailableError();
+  return await db('sessions')
+    .where('user_id', userId)
+    .orderBy('created_at', 'desc')
+    .select('jti', 'fp', 'ip', 'ua', 'revoked', 'expires_at', 'created_at');
 }
 
-module.exports = { signToken, authRequired, revokeSession, listSessions };
+module.exports = {
+  signToken,
+  authRequired,
+  revokeSession,
+  revokeUserSessions,
+  listSessions,
+  sessionTableReady,
+};

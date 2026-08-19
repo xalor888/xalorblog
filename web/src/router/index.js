@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
 import { getAdminPath, getCachedAdminPath } from '@/utils/adminPath';
+import { getAuthToken } from '@/utils/authSession';
 
 const routes = [
   // ============ 前台 ============
@@ -80,8 +81,7 @@ router.beforeEach(async (to) => {
   }
   if (adminKey !== real) return { name: 'not-found' };
   document.title = to.meta.title ? `${to.meta.title} · Xalor的小站` : 'Xalor的小站';
-  let token = '';
-  try { token = localStorage.getItem('xalor_token') || ''; } catch (e) { /* 隐私模式忽略 */ }
+  const token = getAuthToken();
   if (to.meta.requiresAuth && !token) {
     return { path: `/${adminKey}/login`, replace: true };
   }

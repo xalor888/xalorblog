@@ -75,9 +75,9 @@ function digestHasLeadingZeros(hexDigest, bits) {
 }
 
 /** 获取并求解 PoW 挑战，换取票据（并发安全：显式传指纹，不依赖全局变量） */
-async function getTicket(forceFp, customUa) {
+async function getTicket(forceFp, customUa, extraHeaders = {}) {
   const useFp = forceFp || fp;
-  const pz = await req('GET', '/api/anti/puzzle', { headers: { 'X-Fp': useFp }, ua: customUa });
+  const pz = await req('GET', '/api/anti/puzzle', { headers: { 'X-Fp': useFp, ...extraHeaders }, ua: customUa });
   if (pz.status !== 200 || !pz.body || !pz.body.data) {
     throw new Error('挑战签发失败: ' + JSON.stringify(pz.body));
   }
@@ -91,7 +91,7 @@ async function getTicket(forceFp, customUa) {
   if (!solution) throw new Error('PoW 求解失败');
   const t = await req('POST', '/api/anti/ticket', {
     body: { id, solution },
-    headers: { 'X-Fp': useFp, Origin: 'http://localhost:5173', Referer: 'http://localhost:5173/' },
+    headers: { 'X-Fp': useFp, Origin: 'http://localhost:5173', Referer: 'http://localhost:5173/', ...extraHeaders },
     ua: customUa,
   });
   if (t.status !== 200 || !t.body || !t.body.data || !t.body.data.token) {

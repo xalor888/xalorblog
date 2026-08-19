@@ -7,9 +7,17 @@ import router from './router';
 import { useThemeStore } from './stores/theme';
 import { installReveal } from './directives/reveal';
 import { ensurePass } from './utils/pass';
+import { migrateLegacyKeys, migrateLegacyPrefix } from './utils/secureStorage';
+import { getAuthToken, getCachedAuthUser } from './utils/authSession';
 
 import './styles/main.css';
 import './styles/markdown.css';
+
+// 一次性迁移旧版持久敏感数据：当前标签页继续可用，同时立即移除 localStorage 副本。
+migrateLegacyKeys(['xalor_cemail', 'xalor_memail', 'xalor_fp_v2']);
+migrateLegacyPrefix('xalor_draft_');
+getAuthToken();
+getCachedAuthUser();
 
 // 网络状态提示：断网/恢复即时反馈（离线时请求会失败，此提示帮助理解原因）
 window.addEventListener('offline', () => {

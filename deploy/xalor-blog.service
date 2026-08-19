@@ -6,19 +6,41 @@ After=network.target mysql.service
 
 [Service]
 Type=simple
-# 生产必须设置：JWT_SECRET（32+ 随机串）· NODE_ENV=production · TRUST_PROXY=1（Nginx 后）
+# 生产必须设置：JWT_SECRET（32+ 随机串）· ALLOWED_HOSTS · CORS_ORIGINS
 # ALLOWED_HOSTS=你的域名 · CORS_ORIGINS=https://你的前端域名
 EnvironmentFile=/path/to/xalorblog/server/.env
-# 注意：.env 含 JWT_SECRET / DB_PASSWORD 等密钥，权限必须收紧（chmod 600 server/.env，
-# 属主为运行用户），否则同机任意用户可读密钥直接劫持会话
+# 通过 env 的命令行赋值覆盖 EnvironmentFile 中的同名项：固定为生产模式、
+# 仅监听本机，并只信任同机 Nginx。禁止 TRUST_PROXY=1/true。
+# .env 建议 root:www-data 0640；代码由 root 部署且不可由 www-data 修改。
 WorkingDirectory=/path/to/xalorblog/server
-ExecStart=/usr/bin/node src/server.js
+ExecStart=/usr/bin/env NODE_ENV=production LISTEN_HOST=127.0.0.1 TRUST_PROXY=loopback /usr/bin/node src/server.js
 Restart=always
 RestartSec=3
-# 安全加固：最小权限（上传目录需可写）
 User=www-data
 Group=www-data
-# 资源限制
+
+# 仅 uploads 需要写权限；安装前先创建并授权该目录。
+UMask=0077
+ProtectSystem=strict
+ReadWritePaths=/path/to/xalorblog/server/uploads
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
 LimitNOFILE=65535
 
 [Install]

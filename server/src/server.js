@@ -43,8 +43,9 @@ setInterval(async () => {
   } catch (e) { /* 数据库不可用时静默跳过 */ }
 }, 6 * 3600 * 1000).unref();
 
-const server = app.listen(config.port, () => {
-  console.log(`\n  🚀 Xalor的小站 API 已启动: http://localhost:${config.port}`);
+const server = app.listen(config.port, config.listenHost, () => {
+  const displayHost = config.listenHost.includes(':') ? `[${config.listenHost}]` : config.listenHost;
+  console.log(`\n  🚀 Xalor的小站 API 已启动: http://${displayHost}:${config.port}`);
   console.log(`  📚 API 前缀: ${config.apiPrefix}（生产建议改为随机字符串）`);
   console.log(`  🗝️ 管理后台路径: /#/${config.adminPath}（秘钥路径，非固定 /admin）`);
   console.log(`  🛡️ 反爬闸门: ${config.isProd ? 'ON (生产)' : 'ON'} · PoW 难度: ${config.security.powDifficulty}\n`);

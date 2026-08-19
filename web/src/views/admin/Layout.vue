@@ -89,6 +89,7 @@
 <script setup>
 import { ref, computed, watch, watchEffect } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useThemeStore, THEME_COLORS } from '@/stores/theme';
@@ -145,8 +146,11 @@ function badgeFor(item) {
 admin.fetchPending();
 watch(() => route.path, () => admin.fetchPending());
 
-function logout() {
-  auth.logout();
+async function logout() {
+  const { revoked } = await auth.logout();
+  if (!revoked) {
+    ElMessage.warning('已退出本机，但服务端会话撤销失败；请重新登录后在安全中心撤销旧会话');
+  }
   router.push(adminHref('login'));
 }
 </script>

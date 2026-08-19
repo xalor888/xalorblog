@@ -1,8 +1,9 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const { ipKeyGenerator } = require('express-rate-limit');
 const db = require('../db');
 const { ok, fail } = require('../utils/response');
-const { signToken, authRequired, revokeSession, listSessions } = require('../middleware/auth');
+const { signToken, authRequired, revokeSession, revokeUserSessions, listSessions } = require('../middleware/auth');
 const { cleanLine } = require('../utils/sanitize');
 const { report } = require('../middleware/ipGuard');
 const { generateSecret, verifyCode, otpauthUri } = require('../utils/totp');
@@ -62,6 +63,25 @@ function lockKey(kind, value) {
   return `${kind}:${value}`;
 }
 
+/**
+ * 登录风控 IP 键与 express-rate-limit 保持一致：IPv6 默认聚合到 /56，
+ * 防止同一前缀轮换海量地址绕过 5 分钟锁定与信誉封禁。
+ */
+function loginIpKey(ip) {
+  try {
+    return ipKeyGenerator(String(ip || 'unknown'), 56);
+  } catch (e) {
+    return String(ip || 'unknown');
+  }
+}
+
+/** 不存在账号的稳定锁键；已存在账号一律使用权威 user.id，服从数据库排序规则 */
+function loginAccountKey(user, cleanUser) {
+  if (user && user.id !== undefined && user.id !== null) return lockKey('user-id', String(user.id));
+  const canonical = String(cleanUser || '').normalize('NFKC').toLocaleLowerCase('en-US');
+  return lockKey('user-name', canonical);
+}
+
 function checkLock(key) {
   const rec = loginFails.get(key);
   if (!rec) return 0;
@@ -102,6 +122,35 @@ function recordFail(key) {
   }
 }
 
+/** 在一个无 await 的临界区内检查并预占 IP/账号尝试，堵住 bcrypt 并发 TOCTOU。 */
+function reserveLoginAttempt(ipFailKey, accountFailKey) {
+  const ipRemain = checkLock(ipFailKey);
+  if (ipRemain) return { ok: false, scope: 'ip', remain: ipRemain };
+  const accountRemain = checkLock(accountFailKey);
+  if (accountRemain) return { ok: false, scope: 'account', remain: accountRemain };
+  recordFail(ipFailKey);
+  recordFail(accountFailKey);
+  return { ok: true };
+}
+
+/**
+ * 敏感认证状态必须与“撤销该用户全部会话”在同一事务内提交。
+ * 当前请求已经通过 authRequired，因此正常情况下至少会撤销当前会话；
+ * 若并发登出导致一条也未撤销，则回滚账号变更，避免返回失败但旧令牌仍可用。
+ */
+async function updateSecurityStateAndRevoke(userId, changes) {
+  return await db.transaction(async (trx) => {
+    await trx('users').where('id', userId).update(changes);
+    const revoked = await revokeUserSessions(userId, { executor: trx });
+    if (revoked < 1) {
+      const err = new Error('当前会话未能撤销');
+      err.code = 'SESSION_REVOKE_FAILED';
+      throw err;
+    }
+    return revoked;
+  });
+}
+
 /** 登录（暴力破解防护：IP+用户名双重锁定 + 指纹绑定） */
 router.post('/login', async (req, res) => {
   try {
@@ -117,19 +166,6 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ code: 1, message: '设备指纹缺失，请刷新页面后重试' });
     }
 
-    const ipRemain = checkLock(lockKey('ip', ip));
-    if (ipRemain) {
-      report(ip, 'auth', 'POST /auth/login');
-      return res.status(429).json({ code: 1, message: `登录失败过多，请 ${ipRemain} 秒后再试` });
-    }
-    if (cleanUser) {
-      const userRemain = checkLock(lockKey('user', cleanUser));
-      if (userRemain) {
-        // 用户名锁定返回与“凭据错误”同形，避免攻击者通过 429 差异枚举有效用户名
-        return res.status(401).json({ code: 1, message: '用户名或密码错误' });
-      }
-    }
-
     if (!cleanUser || typeof password !== 'string' || !password) {
       return fail(res, '请输入用户名和密码');
     }
@@ -137,16 +173,30 @@ router.post('/login', async (req, res) => {
     if (Buffer.byteLength(password, 'utf8') > 72) return fail(res, '密码长度不正确');
 
     const user = await db('users').where('username', cleanUser).first();
+    // 锁键必须与权威账号一致：MySQL utf8mb4_unicode_ci 下 ADMIN/ádmin 等
+    // 可能命中同一行，使用原始输入作键会产生多个独立计数器。
+    const ipFailKey = lockKey('ip', loginIpKey(ip));
+    const accountFailKey = loginAccountKey(user, cleanUser);
+
+    // 检查与预占在同一个同步临界区完成，随后才进入异步 bcrypt。
+    const reservation = reserveLoginAttempt(ipFailKey, accountFailKey);
+    if (!reservation.ok && reservation.scope === 'ip') {
+      report(ip, 'auth', 'POST /auth/login');
+      return res.status(429).json({ code: 1, message: `登录失败过多，请 ${reservation.remain} 秒后再试` });
+    }
+    if (!reservation.ok) {
+      // 账号锁定返回与“凭据错误”同形，避免攻击者通过状态差异枚举有效用户名
+      return res.status(401).json({ code: 1, message: '用户名或密码错误' });
+    }
+
     // 防时序枚举：用户不存在时对固定哈希做同成本比较（响应时间一致）
     const matched = user
       ? await bcrypt.compare(password, user.password)
       : await bcrypt.compare(password, FAKE_HASH);
     if (!matched) {
-      recordFail(lockKey('ip', ip));
-      if (cleanUser) recordFail(lockKey('user', cleanUser));
       report(ip, 'auth', 'POST /auth/login');
       logAuditEvent(cleanUser, 'LOGIN_FAIL', '用户名或密码错误', ip, req.headers['x-fp']);
-      const rec = loginFails.get(lockKey('ip', ip));
+      const rec = loginFails.get(accountFailKey);
       const left = MAX_FAILS - (rec?.count || 0);
       return fail(res, left > 0 ? `用户名或密码错误，剩余 ${left} 次尝试` : '用户名或密码错误', 401);
     }
@@ -156,18 +206,15 @@ router.post('/login', async (req, res) => {
       const code = typeof req.body.totp_code === 'string' ? req.body.totp_code.trim() : '';
       const pass = verifyCode(user.totp_secret, code, totpReplay, `u${user.id}`);
       if (!pass) {
-        recordFail(lockKey('ip', ip));
-        if (cleanUser) recordFail(lockKey('user', cleanUser));
         report(ip, 'auth', 'POST /auth/login (2FA)');
         logAuditEvent(cleanUser, 'LOGIN_FAIL', '两步验证码错误', ip, req.headers['x-fp']);
         return fail(res, '两步验证码错误', 401);
       }
     }
 
-    loginFails.delete(lockKey('ip', ip));
-    if (cleanUser) loginFails.delete(lockKey('user', cleanUser));
-
     const token = await signToken(user, req);
+    loginFails.delete(ipFailKey);
+    loginFails.delete(accountFailKey);
     // 检测是否仍在使用默认初始密码
     let isDefaultPwd = false;
     try {
@@ -213,7 +260,8 @@ router.delete('/sessions/:jti', authRequired, async (req, res) => {
   try {
     const target = req.params.jti;
     if (target === req.jti) return fail(res, '不能撤销当前会话，请使用退出登录', 400);
-    await revokeSession(target, req.user.sub);
+    const revoked = await revokeSession(target, req.user.sub);
+    if (!revoked) return fail(res, '会话不存在或已撤销', 404);
     return ok(res, null, '会话已撤销');
   } catch (e) {
     return fail(res, '撤销会话失败', 500);
@@ -223,7 +271,8 @@ router.delete('/sessions/:jti', authRequired, async (req, res) => {
 /** 退出登录：撤销当前会话 */
 router.post('/logout', authRequired, async (req, res) => {
   try {
-    await revokeSession(req.jti, req.user.sub);
+    const revoked = await revokeSession(req.jti, req.user.sub);
+    if (!revoked) return fail(res, '当前会话已失效，请重新登录', 409);
     return ok(res, null, '已退出登录');
   } catch (e) {
     return fail(res, '退出失败', 500);
@@ -233,12 +282,9 @@ router.post('/logout', authRequired, async (req, res) => {
 /** 退出所有设备：撤销除当前外的全部会话 */
 router.post('/logout-all', authRequired, async (req, res) => {
   try {
-    const sessions = await listSessions(req.user.sub);
-    for (const s of sessions) {
-      if (s.jti !== req.jti) await revokeSession(s.jti, req.user.sub);
-    }
-    logAuditEvent(req.user.username, 'LOGOUT_ALL', `已撤销 ${sessions.length - 1} 个其他会话`, req.ip, req.headers['x-fp']);
-    return ok(res, null, '已退出其他设备');
+    const revoked = await revokeUserSessions(req.user.sub, { exceptJti: req.jti });
+    logAuditEvent(req.user.username, 'LOGOUT_ALL', `已撤销 ${revoked} 个其他会话`, req.ip, req.headers['x-fp']);
+    return ok(res, { revoked }, '已退出其他设备');
   } catch (e) {
     return fail(res, '操作失败', 500);
   }
@@ -257,16 +303,9 @@ router.put('/password', authRequired, async (req, res) => {
     const policyMsg = passwordPolicy(newPassword, user.username);
     if (policyMsg) return fail(res, policyMsg, 400);
     const hash = await bcrypt.hash(newPassword, 12);
-    await db('users').where('id', user.id).update({ password: hash });
-    // 撤销其他会话，仅保留当前
-    try {
-      const sessions = await listSessions(user.id);
-      for (const s of sessions) {
-        if (s.jti !== req.jti) await revokeSession(s.jti, user.id);
-      }
-    } catch (e) { /* 忽略 */ }
+    await updateSecurityStateAndRevoke(user.id, { password: hash });
     logAuditEvent(user.username, 'CHANGE_PASSWORD', '修改密码', req.ip, req.headers['x-fp']);
-    return ok(res, null, '密码修改成功');
+    return ok(res, { relogin_required: true }, '密码修改成功，请重新登录');
   } catch (e) {
     return fail(res, '修改密码失败', 500);
   }
@@ -292,19 +331,16 @@ router.post('/2fa/setup', authRequired, async (req, res) => {
     const password = String(req.body.password || '');
     const passwordOk = user && (await bcrypt.compare(password, user.password));
     if (!passwordOk) return fail(res, '当前密码错误', 400);
-    // 已启用 2FA 时重新生成密钥必须先验证当前动态码，防止仅持会话即可静默剥离 2FA
+    // 已启用时禁止直接轮换：先 disable（会撤销全部会话）再重新登录 setup，
+    // 避免在一个仍有效的会话中悄悄替换第二因素。
     if (user && user.totp_enabled) {
-      const code = String(req.body.code || '').trim();
-      if (!verifyCode(user.totp_secret, code, totpReplay, `u${user.id}:setup`)) {
-        return fail(res, '请输入当前两步验证码', 400);
-      }
+      return fail(res, '请先关闭两步验证，再重新设置', 409);
     }
     const secret = generateSecret(32);
+    // setup 只写入待验证密钥，尚未改变启用状态，因此保留当前会话，
+    // 让客户端能紧接着调用 verify；verify 成功后才事务化撤销全部会话。
     await db('users').where('id', req.user.sub).update({ totp_secret: secret, totp_enabled: false });
     logAuditEvent(req.user.username, '2FA_SETUP', '生成两步验证密钥', req.ip, req.headers['x-fp']);
-    // 2FA 状态变更：撤销其他全部会话，强制重新登录（防攻击者已持会话时被静默旁路）
-    const sessions = await listSessions(req.user.sub);
-    for (const s of sessions) if (s.jti !== req.jti) await revokeSession(s.jti, req.user.sub);
     return ok(res, {
       secret,
       uri: otpauthUri(secret, String(req.user.username || 'admin')),
@@ -325,12 +361,9 @@ router.post('/2fa/verify', authRequired, async (req, res) => {
       report(req.ip, 'auth', 'POST /auth/2fa/verify');
       return fail(res, '验证码错误', 400);
     }
-    await db('users').where('id', user.id).update({ totp_enabled: true });
+    await updateSecurityStateAndRevoke(user.id, { totp_enabled: true });
     logAuditEvent(req.user.username, '2FA_ENABLE', '启用两步验证', req.ip, req.headers['x-fp']);
-    // 2FA 状态变更：撤销其他全部会话，强制重新登录
-    const sessions = await listSessions(user.id);
-    for (const s of sessions) if (s.jti !== req.jti) await revokeSession(s.jti, user.id);
-    return ok(res, null, '两步验证已启用');
+    return ok(res, { relogin_required: true }, '两步验证已启用，请重新登录');
   } catch (e) {
     return fail(res, '启用失败', 500);
   }
@@ -347,15 +380,20 @@ router.post('/2fa/disable', authRequired, async (req, res) => {
       report(req.ip, 'auth', 'POST /auth/2fa/disable');
       return fail(res, '验证码错误', 400);
     }
-    await db('users').where('id', user.id).update({ totp_secret: null, totp_enabled: false });
+    await updateSecurityStateAndRevoke(user.id, { totp_secret: null, totp_enabled: false });
     logAuditEvent(req.user.username, '2FA_DISABLE', '关闭两步验证', req.ip, req.headers['x-fp']);
-    // 2FA 状态变更：撤销其他全部会话，强制重新登录
-    const sessions = await listSessions(user.id);
-    for (const s of sessions) if (s.jti !== req.jti) await revokeSession(s.jti, user.id);
-    return ok(res, null, '两步验证已关闭');
+    return ok(res, { relogin_required: true }, '两步验证已关闭，请重新登录');
   } catch (e) {
     return fail(res, '关闭失败', 500);
   }
 });
+
+// 小范围白盒测试钩子：验证锁键规范化与同步预占，不暴露为 HTTP API。
+router.securityTest = {
+  loginIpKey,
+  loginAccountKey,
+  reserveLoginAttempt,
+  resetLoginFails: () => loginFails.clear(),
+};
 
 module.exports = router;

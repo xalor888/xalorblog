@@ -1,0 +1,47 @@
+# 最小生产示例。安装前替换 server_name、root 和证书/TLS 配置。
+server {
+    listen 80;
+    listen [::]:80;
+    server_name blog.example.com;
+
+    root /path/to/xalorblog/web/dist;
+    index index.html;
+    server_tokens off;
+
+    # 与 web/index.html 的策略一致；HTTP 响应头优先且覆盖所有静态响应。
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    client_max_body_size 6m;
+
+    # 若修改 API_PREFIX，请同步修改此 location。
+    location ^~ /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        # 覆盖而不是追加客户端提供的转发头，防止伪造来源 IP/协议。
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header Forwarded "";
+        proxy_set_header Connection "";
+    }
+
+    # 上传文件由后端执行访问控制与安全响应头。
+    location ^~ /uploads/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header Forwarded "";
+        proxy_set_header Connection "";
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

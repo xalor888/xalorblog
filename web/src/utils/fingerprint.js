@@ -3,6 +3,8 @@
  * 服务端票据与指纹强绑定，指纹不一致的请求直接拒绝
  */
 
+import { readSessionValue, writeSessionValue } from './secureStorage';
+
 let cached = null;
 let pending = null;
 
@@ -72,22 +74,20 @@ async function sha256(text) {
 }
 
 /**
- * 获取设备指纹（缓存于内存 + localStorage，页面间保持一致）
+ * 获取设备指纹（缓存于内存 + sessionStorage；旧 localStorage 值自动迁移清理）
  * @returns {Promise<string>} 64 位十六进制
  */
 export async function getFingerprint() {
   if (cached) return cached;
   if (pending) return pending;
   pending = (async () => {
-    const stored = localStorage.getItem('xalor_fp_v2');
-    if (stored && stored.length === 64) {
+    const stored = readSessionValue('xalor_fp_v2');
+    if (/^[0-9a-f]{64}$/i.test(stored)) {
       cached = stored;
       return stored;
     }
     const fp = await sha256(collectRaw());
-    try {
-      localStorage.setItem('xalor_fp_v2', fp);
-    } catch (e) { /* 隐私模式忽略 */ }
+    writeSessionValue('xalor_fp_v2', fp);
     cached = fp;
     return fp;
   })().finally(() => {

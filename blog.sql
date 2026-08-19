@@ -9,14 +9,52 @@
 CREATE DATABASE IF NOT EXISTS xalor_blog
   DEFAULT CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
+USE xalor_blog;
 
--- 应用专用账号（本地开发用，密码可自行修改）
--- ⚠ 生产部署必须修改密码（默认值公开于仓库）：CREATE USER 后立即执行
---   ALTER USER 'xalor'@'localhost' IDENTIFIED BY '<强随机密码>';
---   并同步 server/.env 的 DB_PASSWORD
--- 占位密码仅用于首次建库，执行后必须立即执行 ALTER USER 改为强随机密码
-CREATE USER IF NOT EXISTS 'xalor'@'localhost' IDENTIFIED BY 'CHANGE_ME_STRONG_PASSWORD';
--- 最小权限：应用运行所需的 DML + 迁移所需的 DDL（应用不含 DROP 表操作，
--- 无需 DROP 权限；备份恢复/表结构重建由 root 或运维账号执行）
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON xalor_blog.* TO 'xalor'@'localhost';
-FLUSH PRIVILEGES;
+-- 应用专用账号：纯 SQL 无法安全地从环境变量读取密码，因此必须先在本地副本中
+-- 替换下面的显式占位值。占位值或弱值会触发 SIGNAL，绝不会创建可用的固定凭据。
+-- 请勿把替换后的本地副本提交到 Git。
+SET @xalor_db_password = '__REPLACE_WITH_A_STRONG_RANDOM_PASSWORD__';
+
+DELIMITER //
+DROP PROCEDURE IF EXISTS provision_xalor_app_user//
+CREATE PROCEDURE provision_xalor_app_user(IN requested_password VARCHAR(255))
+SQL SECURITY INVOKER
+BEGIN
+  IF requested_password IS NULL
+     OR LEFT(requested_password, 15) = '__REPLACE_WITH_'
+     OR CHAR_LENGTH(requested_password) < 20
+     OR requested_password REGEXP '^[[:alnum:]]{1,19}$' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = '先替换 blog.sql 中的数据库密码占位值（至少 20 位强随机密码）';
+  END IF;
+
+  SET @account_sql = CONCAT(
+    'CREATE USER IF NOT EXISTS ''xalor''@''localhost'' IDENTIFIED BY ',
+    QUOTE(requested_password)
+  );
+  PREPARE account_stmt FROM @account_sql;
+  EXECUTE account_stmt;
+  DEALLOCATE PREPARE account_stmt;
+
+  SET @account_sql = CONCAT(
+    'ALTER USER ''xalor''@''localhost'' IDENTIFIED BY ',
+    QUOTE(requested_password)
+  );
+  PREPARE account_stmt FROM @account_sql;
+  EXECUTE account_stmt;
+  DEALLOCATE PREPARE account_stmt;
+
+  SET @account_sql =
+    'GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON xalor_blog.* TO ''xalor''@''localhost''';
+  PREPARE account_stmt FROM @account_sql;
+  EXECUTE account_stmt;
+  DEALLOCATE PREPARE account_stmt;
+END//
+
+CALL provision_xalor_app_user(@xalor_db_password)//
+DROP PROCEDURE provision_xalor_app_user//
+DELIMITER ;
+
+SET @account_sql = NULL;
+SET @xalor_db_password = NULL;

@@ -75,6 +75,7 @@ import { formatDateTime } from '@/utils/format';
 import { getCachedAdminPath } from '@/utils/adminPath';
 import { getTicket, ensurePass } from '@/utils/pass';
 import { getFingerprint } from '@/utils/fingerprint';
+import { getAuthToken } from '@/utils/authSession';
 
 const list = ref([]);
 const loading = ref(false);
@@ -146,7 +147,7 @@ async function exportCsv() {
     const qs = params.toString();
     const resp = await fetch(`/api/${key}/audit/export${qs ? `?${qs}` : ''}`, {
       headers: {
-        Authorization: `Bearer ${localStorage.getItem('xalor_token')}`,
+        Authorization: `Bearer ${getAuthToken()}`,
         'X-Pass': getTicket(),
         'X-Fp': await getFingerprint(),
       },

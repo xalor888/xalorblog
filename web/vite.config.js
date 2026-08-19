@@ -11,6 +11,13 @@ import { fileURLToPath, URL } from 'node:url';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const API_PREFIX = env.VITE_API_PREFIX || '/api';
+  // 开发服务器默认仅监听回环地址。确需局域网调试时显式设置
+  // VITE_DEV_HOST=0.0.0.0，并配合主机防火墙与 VITE_DEV_ALLOWED_HOSTS。
+  const DEV_HOST = env.VITE_DEV_HOST || '127.0.0.1';
+  const DEV_ALLOWED_HOSTS = String(env.VITE_DEV_ALLOWED_HOSTS || '')
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean);
   // 内容加密盐（须与服务端 ENC_SALT 一致 —— 生产自定义后若不注入，前端解密
   // 密钥不匹配 → 正文渲染为空；默认值与服务端 config 默认一致）
   const ENC_SALT = env.VITE_ENC_SALT || 'xalor-content-v1';
@@ -39,14 +46,15 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
-      host: true,
+      host: DEV_HOST,
+      ...(DEV_ALLOWED_HOSTS.length ? { allowedHosts: DEV_ALLOWED_HOSTS } : {}),
       proxy: {
         [API_PREFIX]: {
-          target: 'http://localhost:3000',
+          target: 'http://127.0.0.1:3000',
           changeOrigin: true,
         },
         '/uploads': {
-          target: 'http://localhost:3000',
+          target: 'http://127.0.0.1:3000',
           changeOrigin: true,
         },
       },

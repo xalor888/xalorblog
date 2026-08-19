@@ -175,18 +175,20 @@ async function suite() {
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edge/210.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/19.0',
   ];
+  const rotationIp = '192.0.2.60';
+  const rotationHeaders = { 'X-Forwarded-For': rotationIp };
   let rotateAllOk = true;
   let rotateFailInfo = '';
   let lastRotateTicket = null;
   let sixthUaStatus = null;
   for (let i = 0; i < rotateUas.length; i++) {
     if (i === 3) await new Promise((r2) => setTimeout(r2, 40000)); // 跨限流窗口
-    const tRot = await c.getTicket(undefined, rotateUas[i]);
-    let rRot = await c.req('GET', '/api/articles?page=1', { ticket: tRot, silent: true, ua: rotateUas[i] });
+    const tRot = await c.getTicket(undefined, rotateUas[i], rotationHeaders);
+    let rRot = await c.req('GET', '/api/articles?page=1', { ticket: tRot, silent: true, ua: rotateUas[i], headers: rotationHeaders });
     if (rRot.status !== 200) {
       // 全局 apiLimiter 瞬时 429：等 2s 重试一次再判定
       await new Promise((r2) => setTimeout(r2, 2000));
-      rRot = await c.req('GET', '/api/articles?page=1', { ticket: tRot, silent: true, ua: rotateUas[i] });
+      rRot = await c.req('GET', '/api/articles?page=1', { ticket: tRot, silent: true, ua: rotateUas[i], headers: rotationHeaders });
     }
     if (i < 5 && rRot.status !== 200) {
       rotateAllOk = false;
@@ -201,7 +203,7 @@ async function suite() {
   // 第 6 个 UA 已触发检测并开始计分；复用第 6 张票（同 UA）继续请求 → 积分累计触发封禁
   let sawReject = false;
   for (let k = 0; k < 5; k++) {
-    const rRot = await c.req('GET', '/api/articles?page=1', { ticket: lastRotateTicket, silent: true, ua: rotateUas[5] });
+    const rRot = await c.req('GET', '/api/articles?page=1', { ticket: lastRotateTicket, silent: true, ua: rotateUas[5], headers: rotationHeaders });
     if (rRot.status === 403) { sawReject = true; break; }
     await new Promise((r2) => setTimeout(r2, 1500));
   }

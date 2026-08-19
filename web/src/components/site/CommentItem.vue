@@ -2,8 +2,7 @@
   <div class="comment-item" :class="{ child: depth > 0 }">
     <div class="comment-card" :class="{ highlighted: isHighlighted }" :id="'comment-' + comment.id" :data-id="comment.id">
       <div class="avatar" :style="{ background: avatarColor }" @click="$emit('reply', comment)">
-        <img v-if="avatar && !avatarFailed" :src="avatar" :alt="comment.nickname" loading="lazy" decoding="async" referrerpolicy="no-referrer" @error="avatarFailed = true" />
-        <span v-else>{{ initial }}</span>
+        <span>{{ initial }}</span>
       </div>
 
       <div class="comment-body">
@@ -101,12 +100,6 @@ watch(
 );
 
 const isHighlighted = computed(() => props.highlightId === props.comment.id);
-
-// Gravatar 加载失败时回退到渐变首字头像
-const avatarFailed = ref(false);
-
-// Gravatar 头像（URL 由服务端计算下发，访客邮箱不出现在公开接口中）
-const avatar = computed(() => props.comment.gravatar || '');
 
 const initial = computed(() => (props.comment.nickname || '?').charAt(0).toUpperCase());
 
@@ -226,12 +219,6 @@ const avatarColor = computed(() => {
   cursor: pointer;
   user-select: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-
-.avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 /* 内容 */
