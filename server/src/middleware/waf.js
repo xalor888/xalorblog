@@ -375,10 +375,12 @@ function trackUaRotation(ip, ua) {
 /** JSON 炸弹防护：深层嵌套 / 超大数组会消耗解析与循环 CPU（express.json 无深度限制） */
 const MAX_BODY_DEPTH = 20;
 const MAX_ARRAY_LENGTH = 1000;
+const MAX_OBJECT_KEYS = 1000;
 
 function bodyShapeSafe(obj, depth = 0) {
   if (obj === null || typeof obj !== 'object') return true;
   if (depth > MAX_BODY_DEPTH) return false;
+  if (Object.keys(obj).length > MAX_OBJECT_KEYS) return false;
   if (Array.isArray(obj)) {
     if (obj.length > MAX_ARRAY_LENGTH) return false;
     for (const item of obj) {
