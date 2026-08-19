@@ -15,7 +15,10 @@ export const THEME_COLORS = [
 
 export const useThemeStore = defineStore('theme', () => {
   // 主题模式三态：auto（跟随系统）/ light / dark；默认 auto
-  const mode = ref(localStorage.getItem('xalor_theme') || 'auto');
+  const safeGet = (key) => {
+    try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
+  };
+  const mode = ref(safeGet('xalor_theme') || 'auto');
   const systemDark = ref(window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false);
   const isDark = computed(
     () => mode.value === 'dark' || (mode.value === 'auto' && systemDark.value)
@@ -23,7 +26,7 @@ export const useThemeStore = defineStore('theme', () => {
   // 强调色：严格校验十六进制格式，非法存储值（旧版遗留/手动篡改）
   // 直接回退默认色，防 NaN 注入 CSS 变量导致整站颜色失效
   const DEFAULT_ACCENT = '#e4573d';
-  const storedAccent = localStorage.getItem('xalor_accent') || '';
+  const storedAccent = safeGet('xalor_accent');
   const accent = ref(/^#[0-9a-f]{6}$/i.test(storedAccent) ? storedAccent : DEFAULT_ACCENT);
 
   function apply() {
@@ -64,7 +67,7 @@ export const useThemeStore = defineStore('theme', () => {
   /** 显式设置主题模式 */
   function setMode(m) {
     mode.value = m;
-    localStorage.setItem('xalor_theme', m);
+    try { localStorage.setItem('xalor_theme', m); } catch (e) { /* 隐私模式忽略 */ }
     flashTransition();
     apply();
   }
@@ -72,7 +75,7 @@ export const useThemeStore = defineStore('theme', () => {
   function setAccent(color) {
     if (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) return; // 非法值忽略
     accent.value = color;
-    localStorage.setItem('xalor_accent', color);
+    try { localStorage.setItem('xalor_accent', color); } catch (e) { /* 隐私模式忽略 */ }
     flashTransition();
     apply();
   }
