@@ -159,7 +159,7 @@ app.use(
       return cb(new Error('不允许的跨域来源'));
     },
     methods: ALLOWED_METHODS,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Pass', 'X-Fp', 'X-Sig', 'X-Timestamp', 'X-Nonce', 'X-Enc'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Pass', 'X-Fp', 'X-Sig', 'X-Timestamp', 'X-Nonce', 'X-Enc', 'X-Hp-Field'],
     maxAge: 86400,
   })
 );
