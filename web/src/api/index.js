@@ -60,7 +60,8 @@ request.interceptors.request.use(async (config) => {
   // 已指向新票据，直接解密会因密钥不匹配而失败（正文渲染为空）
   config._ticket = getTicket();
   // JWT 认证头：后台接口依赖它通过 authRequired
-  const token = localStorage.getItem('xalor_token');
+  let token = '';
+  try { token = localStorage.getItem('xalor_token') || ''; } catch (e) { /* 隐私模式忽略 */ }
   if (token) config.headers['Authorization'] = `Bearer ${token}`;
   if (['post', 'put', 'delete'].includes((config.method || '').toLowerCase())) {
     const { ts, sig, nonce } = await signRequest(config);

@@ -80,7 +80,8 @@ router.beforeEach(async (to) => {
   }
   if (adminKey !== real) return { name: 'not-found' };
   document.title = to.meta.title ? `${to.meta.title} · Xalor的小站` : 'Xalor的小站';
-  const token = localStorage.getItem('xalor_token');
+  let token = '';
+  try { token = localStorage.getItem('xalor_token') || ''; } catch (e) { /* 隐私模式忽略 */ }
   if (to.meta.requiresAuth && !token) {
     return { path: `/${adminKey}/login`, replace: true };
   }
