@@ -93,6 +93,9 @@ async function suite() {
   r = runRef(mockReq({ origin: 'http://127.0.0.1:8080' }));
   assert('本地开发来源 → 放行', r.nexted === true, JSON.stringify(r));
 
+  r = runRef(mockReq({ origin: 'http://[::1]:8080' }));
+  assert('本地 IPv6 开发来源 → 放行', r.nexted === true, JSON.stringify(r));
+
   console.log('=== C. refererRequired：签名旁路语义（核心回归） ===');
   r = runRef(mockReq({ 'x-sig': 'deadbeef', origin: 'http://evil.com' }));
   assert('裸 X-Sig 头 + 外域来源 → 403（头不可伪造旁路）', r.status === 403 && r.message === '来源不合法', JSON.stringify(r));

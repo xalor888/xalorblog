@@ -19,7 +19,7 @@ const TIMESTAMP_WINDOW = 5 * 60 * 1000; // ±5 分钟
 /** 提取 URL 的 hostname（小写；解析失败返回空串） */
 function safeHost(urlStr) {
   try {
-    return new URL(urlStr).hostname.toLowerCase();
+    return new URL(urlStr).hostname.toLowerCase().replace(/^\[|\]$/g, '');
   } catch (e) {
     return '';
   }
