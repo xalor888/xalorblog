@@ -56,7 +56,7 @@ module.exports = {
   },
   uploadDir: path.join(__dirname, '..', 'uploads'),
   // 允许的 Host（防 Host 头注入/缓存投毒）
-  allowedHosts: (process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1')
+  allowedHosts: (process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,::1')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
