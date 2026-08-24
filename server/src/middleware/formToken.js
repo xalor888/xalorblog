@@ -29,14 +29,13 @@ function normUa(ua) {
   return String(ua || '').slice(0, 120);
 }
 
-/** 签发令牌 ts.nonce.sig（绑定 ip/fp/ua/路径） */
+/** 签发令牌 ts.nonce.sig（绑定 fp/ua/路径；不绑精确 IP，避免 Cloudflare dual-stack 误杀） */
 function issueToken(req, path = '') {
-  const ip = req.ip || 'unknown';
   const fp = String(req.headers['x-fp'] || '').slice(0, 128);
   const ua = normUa(req.headers['user-agent']);
   const ts = Date.now();
   const nonce = crypto.randomBytes(6).toString('hex');
-  const sig = sign([ip, fp, ua, path, ts, nonce].join('|'));
+  const sig = sign([fp, ua, path, ts, nonce].join('|'));
   return `${ts}.${nonce}.${sig}`;
 }
 
@@ -49,10 +48,9 @@ function verifyToken(req, token, path = '') {
   const ts = Number(tsStr);
   if (!Number.isFinite(ts)) return { ok: false, reason: '安全令牌无效' };
 
-  const ip = req.ip || 'unknown';
   const fp = String(req.headers['x-fp'] || '').slice(0, 128);
   const ua = normUa(req.headers['user-agent']);
-  const expect = sign([ip, fp, ua, path, ts, nonce].join('|'));
+  const expect = sign([fp, ua, path, ts, nonce].join('|'));
   const a = Buffer.from(sig, 'utf8');
   const b = Buffer.from(expect, 'utf8');
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {

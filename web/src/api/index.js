@@ -104,7 +104,7 @@ request.interceptors.response.use(
   async (error) => {
     const status = error.response?.status;
     const message = error.response?.data?.message || error.message || '网络错误';
-    const isGateError = status === 403 && /通行证|访问被拒绝|安全通道/.test(message);
+    const isGateError = status === 403 && /通行证|访问被拒绝|安全通道|请求来源不匹配|通行证校验失败|需要重新验证/.test(message);
     if (status === 401) {
       // 已在登录页（如密码/验证码错误）：直接提示，不跳转
       const cached = getCachedAdminPath();

@@ -65,6 +65,17 @@ function normUa(ua) {
   return String(ua || '').slice(0, 120);
 }
 
+/** Cloudflare / Happy Eyeballs 会在 IPv4 与 IPv6 之间切换；票据不能绑死精确地址。 */
+function normalizeClientIp(ip) {
+  let s = String(ip || 'unknown').trim().toLowerCase();
+  if (s.startsWith('::ffff:')) s = s.slice(7);
+  return s;
+}
+
+function clientIp(req) {
+  return normalizeClientIp(req.ip || 'unknown');
+}
+
 /** 自适应 PoW 难度：信誉积分越高越难（最高 6 档） */
 function adaptiveDifficulty(ip) {
   const score = getScore(ip || '');
@@ -121,14 +132,14 @@ function issuePuzzle(req) {
   const id = crypto.randomBytes(8).toString('hex');
   const fp = String(req.headers['x-fp'] || '').slice(0, 128);
   // 代理池对抗：同一指纹出现在多个 IP → 记信誉积分 + 本挑战难度拉满
-  if (trackFpIp(fp, req.ip || 'unknown')) {
+  if (trackFpIp(fp, clientIp(req))) {
     const { report } = require('./ipGuard');
     report(req.ip, 'rate', 'FP-IP-POOL');
   }
   puzzles.set(id, {
     ts: Date.now(),
     prefix,
-    ip: req.ip || 'unknown',
+    ip: clientIp(req),
     fp,
     ua: normUa(req.headers['user-agent']),
     diff: isFpFlagged(fp) ? POW_DIFF_MAX : adaptiveDifficulty(req.ip),
@@ -160,13 +171,13 @@ function verifyPow(req, body) {
   if (!pz) return { ok: false, reason: '挑战不存在或已失效' };
   puzzles.delete(id);
   if (Date.now() - pz.ts > PUZZLE_TTL) return { ok: false, reason: '挑战已过期，请重试' };
-  if ((req.ip || 'unknown') !== pz.ip) return { ok: false, reason: '请求来源不匹配' };
   // UA 一致性：换 UA 重新求解（防拼接脚本轮换 UA 绕过）
   if (normUa(req.headers['user-agent']) !== pz.ua) return { ok: false, reason: '环境信息不匹配' };
   // 指纹一致性：挑战签发时的指纹必须与提交时一致
   if (String(req.headers['x-fp'] || '').slice(0, 128) !== pz.fp) {
     return { ok: false, reason: '设备指纹不匹配' };
   }
+  // 不把 PoW 绑死精确 IP：Cloudflare / Happy Eyeballs 会在 IPv4 与 IPv6 之间切换。
   if (typeof solution !== 'string' || solution.length > 64 || !/^[a-zA-Z0-9]+$/.test(solution)) {
     return { ok: false, reason: '求解结果无效' };
   }
@@ -184,7 +195,7 @@ function verifyPow(req, body) {
 function issueTicket(ip, fp, ua, renews = 0, persist = false) {
   const jti = crypto.randomBytes(9).toString('hex');
   const ts = Date.now();
-  const sig = hmac([VERSION, ip, fp, ua, ts, jti].join('|'));
+  const sig = hmac([VERSION, fp, ua, ts, jti].join('|'));
   rememberIssued(jti, ts, renews);
   if (persist) persistTicket(jti, ts, renews);
   return { token: [ts, jti, sig].join('.'), jti, ts };
@@ -249,10 +260,9 @@ function verifyTicket(req) {
   const issued = issuedJti.get(jti);
   if (!issued) return { ok: false, reason: '通行证无效' };
 
-  const ip = req.ip || 'unknown';
   const fp = String(req.headers['x-fp'] || '').slice(0, 128);
   const ua = normUa(req.headers['user-agent']);
-  const expect = hmac([VERSION, ip, fp, ua, ts, jti].join('|'));
+  const expect = hmac([VERSION, fp, ua, ts, jti].join('|'));
 
   const a = Buffer.from(sig, 'utf8');
   const b = Buffer.from(expect, 'utf8');
@@ -364,7 +374,7 @@ function renewTicket(req) {
     }
   }
   const fp = String(req.headers['x-fp'] || '').slice(0, 128);
-  const issued2 = issueTicket(req.ip || 'unknown', fp, normUa(req.headers['user-agent']), renews, true);
+  const issued2 = issueTicket(clientIp(req), fp, normUa(req.headers['user-agent']), renews, true);
   return { ok: true, token: issued2.token };
 }
 

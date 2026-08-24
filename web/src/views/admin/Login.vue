@@ -4,8 +4,8 @@
       <div class="login-logo">
         <img src="/logo.png" alt="logo" class="login-logo-img" />
       </div>
-      <h1 class="login-title">工作室</h1>
-      <p class="login-sub">仅站长入口 · 请保管好地址</p>
+      <h1 class="login-title">后台登录</h1>
+      <p class="login-sub">请输入账号和密码</p>
 
       <form @submit.prevent="submit">
         <div class="field">
@@ -65,11 +65,9 @@
       </form>
 
       <router-link to="/" class="back-home">
-        <XIcon name="ArrowLeft" :size="14" /> 返回前台
+        <XIcon name="ArrowLeft" :size="14" /> 返回首页
       </router-link>
     </div>
-
-    <p class="login-foot">Powered by Vue 3 · Express · MySQL</p>
   </div>
 </template>
 
@@ -324,13 +322,6 @@ async function submit() {
 
 .back-home:hover {
   color: var(--accent);
-}
-
-.login-foot {
-  position: relative;
-  margin-top: 24px;
-  color: var(--text-3);
-  font-size: 0.78rem;
 }
 
 /* 两步验证输入框入场动画 */
