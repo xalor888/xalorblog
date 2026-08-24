@@ -7,25 +7,27 @@
       <div class="hero-dots" aria-hidden="true"></div>
 
       <div class="hero-card">
-        <p class="hero-kicker">NOTEBOOK</p>
+        <p class="hero-kicker">XALOR</p>
         <h1 class="hero-title">{{ site.settings.site_name || 'Xalor的小站' }}</h1>
-        <p class="hero-desc">
+        <p class="hero-desc" :title="typedFull">
           <span>{{ typed }}</span><span class="type-caret"></span>
         </p>
+        <div class="hero-actions">
+          <a class="hero-btn primary" :href="githubHref" target="_blank" rel="noopener">
+            <XIcon name="Github" :size="18" /> GitHub
+          </a>
+          <a class="hero-btn" :href="'mailto:' + mailHref">
+            <XIcon name="Mail" :size="18" /> 邮箱
+          </a>
+          <button class="hero-btn ghost" type="button" @click="scrollToFeed">
+            阅读文章 <XIcon name="ChevronDown" :size="16" />
+          </button>
+        </div>
         <div class="hero-meta">
           <span><b>{{ display.articles }}</b> 文章</span>
           <span><b>{{ display.comments }}</b> 评论</span>
           <span><b>{{ formatNumber(display.pv) }}</b> 浏览</span>
         </div>
-      </div>
-
-      <div class="hero-dock">
-        <a v-if="githubHref" :href="githubHref" target="_blank" rel="noopener" title="GitHub"><XIcon name="Github" :size="18" /></a>
-        <a v-if="site.settings.social_email" :href="'mailto:' + site.settings.social_email" title="邮箱"><XIcon name="Mail" :size="18" /></a>
-        <a href="/api/rss.xml" title="RSS"><XIcon name="Rss" :size="18" /></a>
-        <button class="hero-scroll" type="button" title="向下浏览" @click="scrollToFeed">
-          <XIcon name="ChevronDown" :size="20" />
-        </button>
       </div>
     </section>
 
@@ -167,8 +169,12 @@ const homeError = ref(false);
 const feedArticles = computed(() => articles.value);
 const githubHref = computed(() => {
   const u = String(site.settings.social_github || '').trim();
-  if (!u || /^https?:\/\/github\.com\/?$/i.test(u)) return '';
+  if (!u || /^https?:\/\/github\.com\/?$/i.test(u)) return 'https://github.com/xalor888';
   return u;
+});
+const mailHref = computed(() => {
+  const u = String(site.settings.social_email || '').trim();
+  return u || 'xalor888@gmail.com';
 });
 
 async function setHotSort(s) {
@@ -179,11 +185,14 @@ async function setHotSort(s) {
 }
 
 const typed = ref('');
-const TYPE_LINES = computed(() => {
-  const desc = (site.settings.site_desc || '记录技术、生活与思考').slice(0, 64);
-  return [desc, '用文字，把日子过成诗。', 'Hi there — welcome to the notebook.'];
-});
+const typedFull = ref('');
+const INTRO_LINES = [
+  "👋 Hello, I'm Xalor, 一个普普通通的学生开发者",
+  'The future is now. Infinite. Relentless. Evolving',
+];
+let typeLines = [...INTRO_LINES];
 let typeTimer = null;
+let hitokotoTimer = null;
 
 const display = ref({ articles: 0, comments: 0, pv: 0 });
 
@@ -214,14 +223,14 @@ function runCountUps() {
 }
 
 function startTyping() {
-  const lines = TYPE_LINES.value;
   let line = 0;
   let i = 0;
   let deleting = false;
   let pause = 0;
   typed.value = '';
+  typedFull.value = typeLines[0] || '';
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-    typed.value = lines[0];
+    typed.value = typeLines[0] || '';
     return;
   }
   clearInterval(typeTimer);
@@ -230,24 +239,46 @@ function startTyping() {
       pause -= 1;
       return;
     }
-    const text = lines[line] || '';
+    const text = typeLines[line] || '';
+    typedFull.value = text;
     if (!deleting) {
       i += 1;
       typed.value = text.slice(0, i);
       if (i >= text.length) {
         deleting = true;
-        pause = 22;
+        pause = text.length > 40 ? 36 : 28;
       }
     } else {
       i -= 1;
       typed.value = text.slice(0, Math.max(0, i));
       if (i <= 0) {
         deleting = false;
-        line = (line + 1) % lines.length;
-        pause = 4;
+        line = (line + 1) % Math.max(typeLines.length, 1);
+        pause = 6;
       }
     }
-  }, 48);
+  }, 42);
+}
+
+async function pullHitokoto() {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    const res = await fetch('https://v1.hitokoto.cn/?encode=json&charset=utf-8', {
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return;
+    const data = await res.json();
+    const quote = String(data.hitokoto || '').trim();
+    if (!quote) return;
+    const from = String(data.from || '').trim();
+    const next = from ? `${quote} —— ${from}` : quote;
+    if (!typeLines.includes(next)) typeLines.push(next.slice(0, 120));
+    if (typeLines.length > 24) typeLines = [INTRO_LINES[0], INTRO_LINES[1], ...typeLines.slice(-20)];
+  } catch (e) {
+    /* 一言失败时继续轮播已有句子 */
+  }
 }
 
 function scrollToFeed() {
@@ -293,6 +324,8 @@ onMounted(async () => {
   startTyping();
   runCountUps();
   window.addEventListener('scroll', onHeroScroll, { passive: true });
+  hitokotoTimer = setInterval(pullHitokoto, 18000);
+  setTimeout(pullHitokoto, 8000);
 });
 
 async function retryHome() {
@@ -310,6 +343,7 @@ async function retryHome() {
 
 onUnmounted(() => {
   clearInterval(typeTimer);
+  clearInterval(hitokotoTimer);
   window.removeEventListener('scroll', onHeroScroll);
 });
 </script>
@@ -397,11 +431,55 @@ onUnmounted(() => {
 }
 
 .hero-desc {
-  margin-top: 16px;
-  min-height: 1.6em;
-  font-size: clamp(1rem, 2vw, 1.25rem);
+  margin: 18px auto 0;
+  min-height: 3.2em;
+  max-width: 36em;
+  font-size: clamp(1.02rem, 2.1vw, 1.32rem);
   font-weight: 500;
-  opacity: 0.92;
+  line-height: 1.55;
+  opacity: 0.94;
+}
+
+.hero-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.hero-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.hero-btn.primary {
+  background: #fff;
+  color: #1a1814;
+  border-color: #fff;
+}
+
+.hero-btn.ghost {
+  background: transparent;
+}
+
+.hero-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.hero-btn.primary:hover {
+  background: #f4f0ea;
 }
 
 .type-caret {
@@ -431,50 +509,6 @@ onUnmounted(() => {
 .hero-meta b {
   font-variant-numeric: tabular-nums;
   margin-right: 6px;
-}
-
-.hero-dock {
-  position: absolute;
-  z-index: 3;
-  bottom: 28px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px 8px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  backdrop-filter: blur(16px);
-}
-
-.hero-dock a,
-.hero-scroll {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hero-dock a:hover,
-.hero-scroll:hover {
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.hero-scroll {
-  width: 40px;
-  height: 40px;
-  background: rgba(255, 255, 255, 0.16);
-  animation: bob 2.2s ease-in-out infinite;
-}
-
-@keyframes bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(5px); }
 }
 
 .home-body {
@@ -760,6 +794,6 @@ onUnmounted(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-dots, .hero-scroll, .type-caret { animation: none; }
+  .hero-dots, .type-caret { animation: none; }
 }
 </style>

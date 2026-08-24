@@ -1,7 +1,8 @@
 /**
  * 客户端加解密（与 server 端 utils/crypto.js 对应）
  * 密钥 = HMAC-SHA256(ENC_SALT, passTicket[|articleKey])
- * articleKey 让同一张票解开的密文不能复用到另一篇。
+ * 密文格式（base64）：iv(12B) | tag(16B) | ciphertext
+ * WebCrypto decrypt 的输入必须是 ciphertext||tag，不能把 IV 再拼进去。
  */
 
 import { getTicket } from './pass';
@@ -27,7 +28,6 @@ async function deriveKey(ticket, articleKey) {
 
 /**
  * 解密服务端加密的正文
- * 密文格式（base64）：iv(12B) | tag(16B) | ciphertext
  */
 export async function decryptContent(payload, ticket = null, articleKey = '') {
   try {
@@ -35,11 +35,13 @@ export async function decryptContent(payload, ticket = null, articleKey = '') {
     if (!useTicket || !payload) return '';
     const raw = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
     if (raw.length < 28) return '';
-    const iv = raw.slice(0, 12);
-    const tag = raw.slice(12, 28);
-    const data = raw.slice(28);
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const data = raw.subarray(28);
     const key = await deriveKey(useTicket, articleKey);
-    const input = Uint8Array.from([...iv, ...data, ...tag]);
+    const input = new Uint8Array(data.length + tag.length);
+    input.set(data, 0);
+    input.set(tag, data.length);
     const plain = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv, tagLength: 128 },
       key,

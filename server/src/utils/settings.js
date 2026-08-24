@@ -12,9 +12,9 @@ const DEFAULT_SETTINGS = {
   // 站点完整 URL（如 https://blog.example.com）：RSS/Sitemap/分享页链接优先使用，
   // 避免 Nginx 终止 TLS 时 req.protocol 推导出 http 链接
   site_url: '',
-  social_github: 'https://github.com/',
+  social_github: 'https://github.com/xalor888',
   social_weibo: '',
-  social_email: 'xalor@example.com',
+  social_email: 'xalor888@gmail.com',
   // 内容审核开关：开启后新评论/留言进入待审，需后台手动通过
   comment_moderation: false,
   message_moderation: false,

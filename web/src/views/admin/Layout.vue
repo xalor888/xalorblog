@@ -162,13 +162,15 @@ async function logout() {
   display: flex;
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--bg);
+  background:
+    radial-gradient(900px 420px at 0% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 55%),
+    var(--bg);
 }
 
 /* ============ 侧边栏 ============ */
 .admin-side {
-  width: 224px;
-  background: var(--card);
+  width: 232px;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -177,6 +179,7 @@ async function logout() {
   bottom: 0;
   left: 0;
   z-index: 60;
+  backdrop-filter: blur(18px);
   transition: width 0.25s var(--ease);
 }
 
@@ -221,8 +224,8 @@ async function logout() {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 9px 13px;
-  border-radius: 8px;
+  padding: 10px 13px;
+  border-radius: 10px;
   color: var(--text-2);
   font-size: 0.9rem;
   cursor: pointer;
@@ -290,8 +293,8 @@ async function logout() {
 
 .admin-header {
   height: 64px;
-  background: var(--card-trans);
-  backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--card) 78%, transparent);
+  backdrop-filter: blur(18px);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;

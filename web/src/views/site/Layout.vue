@@ -59,9 +59,6 @@
             </div>
           </el-popover>
 
-          <router-link :to="adminLink" class="icon-btn" title="管理后台">
-            <XIcon name="Settings" :size="17" />
-          </router-link>
         </div>
       </div>
     </header>
@@ -90,9 +87,6 @@
           <button class="mobile-action" @click="theme.toggleTheme">
             <XIcon :name="theme.isDark ? 'Sun' : 'Moon'" :size="16" /> {{ theme.isDark ? '亮色模式' : '暗色模式' }}
           </button>
-          <router-link :to="adminLink" class="mobile-action" @click="mobileOpen = false">
-            <XIcon name="Settings" :size="16" /> 管理后台
-          </router-link>
         </div>
       </nav>
     </transition>
@@ -130,9 +124,9 @@
             </div>
             <p class="footer-desc">{{ site.settings.site_desc }}</p>
             <div class="footer-social">
-              <a v-if="githubHref" :href="githubHref" target="_blank" rel="noopener" class="social-link" title="GitHub"><XIcon name="Github" :size="16" /></a>
+              <a :href="githubHref" target="_blank" rel="noopener" class="social-link" title="GitHub"><XIcon name="Github" :size="16" /></a>
               <a v-if="site.settings.social_weibo" :href="site.settings.social_weibo" target="_blank" rel="noopener" class="social-link" title="微博"><XIcon name="AtSign" :size="16" /></a>
-              <a v-if="site.settings.social_email" :href="'mailto:' + site.settings.social_email" class="social-link" title="邮箱"><XIcon name="Mail" :size="16" /></a>
+              <a :href="'mailto:' + mailHref" class="social-link" title="邮箱"><XIcon name="Mail" :size="16" /></a>
               <a href="/api/rss.xml" class="social-link rss-link" title="RSS 订阅"><XIcon name="Rss" :size="16" /></a>
             </div>
           </div>
@@ -222,7 +216,7 @@ import { useThemeStore, THEME_COLORS } from '@/stores/theme';
 import { useSiteStore } from '@/stores/site';
 import { statsApi } from '@/api';
 import { formatNumber } from '@/utils/format';
-import { adminHref, getAdminPath } from '@/utils/adminPath';
+
 import { warmFormToken } from '@/utils/formToken';
 import { lockBodyScroll, unlockBodyScroll, resetBodyScroll } from '@/utils/scrollLock';
 
@@ -242,8 +236,6 @@ watch(mobileOpen, (open) => {
 watch(() => route.path, () => {
   if (mobileOpen.value) mobileOpen.value = false;
 });
-// 管理后台链接（秘钥路径异步加载，加载完成后更新）
-const adminLink = ref(adminHref());
 // 公告关闭记忆：用公告内容 hash 作 key，内容变了重新显示
 const announcementClosed = ref(false);
 const ANNOUNCEMENT_KEY = 'xalor_announcement_hidden';
@@ -286,8 +278,12 @@ const isHome = computed(() => route.path === '/');
 const navOverlay = computed(() => isHome.value && !scrolled.value);
 const githubHref = computed(() => {
   const u = String(site.settings.social_github || '').trim();
-  if (!u || /^https?:\/\/github\.com\/?$/i.test(u)) return '';
+  if (!u || /^https?:\/\/github\.com\/?$/i.test(u)) return 'https://github.com/xalor888';
   return u;
+});
+const mailHref = computed(() => {
+  const u = String(site.settings.social_email || '').trim();
+  return u || 'xalor888@gmail.com';
 });
 
 function isActive(item) {
@@ -337,10 +333,6 @@ onMounted(async () => {
   window.addEventListener('keydown', onGlobalKeydown);
   await site.init();
   checkAnnouncement();
-  // 预热管理后台秘钥路径（导航「管理后台」入口需要）
-  getAdminPath().then((key) => {
-    if (key) adminLink.value = `/${key}`;
-  }).catch(() => {});
   // 预热评论表单令牌（减少首次提交等待）
   warmFormToken();
   // 空闲时预取常用页面 chunk（浏览器空闲期提前加载，导航即点即开）

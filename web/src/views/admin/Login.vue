@@ -4,8 +4,8 @@
       <div class="login-logo">
         <img src="/logo.png" alt="logo" class="login-logo-img" />
       </div>
-      <h1 class="login-title">Xalor 的小站 · 管理后台</h1>
-      <p class="login-sub">登录以管理你的博客</p>
+      <h1 class="login-title">工作室</h1>
+      <p class="login-sub">仅站长入口 · 请保管好地址</p>
 
       <form @submit.prevent="submit">
         <div class="field">
@@ -183,11 +183,12 @@ async function submit() {
 .login-card {
   position: relative;
   width: min(400px, 100%);
-  background: var(--card);
+  background: color-mix(in srgb, var(--card) 92%, transparent);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: 24px;
   padding: 44px 42px;
   box-shadow: var(--shadow-2);
+  backdrop-filter: blur(18px);
 }
 
 /* 极限窄屏（≤400px）：收紧内边距，保证输入框可用宽度 */
