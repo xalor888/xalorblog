@@ -1178,7 +1178,11 @@ router.get('/stats/dashboard', async (req, res) => {
     ]);
 
     const trendMap = {};
-    for (const r of trend) trendMap[r.day] = { day: r.day, pv: r.pv, uv: r.uv };
+    for (const r of trend) {
+      const day = String(r.day || '').slice(0, 10);
+      if (!day) continue;
+      trendMap[day] = { day, pv: Number(r.pv) || 0, uv: Number(r.uv) || 0 };
+    }
     const fullTrend = [];
     for (let i = 0; i < days; i++) {
       const d = localDateStr(new Date(Date.now() - (days - 1 - i) * 24 * 3600 * 1000));
@@ -1197,8 +1201,8 @@ router.get('/stats/dashboard', async (req, res) => {
       // 互动趋势：14 天补零对齐
       interact_trend: (() => {
         const cMap = {}; const mMap = {};
-        for (const r of commentTrend) cMap[r.day] = Number(r.cnt);
-        for (const r of messageTrend) mMap[r.day] = Number(r.cnt);
+        for (const r of commentTrend) cMap[String(r.day || '').slice(0, 10)] = Number(r.cnt);
+        for (const r of messageTrend) mMap[String(r.day || '').slice(0, 10)] = Number(r.cnt);
         const out = [];
         for (let i = 0; i < 14; i++) {
           const d = localDateStr(new Date(Date.now() - (13 - i) * 24 * 3600 * 1000));

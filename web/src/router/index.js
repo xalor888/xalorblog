@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
-import { getAdminPath, getCachedAdminPath } from '@/utils/adminPath';
+import { getAdminPath, getCachedAdminPath, refreshAdminPath } from '@/utils/adminPath';
 import { getAuthToken } from '@/utils/authSession';
 
 const routes = [
@@ -17,7 +17,6 @@ const routes = [
       { path: 'links', name: 'links', component: () => import('@/views/site/Links.vue') },
       { path: 'messages', name: 'messages', component: () => import('@/views/site/Messages.vue') },
       { path: 'bookmarks', name: 'bookmarks', component: () => import('@/views/site/Bookmarks.vue') },
-      { path: ':pathMatch(.*)*', name: 'not-found', component: () => import('@/views/site/NotFound.vue') },
     ],
   },
   // ============ 后台（秘钥路径：/:adminKey 动态段，守卫校验） ============
@@ -48,7 +47,15 @@ const routes = [
       { path: 'settings', name: 'admin-settings', component: () => import('@/views/admin/Settings.vue'), meta: { title: '站点设置' } },
     ],
   },
-  { path: '/:pathMatch(.*)*', redirect: '/' },
+  // 404 必须挂在后台路由之后：放在前台 children 里会变成 /:pathMatch(.*)*，
+  // 和 /:adminKey/... 抢匹配，后台刷新/直达会落到前台空壳。
+  {
+    path: '/:pathMatch(.*)*',
+    component: () => import('@/views/site/Layout.vue'),
+    children: [
+      { path: '', name: 'not-found', component: () => import('@/views/site/NotFound.vue') },
+    ],
+  },
 ];
 
 const router = createRouter({
@@ -72,9 +79,9 @@ router.beforeEach(async (to) => {
   // 本地缓存缺失（首次访问/缓存被清）时必须先取真实路径再比较，
   // 否则任意单段 URL（如 #/foo）会被放行渲染后台登录页/空壳
   let real = getCachedAdminPath();
-  if (!real) {
+  if (!real || real !== adminKey) {
     try {
-      real = await getAdminPath();
+      real = real && real !== adminKey ? await refreshAdminPath() : await getAdminPath();
     } catch (e) {
       return { name: 'not-found' };
     }

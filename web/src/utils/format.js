@@ -80,9 +80,11 @@ export function readingTime(content = '') {
   return Math.max(1, minutes);
 }
 
-/** 数字格式化：1.2k */
+/** 数字格式化：1.2k；缺省/非法值按 0，避免页脚出现 "undefined" */
 export function formatNumber(n) {
-  if (n >= 10000) return (n / 10000).toFixed(1) + 'w';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-  return String(n);
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return '0';
+  if (v >= 10000) return (v / 10000).toFixed(1).replace(/\.0$/, '') + 'w';
+  if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return String(Math.round(v));
 }

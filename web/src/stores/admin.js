@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { statsApi } from '@/api';
+import { getAdminPath } from '@/utils/adminPath';
 
 /** 后台数据：待审事项角标 */
 export const useAdminStore = defineStore('admin', () => {
@@ -9,8 +10,9 @@ export const useAdminStore = defineStore('admin', () => {
 
   async function fetchPending() {
     try {
+      await getAdminPath();
       const data = await statsApi.dashboard();
-      pending.value = data.pending;
+      pending.value = data.pending || { comments: 0, links: 0, messages: 0 };
       loaded.value = true;
     } catch (e) {
       /* 忽略 */

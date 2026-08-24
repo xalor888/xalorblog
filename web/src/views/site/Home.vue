@@ -144,7 +144,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import ArticleCard from '@/components/site/ArticleCard.vue';
 import SkeletonList from '@/components/ui/SkeletonList.vue';
@@ -284,6 +284,8 @@ function onHeroScroll() {
   hero.style.transform = `scale(1.08) translateY(${y * 0.18}px)`;
 }
 
+watch(() => site.stats.total_uv, () => runCountUps());
+
 onMounted(async () => {
   await site.init();
   await loadHome();
@@ -332,11 +334,11 @@ onUnmounted(() => {
   position: absolute;
   inset: -8%;
   z-index: 0;
-  background:
-    radial-gradient(1200px 700px at 18% 12%, color-mix(in srgb, var(--accent) 55%, #3a1c14) 0%, transparent 58%),
-    radial-gradient(900px 640px at 88% 18%, #1b3a4a 0%, transparent 52%),
-    radial-gradient(800px 520px at 50% 100%, #1a1410 0%, transparent 60%),
-    linear-gradient(160deg, #14110e 0%, #2a1c18 42%, #121820 100%);
+  background-color: #14110e;
+  background-image: url('@/assets/hero.jpg');
+  background-size: cover;
+  background-position: center 40%;
+  background-repeat: no-repeat;
   transform: scale(1.08);
 }
 
@@ -345,8 +347,8 @@ onUnmounted(() => {
   inset: 0;
   z-index: 1;
   background:
-    linear-gradient(180deg, rgba(10, 8, 6, 0.28) 0%, rgba(10, 8, 6, 0.18) 40%, rgba(10, 8, 6, 0.55) 100%),
-    radial-gradient(60% 80% at 50% 40%, rgba(0, 0, 0, 0.15), transparent 70%);
+    linear-gradient(180deg, rgba(10, 8, 6, 0.42) 0%, rgba(10, 8, 6, 0.28) 42%, rgba(10, 8, 6, 0.62) 100%),
+    radial-gradient(60% 80% at 50% 40%, rgba(0, 0, 0, 0.18), transparent 70%);
 }
 
 .hero-dots {

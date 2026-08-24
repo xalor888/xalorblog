@@ -103,7 +103,9 @@ const theme = useThemeStore();
 const admin = useAdminStore();
 
 // 侧栏折叠偏好本地记忆（每次进后台保持上次状态）
-const collapsed = ref(localStorage.getItem('xalor_admin_side') === '1');
+const collapsed = ref((() => {
+  try { return localStorage.getItem('xalor_admin_side') === '1'; } catch (e) { return false; }
+})());
 watch(collapsed, (v) => {
   try {
     localStorage.setItem('xalor_admin_side', v ? '1' : '0');
@@ -421,6 +423,9 @@ async function logout() {
 .admin-content {
   flex: 1;
   padding: 28px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* 超宽屏：内容限宽居中，避免表格行过长影响可读性 */

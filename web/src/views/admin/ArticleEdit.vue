@@ -16,6 +16,7 @@
 
     <!-- 基本信息 -->
     <div class="meta-card card">
+      <el-form :model="form" label-position="top" class="meta-form" @submit.prevent>
       <div class="meta-grid">
         <el-form-item label="文章标题 *" class="span-2">
           <el-input v-model="form.title" placeholder="输入文章标题" maxlength="200" show-word-limit size="large" />
@@ -88,6 +89,7 @@
           />
         </el-form-item>
       </div>
+      </el-form>
     </div>
 
     <!-- 编辑器 -->
@@ -537,6 +539,10 @@ watch(form, scheduleAutosave, { deep: true });
 /* 元信息 */
 .meta-card {
   padding: 24px;
+}
+
+.meta-form {
+  margin: 0;
 }
 
 .meta-grid {

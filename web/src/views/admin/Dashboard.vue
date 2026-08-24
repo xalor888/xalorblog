@@ -97,7 +97,7 @@
               <div class="bar pv" :style="{ height: barHeight(d.pv, 'pv') }"></div>
               <div class="bar uv" :style="{ height: barHeight(d.uv, 'uv') }"></div>
             </div>
-            <span class="bar-label">{{ d.day.slice(5) }}</span>
+            <span class="bar-label">{{ String(d.day || '').slice(5) }}</span>
           </div>
         </div>
         <div v-if="trendEmpty" class="chart-empty">暂无访问数据</div>
@@ -130,7 +130,7 @@
               <div class="int-bar cm" :style="{ height: intBarHeight(d.comments, 'cm') }"></div>
               <div class="int-bar msg" :style="{ height: intBarHeight(d.messages, 'msg') }"></div>
             </div>
-            <span class="int-label">{{ d.day.slice(5) }}</span>
+            <span class="int-label">{{ String(d.day || '').slice(5) }}</span>
           </div>
         </div>
         <div v-else class="chart-empty">暂无互动数据</div>
@@ -175,24 +175,29 @@
 import { ref, computed, onMounted } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import { statsApi, securityApi } from '@/api';
-import { adminHref } from '@/utils/adminPath';
+import { adminHref, getAdminPath } from '@/utils/adminPath';
 import { timeAgo } from '@/utils/format';
 
 const dashboard = ref({
   trend: [],
   by_category: [],
+  interact_trend: [],
   pending: { comments: 0, links: 0, messages: 0 },
+  counts: {},
   total_articles: 0,
   top_articles: [],
+  recent_comments: [],
+  recent_messages: [],
+  recent_articles: [],
 });
 const security = ref({ event_total: 0, banned: [] });
 
-const pending = computed(() => dashboard.value.pending);
-const trend = computed(() => dashboard.value.trend);
-const byCategory = computed(() => dashboard.value.by_category);
+const pending = computed(() => dashboard.value.pending || { comments: 0, links: 0, messages: 0 });
+const trend = computed(() => dashboard.value.trend || []);
+const byCategory = computed(() => dashboard.value.by_category || []);
 const topArticles = computed(() => dashboard.value.top_articles || []);
 // 趋势全 0（新站尚无访问数据）：显示空态而非 14 根空柱
-const trendEmpty = computed(() => trend.value.every((t) => Number(t.pv) === 0 && Number(t.uv) === 0));
+const trendEmpty = computed(() => !trend.value.length || trend.value.every((t) => Number(t.pv) === 0 && Number(t.uv) === 0));
 
 // 互动趋势（近 14 天评论/留言）
 const interactTrend = computed(() => dashboard.value.interact_trend || []);
@@ -255,6 +260,7 @@ function catWidth(count) {
 
 async function loadAll() {
   try {
+    await getAdminPath();
     dashboard.value = await statsApi.dashboard(rangeDays.value);
     security.value = await securityApi.overview();
   } catch (e) {
@@ -264,7 +270,9 @@ async function loadAll() {
 
 /** 切换趋势时间范围（7/14/30 天，选择本地记忆） */
 const RANGE_KEY = 'xalor_dash_range';
-const rangeDays = ref(Number(localStorage.getItem(RANGE_KEY)) || 14);
+const rangeDays = ref((() => {
+  try { return Number(localStorage.getItem(RANGE_KEY)) || 14; } catch (e) { return 14; }
+})());
 function setRange(d) {
   rangeDays.value = d;
   try {

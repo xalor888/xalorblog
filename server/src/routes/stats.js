@@ -90,6 +90,9 @@ router.post('/record', async (req, res) => {
         pv: db.raw('visits.pv + ?', [pv]),
         uv: isNewUv ? db.raw('visits.uv + 1') : db.raw('visits.uv'),
       });
+    // 写入后立刻作废摘要缓存，否则前台刷新仍显示 60 秒前的 0
+    summaryCache = null;
+    summaryCacheAt = 0;
     return ok(res, { uv_counted: isNewUv, pv_counted: pv === 1 });
   } catch (e) {
     return fail(res, '统计失败', 500);
@@ -116,12 +119,12 @@ router.get('/summary', async (req, res) => {
       db('comments').where('status', 'approved').count('* as cnt').first(),
     ]);
     summaryCache = {
-      total_pv: Number(total.pv || 0),
-      total_uv: Number(total.uv || 0),
-      today_pv: Number((todayRow && todayRow.pv) || 0),
-      today_uv: Number((todayRow && todayRow.uv) || 0),
-      article_count: Number(articles.cnt || 0),
-      comment_count: Number(comments.cnt || 0),
+      total_pv: Number(total.pv) || 0,
+      total_uv: Number(total.uv) || 0,
+      today_pv: Number(todayRow && todayRow.pv) || 0,
+      today_uv: Number(todayRow && todayRow.uv) || 0,
+      article_count: Number(articles.cnt) || 0,
+      comment_count: Number(comments.cnt) || 0,
     };
     summaryCacheAt = now;
     return ok(res, summaryCache);

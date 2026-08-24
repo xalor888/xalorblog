@@ -19,7 +19,7 @@
           <div class="ps-item"><b class="num">{{ site.stats.article_count || 0 }}</b><span>文章</span></div>
           <div class="ps-item"><b class="num">{{ site.stats.comment_count || 0 }}</b><span>评论</span></div>
           <div class="ps-item"><b class="num">{{ formatNumber(site.stats.total_pv) }}</b><span>浏览</span></div>
-          <div class="ps-item"><b class="num">{{ site.stats.total_uv || 0 }}</b><span>访客</span></div>
+          <div class="ps-item"><b class="num">{{ formatNumber(site.stats.total_uv) }}</b><span>访客</span></div>
         </div>
         <div class="profile-social" v-if="socials.length">
           <a v-for="s in socials" :key="s.label" :href="s.url" target="_blank" rel="noopener" class="social-chip">

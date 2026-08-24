@@ -21,9 +21,17 @@ export const useSiteStore = defineStore('site', () => {
 
   async function fetchStats() {
     try {
-      stats.value = await statsApi.summary();
+      const data = await statsApi.summary();
+      stats.value = {
+        total_pv: Number(data?.total_pv) || 0,
+        total_uv: Number(data?.total_uv) || 0,
+        today_pv: Number(data?.today_pv) || 0,
+        today_uv: Number(data?.today_uv) || 0,
+        article_count: Number(data?.article_count) || 0,
+        comment_count: Number(data?.comment_count) || 0,
+      };
     } catch (e) {
-      /* 忽略 */
+      /* 忽略：保留上次成功值，避免把已有数字冲成空 */
     }
   }
 
