@@ -343,7 +343,10 @@ async function submit() {
     await load();
     await scrollToNewComment(created?.id); // 用服务端返回的新评论 id 精确定位（回复场景不错位）
   } catch (e) {
-    if (e?.response?.status === 403) refreshFormToken('/comments'); // 令牌问题，刷新后重试
+    const msg = e?.response?.data?.message || e?.message || '';
+    if (e?.response?.status === 403 && !/疑似机器人|提交过快/.test(msg)) {
+      refreshFormToken('/comments');
+    }
   } finally {
     submitting.value = false;
   }
@@ -387,6 +390,7 @@ function flushDraft() {
 
 onMounted(() => {
   load();
+  getFormTokenInfo('/comments').catch(() => {});
   // 浏览器关闭/刷新前落盘（beforeunload 场景 watch 防抖可能来不及）
   window.addEventListener('beforeunload', flushDraft);
 });

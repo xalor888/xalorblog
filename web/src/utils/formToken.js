@@ -4,8 +4,26 @@ import { useSiteStore } from '@/stores/site';
 // 令牌与提交路径强绑定，缓存按路径分片（评论/留言/友链各自独立）
 // 服务端令牌 10 分钟过期：缓存 5 分钟后自动刷新，避免过期令牌导致首次提交必失败
 const TOKEN_MAX_AGE = 5 * 60 * 1000;
+// 服务端 MIN_INTERVAL=2s：签发后立刻提交会被判「疑似机器人」
+const MIN_SUBMIT_AGE = 2100;
 const cachedByPath = new Map(); // path -> { token, hpField, ts }
 const fetchingByPath = new Map(); // path -> Promise
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function tokenIssuedAt(token, fallback = Date.now()) {
+  const ts = Number(String(token || '').split('.')[0]);
+  return Number.isFinite(ts) && ts > 0 ? ts : fallback;
+}
+
+async function waitUntilReady(info) {
+  const issued = tokenIssuedAt(info.token, info.ts);
+  const wait = MIN_SUBMIT_AGE - (Date.now() - issued);
+  if (wait > 0) await sleep(wait);
+  return info;
+}
 
 /**
  * 获取表单安全令牌 + 随机蜜罐字段名
@@ -14,9 +32,9 @@ const fetchingByPath = new Map(); // path -> Promise
  */
 export async function getFormTokenInfo(forPath = '/comments') {
   const cached = cachedByPath.get(forPath);
-  if (cached && Date.now() - cached.ts < TOKEN_MAX_AGE) return cached;
+  if (cached && Date.now() - cached.ts < TOKEN_MAX_AGE) return waitUntilReady(cached);
   const pending = fetchingByPath.get(forPath);
-  if (pending) return pending;
+  if (pending) return pending.then(waitUntilReady);
   const p = request
     .get('/anti/seed', { params: { for: forPath } })
     .then((data) => {
@@ -35,7 +53,7 @@ export async function getFormTokenInfo(forPath = '/comments') {
       fetchingByPath.delete(forPath);
     });
   fetchingByPath.set(forPath, p);
-  return p;
+  return p.then(waitUntilReady);
 }
 
 /** 兼容旧调用：仅取令牌 */
@@ -60,5 +78,7 @@ export function refreshFormToken(forPath) {
  */
 export function warmFormToken() {
   if (!useSiteStore().loaded) return;
-  getFormTokenInfo('/comments').catch(() => {});
+  ['/comments', '/messages', '/links'].forEach((path) => {
+    getFormTokenInfo(path).catch(() => {});
+  });
 }

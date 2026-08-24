@@ -129,13 +129,19 @@ async function submit() {
     form.value = { name: '', url: '', avatar: '', email: '', description: '' };
     refreshFormToken('/links');
   } catch (e) {
-    if (e?.response?.status === 403) refreshFormToken('/links');
+    const msg = e?.response?.data?.message || e?.message || '';
+    if (e?.response?.status === 403 && !/疑似机器人|提交过快/.test(msg)) {
+      refreshFormToken('/links');
+    }
   } finally {
     submitting.value = false;
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  load();
+  getFormTokenInfo('/links').catch(() => {});
+});
 </script>
 
 <style scoped>

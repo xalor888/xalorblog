@@ -436,6 +436,11 @@ input:-webkit-autofill:focus {
 /* ============ ElMessage 品牌化 ============
    圆角大、左侧品牌色条、柔和阴影，替代生硬默认样式 */
 .el-message {
+  position: fixed !important;
+  top: 72px !important;
+  right: 16px !important;
+  left: auto !important;
+  transform: none !important;
   border-radius: 14px !important;
   border: 1px solid var(--border) !important;
   box-shadow: 0 8px 28px rgba(29, 27, 22, 0.12) !important;

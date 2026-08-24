@@ -255,7 +255,10 @@ async function submit() {
     page.value = 1;
     await load();
   } catch (e) {
-    if (e?.response?.status === 403) refreshFormToken('/messages');
+    const msg = e?.response?.data?.message || e?.message || '';
+    if (e?.response?.status === 403 && !/疑似机器人|提交过快/.test(msg)) {
+      refreshFormToken('/messages');
+    }
   } finally {
     submitting.value = false;
   }
@@ -269,6 +272,7 @@ function flushDraft() {
 
 onMounted(() => {
   load();
+  getFormTokenInfo('/messages').catch(() => {});
   // 浏览器关闭/刷新前落盘（beforeunload 场景 watch 防抖可能来不及）
   window.addEventListener('beforeunload', flushDraft);
 });
