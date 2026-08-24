@@ -1,5 +1,10 @@
 <template>
   <div class="security-manage">
+    <div v-if="loadError" class="panel load-error">
+      <XIcon name="ShieldAlert" :size="22" />
+      <p>安全数据加载失败</p>
+      <button class="export-btn" type="button" @click="refresh">重试</button>
+    </div>
     <!-- 安全状态卡片 -->
     <div class="sec-cards">
       <div class="sec-card">
@@ -179,15 +184,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { securityApi, authApi } from '@/api';
 
-const stats = ref({ banned: [], events: [], event_total: 0 });
+const stats = ref({ banned: [], events: [], event_total: 0, type_counts: {} });
+const events = computed(() => stats.value.events || []);
 const sessions = ref([]);
 const auditLogs = ref([]);
 const passValid = ref(false);
+const loadError = ref(false);
 
 let timer = null;
 
@@ -269,12 +276,18 @@ async function refresh() {
       authApi.sessions(),
       securityApi.audit(),
     ]);
-    stats.value = sec;
-    sessions.value = sess;
-    auditLogs.value = audit;
-    passValid.value = sec.pass_valid === true;
+    stats.value = {
+      banned: sec?.banned || [],
+      events: sec?.events || [],
+      event_total: Number(sec?.event_total) || 0,
+      type_counts: sec?.type_counts || {},
+    };
+    sessions.value = Array.isArray(sess) ? sess : [];
+    auditLogs.value = Array.isArray(audit) ? audit : [];
+    passValid.value = sec?.pass_valid === true;
+    loadError.value = false;
   } catch (e) {
-    /* 拦截器已提示 */
+    loadError.value = true;
   }
 }
 
@@ -357,6 +370,14 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-2);
 }
 
 /* ============ 状态卡片 ============ */
