@@ -78,7 +78,7 @@ request.interceptors.response.use(
   async (response) => {
     const res = response.data;
     if (res.code !== 0) {
-      ElMessage.error(res.message || '请求失败');
+      if (!response.config?.silent) ElMessage.error(res.message || '请求失败');
       return Promise.reject(new Error(res.message || '请求失败'));
     }
     // 解密加密正文（用请求时的票据，防在途续期导致密钥不匹配）
@@ -164,7 +164,7 @@ request.interceptors.response.use(
       // IP 被自动封禁：给出剩余时间（Retry-After 秒数），可操作提示替代通用错误
       const remain = Math.ceil(Number(error.response.headers['retry-after']) / 60);
       ElMessage.warning(`访问被拒绝：该 IP 因异常行为被临时封禁，约 ${remain} 分钟后自动解除`);
-    } else {
+    } else if (!error.config?.silent) {
       ElMessage.error(message);
     }
     return Promise.reject(error);
@@ -291,6 +291,10 @@ export const messageApi = {
   batchDelete: (ids) => adminPost('/messages/batch-delete', { ids }),
   reply: (id, reply) => adminPut(`/messages/${id}/reply`, { reply }),
   approveAll: () => adminPost('/messages/approve-all'),
+};
+
+export const hitokotoApi = {
+  get: () => request.get('/hitokoto', { silent: true }),
 };
 
 export const statsApi = {

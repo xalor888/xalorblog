@@ -150,7 +150,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import ArticleCard from '@/components/site/ArticleCard.vue';
 import SkeletonList from '@/components/ui/SkeletonList.vue';
-import { articleApi, categoryApi, tagApi, commentApi } from '@/api';
+import { articleApi, categoryApi, tagApi, commentApi, hitokotoApi } from '@/api';
 import { useSiteStore } from '@/stores/site';
 import { formatNumber } from '@/utils/format';
 
@@ -192,6 +192,7 @@ const INTRO_LINES = [
 ];
 let typeTimer = null;
 let hitokotoRetry = null;
+let typingAlive = false;
 
 const display = ref({ articles: 0, comments: 0, pv: 0 });
 
@@ -263,54 +264,52 @@ function typeText(text, { hold = false, onDone } = {}) {
 }
 
 async function fetchHitokoto() {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 6000);
   try {
-    const res = await fetch('https://v1.hitokoto.cn/?encode=json&charset=utf-8', {
-      signal: ctrl.signal,
-    });
-    if (!res.ok) return '';
-    const data = await res.json();
-    const quote = String(data.hitokoto || '').trim();
-    if (!quote) return '';
-    const from = String(data.from || '').trim();
-    return (from ? `${quote} —— ${from}` : quote).slice(0, 120);
+    const data = await hitokotoApi.get();
+    return String(data?.hitokoto || '').trim();
   } catch (e) {
     return '';
-  } finally {
-    clearTimeout(timer);
   }
 }
 
-async function showHitokotoAndHold() {
+function scheduleHitokoto(delay = 8000) {
+  clearTimeout(hitokotoRetry);
+  hitokotoRetry = setTimeout(playNextHitokoto, delay);
+}
+
+async function playNextHitokoto() {
+  if (!typingAlive) return;
   const quote = await fetchHitokoto();
+  if (!typingAlive) return;
   if (!quote) {
-    clearTimeout(hitokotoRetry);
-    hitokotoRetry = setTimeout(showHitokotoAndHold, 8000);
+    scheduleHitokoto(6000);
     return;
   }
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
     typed.value = quote;
     typedFull.value = quote;
+    scheduleHitokoto(8000);
     return;
   }
-  typeText(quote, { hold: true });
+  typeText(quote, { onDone: playNextHitokoto });
 }
 
 function startTyping() {
+  typingAlive = true;
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
     typed.value = INTRO_LINES[0];
     typedFull.value = INTRO_LINES[0];
     hitokotoRetry = setTimeout(() => {
+      if (!typingAlive) return;
       typed.value = INTRO_LINES[1];
       typedFull.value = INTRO_LINES[1];
-      hitokotoRetry = setTimeout(showHitokotoAndHold, 1800);
+      scheduleHitokoto(1800);
     }, 1800);
     return;
   }
   typeText(INTRO_LINES[0], {
     onDone: () => {
-      typeText(INTRO_LINES[1], { onDone: showHitokotoAndHold });
+      typeText(INTRO_LINES[1], { onDone: playNextHitokoto });
     },
   });
 }
@@ -374,6 +373,7 @@ async function retryHome() {
 }
 
 onUnmounted(() => {
+  typingAlive = false;
   stopTyping();
   clearTimeout(hitokotoRetry);
   window.removeEventListener('scroll', onHeroScroll);
