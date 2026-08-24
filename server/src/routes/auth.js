@@ -196,9 +196,7 @@ router.post('/login', async (req, res) => {
     if (!matched) {
       report(ip, 'auth', 'POST /auth/login');
       logAuditEvent(cleanUser, 'LOGIN_FAIL', '用户名或密码错误', ip, req.headers['x-fp']);
-      const rec = loginFails.get(accountFailKey);
-      const left = MAX_FAILS - (rec?.count || 0);
-      return fail(res, left > 0 ? `用户名或密码错误，剩余 ${left} 次尝试` : '用户名或密码错误', 401);
+      return fail(res, '用户名或密码错误', 401);
     }
 
     // 两步验证：已启用 TOTP 的账号必须附带动态验证码

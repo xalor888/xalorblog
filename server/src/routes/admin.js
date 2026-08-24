@@ -12,7 +12,7 @@ const { ok, fail, notFound } = require('../utils/response');
 const { slugify } = require('../utils/slugify');
 const { authRequired } = require('../middleware/auth');
 const { localDateTimeStr } = require('../utils/datetime');
-const { cleanText, cleanLine, safeUrl, safeEmail, escapeLike } = require('../utils/sanitize');
+const { cleanText, cleanLine, safeUrl, safeEmail, escapeLike, safeCover } = require('../utils/sanitize');
 const { securityStats, unban } = require('../middleware/ipGuard');
 const { verifyTicket } = require('../middleware/gate');
 const { saveSettings, getAllSettings, ALLOWED_KEYS } = require('../utils/settings');
@@ -151,11 +151,12 @@ router.get('/articles/admin/:id', async (req, res) => {
       .select('t.id', 't.name');
     const pass = String(req.headers['x-pass'] || '');
     const { encryptPayload } = require('../utils/crypto');
-    const encrypted = pass ? encryptPayload(row.content, pass) : '';
+    const encrypted = pass ? encryptPayload(row.content, pass, row.slug) : '';
     return ok(res, {
       ...row,
       content: encrypted,
       content_enc: !!encrypted,
+      content_key: row.slug,
       tags: tagRows.map((t) => t.name),
     });
   } catch (e) {
@@ -204,7 +205,7 @@ router.post('/articles', async (req, res) => {
         if (existing) {
           tagId = existing.id;
         } else {
-          [tagId] = await trx('tags').insert({ name: t, slug: slugify(t, await db('tags').pluck('slug')) });
+          [tagId] = await trx('tags').insert({ name: t, slug: slugify(t, await trx('tags').pluck('slug')) });
         }
         await trx('article_tags').insert({ article_id: id, tag_id: tagId });
       }
@@ -279,7 +280,7 @@ router.put('/articles/:id', async (req, res) => {
           if (tagRow) {
             tagId = tagRow.id;
           } else {
-            [tagId] = await trx('tags').insert({ name: t, slug: slugify(t, await db('tags').pluck('slug')) });
+            [tagId] = await trx('tags').insert({ name: t, slug: slugify(t, await trx('tags').pluck('slug')) });
           }
           await trx('article_tags').insert({ article_id: id, tag_id: tagId });
         }
@@ -564,15 +565,6 @@ function isValidDateTime(value) {
     && d.getHours() === Number(m[4])
     && d.getMinutes() === Number(m[5])
     && d.getSeconds() === Number(m[6]);
-}
-
-/** 封面只允许 http(s) 外链或站内绝对路径，拒绝协议相对/路径穿越 */
-function safeCover(input) {
-  if (typeof input !== 'string') return '';
-  const v = input.trim().replace(/[\r\n]+/g, '').slice(0, 500);
-  if (!v) return '';
-  if (v.startsWith('/') && !v.startsWith('//') && !v.includes('..')) return v;
-  return safeUrl(v, 500);
 }
 
 /** 创建分类 */
@@ -862,6 +854,26 @@ router.post('/comments/approve-all', async (req, res) => {
   }
 });
 
+/** AI 复核：挂在秘钥后台路径下，避免公网枚举 /comments/:id/re-ai */
+router.post('/comments/:id/re-ai', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
+    const row = await db('comments').where('id', id).select('id', 'nickname', 'content', 'website').first();
+    if (!row) return notFound(res, '评论不存在');
+    const { moderateComment } = require('../utils/aiModeration');
+    const verdict = await moderateComment(row.content, row.nickname, row.website || '');
+    const newStatus = verdict.action === 'rejected' ? 'rejected' : verdict.action === 'pending' ? 'pending' : 'approved';
+    await db('comments').where('id', id).update({
+      status: newStatus,
+      ai_reason: verdict.action === 'approved' ? '' : String(verdict.reason || '').slice(0, 120),
+    });
+    return ok(res, { status: newStatus }, `AI 复核完成：${verdict.action === 'approved' ? '判定通过' : verdict.action === 'pending' ? '进入待审' : '仍判拒绝'}`);
+  } catch (e) {
+    return fail(res, 'AI 复核失败', 500);
+  }
+});
+
 // ============ 友链 ============
 
 /** 后台友链列表 */
@@ -1053,6 +1065,26 @@ router.post('/messages/approve-all', async (req, res) => {
     return ok(res, { affected }, `已通过 ${affected} 条待审留言`);
   } catch (e) {
     return fail(res, '操作失败', 500);
+  }
+});
+
+/** AI 复核：挂在秘钥后台路径下，避免公网枚举 /messages/:id/re-ai */
+router.post('/messages/:id/re-ai', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
+    const row = await db('messages').where('id', id).select('id', 'nickname', 'content').first();
+    if (!row) return notFound(res, '留言不存在');
+    const { moderateComment } = require('../utils/aiModeration');
+    const verdict = await moderateComment(row.content, row.nickname, '');
+    const newStatus = verdict.action === 'rejected' ? 'rejected' : verdict.action === 'pending' ? 'pending' : 'approved';
+    await db('messages').where('id', id).update({
+      status: newStatus,
+      ai_reason: verdict.action === 'approved' ? '' : String(verdict.reason || '').slice(0, 120),
+    });
+    return ok(res, { status: newStatus }, `AI 复核完成：${verdict.action === 'approved' ? '判定通过' : verdict.action === 'pending' ? '进入待审' : '仍判拒绝'}`);
+  } catch (e) {
+    return fail(res, 'AI 复核失败', 500);
   }
 });
 

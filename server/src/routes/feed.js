@@ -220,7 +220,7 @@ router.get('/rss.xml', async (req, res) => {
             .map((t) => `      <category>${esc(t)}</category>`)
             .join('\n');
           // 摘要模式：description 即摘要，content:encoded 与全文模式互斥输出
-          const useFull = settings.rss_full_content !== false;
+          const useFull = settings.rss_full_content === true;
           const contentPart = useFull
             ? `      <content:encoded><![CDATA[${cdata(full)}]]></content:encoded>`
             : '';

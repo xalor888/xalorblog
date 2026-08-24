@@ -163,6 +163,37 @@ async function suite() {
   const end2end = runRef({ ...goodReq, headers: { ...goodReq.headers }, sigVerified: true });
   assert('sigVerified → refererRequired 放行（端到端链路）', end2end.nexted === true, JSON.stringify(end2end));
 
+  console.log('=== F. gateRequired：读请求也要签名 ===');
+  {
+    const t2 = gate.issueTicket('1.2.3.4', FP, UA);
+    const ts2 = Date.now();
+    const nonce2 = 'getnonce12345678';
+    const bodyHash2 = c.sha256hex('{}');
+    const getSig = c.hmac(t2.token, `GET|/articles|${ts2}|${bodyHash2}|${t2.jti}|${nonce2}`);
+    let nextGet = false;
+    let resGet = mockRes();
+    const signedGet = mockReq({
+      'user-agent': UA,
+      'x-pass': t2.token,
+      'x-fp': FP,
+      'x-timestamp': String(ts2),
+      'x-nonce': nonce2,
+      'x-sig': getSig,
+    }, { method: 'GET', path: '/articles' });
+    gate.gateRequired(signedGet, resGet, () => { nextGet = true; });
+    assert('带签名 GET → 放行', nextGet === true && signedGet.sigVerified === true, `sigVerified=${signedGet.sigVerified}`);
+
+    nextGet = false;
+    resGet = mockRes();
+    const bareGet = mockReq({
+      'user-agent': UA,
+      'x-pass': t2.token,
+      'x-fp': FP,
+    }, { method: 'GET', path: '/articles' });
+    gate.gateRequired(bareGet, resGet, () => { nextGet = true; });
+    assert('裸票无签名 GET → 403', !nextGet && resGet.statusCode === 403, `status=${resGet.statusCode}`);
+  }
+
   console.log(`\nrequestGuard 套件结果: ${passed} 通过, ${failed} 失败`);
   if (failed > 0) { console.error(failures.join('\n')); process.exit(1); }
 }

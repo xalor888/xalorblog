@@ -4,6 +4,7 @@ const { ok, fail, notFound } = require('../utils/response');
 const { encryptPayload } = require('../utils/crypto');
 const { escapeLike } = require('../utils/sanitize');
 const { report } = require('../middleware/ipGuard');
+const { noteArticleRead } = require('../middleware/scrapeGuard');
 
 const router = express.Router();
 
@@ -96,18 +97,19 @@ router.get('/', async (req, res) => {
       const kw = escapeLike(String(keyword).slice(0, 50));
       base.andWhere((b) => {
         b.where('a.title', 'like', `%${kw}%`)
-          .orWhere('a.summary', 'like', `%${kw}%`)
-          .orWhere('a.content', 'like', `%${kw}%`);
+          .orWhere('a.summary', 'like', `%${kw}%`);
       });
     }
 
-    let idsQuery;
     if (tag) {
-      // 通过标签过滤：先查出文章 id
-      idsQuery = db('article_tags as at')
+      const taggedIds = await db('article_tags as at')
         .join('tags as t', 'at.tag_id', 't.id')
         .where('t.slug', tag)
         .pluck('at.article_id');
+      if (!taggedIds.length) {
+        return ok(res, { list: [], pagination: { page, pageSize, total: 0 } });
+      }
+      base.whereIn('a.id', taggedIds);
     }
 
     // 排序：latest 最新 / hot 最热（浏览量）/ commented 最多评论
@@ -125,12 +127,11 @@ router.get('/', async (req, res) => {
       orderBy = [{ column: 'a.is_top', order: 'desc' }, { column: 'a.published_at', order: 'desc' }];
     }
 
-    const [total, ids, rows] = await Promise.all([
+    const [total, rows] = await Promise.all([
       // commented 模式有 groupBy，用 countDistinct 保证计数正确
       sort === 'commented'
         ? base.clone().countDistinct('a.id as cnt').first()
         : base.clone().count('a.id as cnt').first(),
-      idsQuery || Promise.resolve(null),
       base.clone()
         .select(
           'a.id', 'a.title', 'a.slug', 'a.summary', 'a.cover', 'a.is_top', 'a.views', 'a.likes',
@@ -142,13 +143,7 @@ router.get('/', async (req, res) => {
         .offset((page - 1) * pageSize),
     ]);
 
-    let list = rows;
-    if (ids) {
-      const idSet = new Set(ids.map(Number));
-      list = rows.filter((r) => idSet.has(r.id));
-    }
-
-    const decorated = await decorateArticles(list);
+    const decorated = await decorateArticles(rows);
     return ok(res, {
       list: decorated,
       pagination: { page, pageSize, total: Number(total.cnt || 0) },
@@ -194,6 +189,15 @@ router.get('/slug/:slug', async (req, res) => {
       .first();
     if (!row) return notFound(res, '文章不存在');
 
+    // 只统计持票读者。核验过的搜索爬虫走免闸门通道、正文为空，不应被 429 误伤收录。
+    if (req.headers['x-pass']) {
+      const scrape = noteArticleRead(req.ip, req.headers['x-fp'], row.slug);
+      if (!scrape.ok) {
+        report(req.ip, 'rate', `SCRAPE /articles/slug/${row.slug}`);
+        return res.status(429).json({ code: 1, message: '阅读过于频繁，请稍后再试' });
+      }
+    }
+
     // 浏览量 +1（防刷窗口内不重复计数）
     const ip = req.ip || 'unknown';
     const fp = String(req.headers['x-fp'] || '').slice(0, 128);
@@ -208,14 +212,16 @@ router.get('/slug/:slug', async (req, res) => {
     const commentCount = await db('comments')
       .where('article_id', row.id).where('status', 'approved').count('* as cnt').first();
 
-    // 正文加密传输：仅持有通行证票据的浏览器可解密
+    // 传输层加密：密钥 = HMAC(盐, 票据|slug)。抓包得到的密文不能用同一张票解开另一篇。
+    // 仍不是访问控制；RSS 打开全文时订阅器可直接拿正文。
     const pass = String(req.headers['x-pass'] || '');
-    const encrypted = pass ? encryptPayload(row.content, pass) : '';
+    const encrypted = pass ? encryptPayload(row.content, pass, row.slug) : '';
 
     return ok(res, {
       ...row,
       content: encrypted,
       content_enc: !!encrypted,
+      content_key: row.slug,
       views: row.views + (viewCounted ? 1 : 0),
       tags: tagsMap[row.id] || [],
       comment_count: Number(commentCount.cnt || 0),

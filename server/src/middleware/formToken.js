@@ -107,9 +107,14 @@ function formTokenRequired(req, res, next) {
   if (!result.ok) {
     return res.status(403).json({ code: 1, message: result.reason || '提交被拒绝' });
   }
-  // 随机蜜罐字段校验：真实用户看不到该字段（前端动态渲染时填充空值）
-  const hpField = req.headers['x-hp-field'] || '';
-  if (hpField && req.body && req.body[hpField]) {
+  // 始终校验当前窗口派生的蜜罐字段（不带头也不能跳过）。
+  // 时间窗口滚动后派生名会变，因此同时检查请求头声明的字段名。
+  const expectedHp = honeypotFieldName(req, forPath);
+  const headerHp = String(req.headers['x-hp-field'] || '');
+  if (req.body && req.body[expectedHp]) {
+    return res.status(403).json({ code: 1, message: '提交被拒绝' });
+  }
+  if (headerHp && headerHp !== expectedHp && req.body && req.body[headerHp]) {
     return res.status(403).json({ code: 1, message: '提交被拒绝' });
   }
   next();

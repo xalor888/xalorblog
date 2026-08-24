@@ -78,6 +78,10 @@ sudo systemctl restart xalor-blog  # 重启
 > `ALLOWED_HOSTS`、`CORS_ORIGINS`。service 会固定设置
 > `NODE_ENV=production`、`LISTEN_HOST=127.0.0.1`、`TRUST_PROXY=loopback`；
 > 不要使用 `TRUST_PROXY=1` 或 `true`。
+>
+> 通行证 jti 会写入 `gate_tickets`。nonce、登录锁定、刮取窗和大部分信誉状态仍在进程内存中。
+> 本 service 按单进程运行；不要用 cluster 或多副本，除非先把这些状态外置。
+> 生产默认 PoW 20 bit。`ADMIN_PATH` 不要使用 `admin`、`login` 等 WAF 蜜罐路径名。
 
 ## Nginx 反向代理
 

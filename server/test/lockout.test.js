@@ -1,6 +1,6 @@
 /**
  * 登录爆破防护测试
- * 流程：非法输入拒绝（不计数）→ 4 次错误密码（计数累积，剩余提示）→
+ * 流程：非法输入拒绝（不计数）→ 4 次错误密码（计数累积，文案不泄露剩余次数）→
  *       正确密码成功（计数重置）→ 5 次连续错误触发锁定 →
  *       锁定期内正确密码也被拒
  * 注意：本套件会触发 IP 信誉封禁（登录失败计 AUTH 积分），
@@ -43,8 +43,9 @@ async function suite() {
   for (let i = 0; i < 4; i++) {
     r = await tryLogin('wrong-pass-' + i);
     assert(`第 ${i + 1} 次错误被拒（401）`, r.status === 401, `status=${r.status} ${r.body && r.body.message}`);
+    assert(`第 ${i + 1} 次错误不泄露剩余次数`, !/剩余/.test(r.body.message || ''), r.body && r.body.message);
   }
-  assert('剩余尝试次数提示（剩余 1 次）', /剩余 1 次/.test(r.body.message || ''), r.body && r.body.message);
+  assert('失败文案统一', r.body && r.body.message === '用户名或密码错误', r.body && r.body.message);
 
   console.log('\n=== 3. 第 5 次正确密码 → 成功（计数重置） ===');
   r = await tryLogin('admin123');

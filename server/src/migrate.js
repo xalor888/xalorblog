@@ -276,6 +276,20 @@ async function migrate() {
     }
   });
 
+  // ---------- 通行证登记（重启后未过期票据仍有效） ----------
+  await db.schema.hasTable('gate_tickets').then(async (exists) => {
+    if (!exists) {
+      await db.schema.createTable('gate_tickets', (t) => {
+        t.string('jti', 32).primary();
+        t.bigInteger('issued_at').notNullable();
+        t.integer('renews').defaultTo(0);
+        t.timestamp('expires_at').notNullable();
+        t.index('expires_at', 'idx_gate_tickets_expires');
+      });
+      console.log('[migrate] gate_tickets 表已创建');
+    }
+  });
+
   // ---------- IP 封禁持久化（重启不丢封禁） ----------
   await db.schema.hasTable('ip_bans').then(async (exists) => {
     if (!exists) {

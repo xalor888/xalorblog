@@ -50,8 +50,8 @@ app.set('trust proxy', config.trustProxy);
 // 正文为 AES-GCM 加密 + 无反射输入，BREACH 攻击不适用
 const zlib = require('zlib');
 app.use((req, res, next) => {
-  // Vary 无条件设置：代理缓存须按 Accept-Encoding 区分压缩/未压缩版本
-  res.set('Vary', 'Accept-Encoding');
+  // 追加而非覆盖：CORS 会写 Vary: Origin，覆盖后中间代理可能按编码复用跨域响应
+  res.append('Vary', 'Accept-Encoding');
   if (!/gzip/.test(req.headers['accept-encoding'] || '')) return next();
   const send = res.send.bind(res);
   res.send = (body) => {
@@ -314,7 +314,7 @@ app.get('/.well-known/security.txt', async (req, res) => {
   const expires = new Date(Date.now() + 365 * 86400e3).toISOString();
   return res.send([
     '# Xalor的小站 安全策略',
-    '# 本站已启用企业级防护（PoW / WAF / IP 信誉 / 双因素认证）',
+    '# 本站启用 PoW 闸门、请求签名、应用层 WAF、IP 信誉与可选两步验证',
     '# 发现漏洞请联系站长（请勿进行破坏性测试）',
     contact ? `Contact: mailto:${contact}` : 'Contact: https://example.com/about',
     'Preferred-Languages: zh-CN, en',
@@ -345,7 +345,7 @@ app.use(`${api}/${config.adminPath}`, adminRouter);
 // 持续超限 → 积分累积 → 自动封禁（此前限流不积分，换 IP 可无限拖取）
 const rssLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 30,
+  limit: 12,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   handler: (req, res) => {
@@ -355,7 +355,7 @@ const rssLimiter = rateLimit({
 });
 const shareLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 60,
+  limit: 40,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   handler: (req, res) => {

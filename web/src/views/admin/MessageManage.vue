@@ -114,9 +114,8 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { messageApi } from '@/api';
 import { useAdminStore } from '@/stores/admin';
 import { getCachedAdminPath } from '@/utils/adminPath';
-import { getTicket, ensurePass } from '@/utils/pass';
-import { getFingerprint } from '@/utils/fingerprint';
-import { getAuthToken } from '@/utils/authSession';
+import { ensurePass } from '@/utils/pass';
+import { signedFetch } from '@/utils/signedFetch';
 import { formatDateTime } from '@/utils/format';
 
 const adminStore = useAdminStore();
@@ -220,13 +219,7 @@ async function exportCsv() {
     if (status.value !== 'all') params.set('status', status.value);
     if (aiOnly.value) params.set('ai_only', '1');
     const qs = params.toString();
-    const resp = await fetch(`/api/${key}/messages/admin/export${qs ? `?${qs}` : ''}`, {
-      headers: {
-        Authorization: `Bearer ${getAuthToken()}`,
-        'X-Pass': getTicket(),
-        'X-Fp': await getFingerprint(),
-      },
-    });
+    const resp = await signedFetch(`/api/${key}/messages/admin/export${qs ? `?${qs}` : ''}`);
     if (!resp.ok) {
       ElMessage.error('导出失败，请重试');
       return;

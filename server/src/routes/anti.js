@@ -1,9 +1,9 @@
 const express = require('express');
-	const { ok, fail } = require('../utils/response');
-	const { issuePuzzle, verifyPow, issueTicket, renewTicket, verifyTicket, isValidFp } = require('../middleware/gate');
-	const { issueToken, honeypotFieldName } = require('../middleware/formToken');
-	const rateLimit = require('express-rate-limit');
-	const config = require('../config');
+const { ok, fail } = require('../utils/response');
+const { issuePuzzle, verifyPow, issueTicket, renewTicket, verifyTicket, isValidFp } = require('../middleware/gate');
+const { issueToken, honeypotFieldName } = require('../middleware/formToken');
+const rateLimit = require('express-rate-limit');
+const config = require('../config');
 
 const router = express.Router();
 
@@ -45,7 +45,7 @@ router.post('/ticket', ticketLimiter, (req, res) => {
     }
     const result = verifyPow(req, req.body);
     if (!result.ok) return fail(res, result.reason, 403);
-    const issued = issueTicket(req.ip || 'unknown', fp, String(req.headers['user-agent'] || '').slice(0, 120));
+    const issued = issueTicket(req.ip || 'unknown', fp, String(req.headers['user-agent'] || '').slice(0, 120), 0, true);
     return ok(res, { token: issued.token, ttl: 600000, renew_at: 480000 }, 'ok');
   } catch (e) {
     return fail(res, '票据签发失败', 500);

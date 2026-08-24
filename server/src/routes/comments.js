@@ -235,7 +235,10 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForRe
       ai_reason: aiReason,
     });
 
-    const row = await db('comments').where('id', id[0]).first();
+    const row = await db('comments')
+      .where('id', id[0])
+      .select('id', 'parent_id', 'nickname', 'website', 'content', 'likes', 'created_at')
+      .first();
     row.is_admin = admins.has(String(row.nickname || '').trim().toLowerCase());
     // 审核开关状态随响应下发：前端据此提示（避免提示"成功"但内容未显示）
     row.moderated = status === 'pending';
@@ -310,28 +313,6 @@ router.post('/:id/like', async (req, res) => {
     return ok(res, { likes: updated ? Number(updated.likes) : 1 });
   } catch (e) {
     return fail(res, '点赞失败', 500);
-  }
-});
-
-/** AI 复核（误拒恢复/复核）：重跑本地审核引擎，更新状态与标记
- * 管理接口：要求登录 + 管理员角色（未认证调用此前可被利用反复触发 LLM 二判消耗资源） */
-router.post('/:id/re-ai', authRequired, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') return fail(res, '无权限', 403);
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
-    const row = await db('comments').where('id', id).select('id', 'nickname', 'content', 'website').first();
-    if (!row) return notFound(res, '评论不存在');
-    const { moderateComment } = require('../utils/aiModeration');
-    const verdict = await moderateComment(row.content, row.nickname, row.website || '');
-    const newStatus = verdict.action === 'rejected' ? 'rejected' : verdict.action === 'pending' ? 'pending' : 'approved';
-    await db('comments').where('id', id).update({
-      status: newStatus,
-      ai_reason: verdict.action === 'approved' ? '' : String(verdict.reason || '').slice(0, 120),
-    });
-    return ok(res, { status: newStatus }, `AI 复核完成：${verdict.action === 'approved' ? '判定通过' : verdict.action === 'pending' ? '进入待审' : '仍判拒绝'}`);
-  } catch (e) {
-    return fail(res, 'AI 复核失败', 500);
   }
 });
 

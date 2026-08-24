@@ -142,9 +142,8 @@ import { articleApi, categoryApi } from '@/api';
 import { formatDate } from '@/utils/format';
 import { adminHref } from '@/utils/adminPath';
 import { getCachedAdminPath } from '@/utils/adminPath';
-import { getTicket, ensurePass } from '@/utils/pass';
-import { getFingerprint } from '@/utils/fingerprint';
-import { getAuthToken } from '@/utils/authSession';
+import { ensurePass } from '@/utils/pass';
+import { signedFetch } from '@/utils/signedFetch';
 
 const router = useRouter();
 
@@ -194,13 +193,7 @@ async function exportBackup() {
   try {
     await ensurePass();
     const key = getCachedAdminPath();
-    const resp = await fetch(`/api/${key}/articles/admin/export`, {
-      headers: {
-        Authorization: `Bearer ${getAuthToken()}`,
-        'X-Pass': getTicket(),
-        'X-Fp': await getFingerprint(),
-      },
-    });
+    const resp = await signedFetch(`/api/${key}/articles/admin/export`);
     if (!resp.ok) {
       ElMessage.error('导出失败，请重试');
       return;

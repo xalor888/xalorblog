@@ -139,9 +139,8 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { commentApi, articleApi } from '@/api';
 import { useAdminStore } from '@/stores/admin';
 import { getCachedAdminPath } from '@/utils/adminPath';
-import { getTicket, ensurePass } from '@/utils/pass';
-import { getFingerprint } from '@/utils/fingerprint';
-import { getAuthToken } from '@/utils/authSession';
+import { ensurePass } from '@/utils/pass';
+import { signedFetch } from '@/utils/signedFetch';
 import { formatDateTime } from '@/utils/format';
 
 const adminStore = useAdminStore();
@@ -262,13 +261,7 @@ async function exportCsv() {
     if (aiOnly.value) params.set('ai_only', '1');
     if (articleId.value) params.set('article_id', articleId.value);
     const qs = params.toString();
-    const resp = await fetch(`/api/${key}/comments/admin/export${qs ? `?${qs}` : ''}`, {
-      headers: {
-        Authorization: `Bearer ${getAuthToken()}`,
-        'X-Pass': getTicket(),
-        'X-Fp': await getFingerprint(),
-      },
-    });
+    const resp = await signedFetch(`/api/${key}/comments/admin/export${qs ? `?${qs}` : ''}`);
     if (!resp.ok) {
       ElMessage.error('导出失败，请重试');
       return;

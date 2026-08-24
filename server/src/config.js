@@ -52,9 +52,6 @@ function resolveSecret() {
     secretCache = process.env.JWT_SECRET;
     return secretCache;
   }
-  if (isProd) {
-    console.warn('[config] ⚠ 生产环境未配置 JWT_SECRET，已生成随机密钥（服务重启后所有会话失效）。请设置强随机密钥！');
-  }
   secretCache = crypto.randomBytes(48).toString('hex');
   return secretCache;
 }
@@ -105,8 +102,9 @@ module.exports = {
     ticketTtl: 10 * 60 * 1000,
     // 票据滑动续期窗口
     renewWindow: 8 * 60 * 1000,
-    // PoW 难度（前导零 bit 数，16 ≈ 平均 6.5 万次哈希；与前端求解器 bit 语义一致）
-    powDifficulty: 16,
+    // PoW 难度（前导零 bit 数）。开发 16 ≈ 6.5 万次；生产 20 ≈ 100 万次。
+    powDifficulty: Math.min(24, Math.max(12, Number(process.env.POW_DIFFICULTY || (isProd ? 20 : 16)) || 16)),
+    powDifficultyMax: Math.min(28, Math.max(16, Number(process.env.POW_DIFFICULTY_MAX || 24) || 24)),
     // 挑战有效期（毫秒）
     puzzleTtl: 60 * 1000,
     // 签名时间戳窗口（毫秒）

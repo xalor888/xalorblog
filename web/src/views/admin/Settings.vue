@@ -75,7 +75,7 @@
         </el-form-item>
         <el-form-item label="RSS 全文输出">
           <el-switch v-model="form.rss_full_content" />
-          <span class="switch-tip">开启输出全文（content:encoded）；关闭则仅输出摘要，引导阅读全文回访站点</span>
+          <span class="switch-tip">默认关闭，仅输出摘要。开启后 RSS 会输出全文（绕过文章详情的传输加密，订阅器可直接抓取）</span>
         </el-form-item>
         <el-form-item label="版权声明">
           <el-input
@@ -285,9 +285,8 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { settingsApi, uploadApi, authApi } from '@/api';
 import { renderMarkdown } from '@/utils/markdown';
 import { getCachedAdminPath, getAdminPath } from '@/utils/adminPath';
-import { getTicket, ensurePass } from '@/utils/pass';
-import { getFingerprint } from '@/utils/fingerprint';
-import { getAuthToken } from '@/utils/authSession';
+import { ensurePass } from '@/utils/pass';
+import { signedFetch } from '@/utils/signedFetch';
 import { useAuthStore } from '@/stores/auth';
 import { useSiteStore } from '@/stores/site';
 
@@ -536,13 +535,7 @@ async function exportBackup() {
   try {
     await ensurePass();
     const key = getCachedAdminPath();
-    const resp = await fetch(`/api/${key}/settings/export`, {
-      headers: {
-        Authorization: `Bearer ${getAuthToken()}`,
-        'X-Pass': getTicket(),
-        'X-Fp': await getFingerprint(),
-      },
-    });
+    const resp = await signedFetch(`/api/${key}/settings/export`);
     if (!resp.ok) {
       ElMessage.error('导出失败，请重试');
       return;

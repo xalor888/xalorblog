@@ -2,6 +2,7 @@ const app = require('./app');
 const config = require('./config');
 const db = require('./db');
 const { loadPersistedBans } = require('./middleware/ipGuard');
+const { loadPersistedTickets, purgeExpiredTickets } = require('./middleware/gate');
 const { localDateStr } = require('./utils/datetime');
 
 // 仅直接运行时启动服务（npm start / npm run dev）；
@@ -18,6 +19,7 @@ if (require.main !== module) {
 async function main() {
   // 先恢复有效封禁，再监听端口：避免启动瞬间被封禁 IP 乘窗口请求
   await loadPersistedBans();
+  await loadPersistedTickets();
 
 // 定时清理（每 6 小时一次，unref 不阻止进程退出）：
 // 过期会话 / 已撤销超 24h 的会话 / 过期封禁 / 90 天前审计日志 / 2 年前访问明细
@@ -28,17 +30,18 @@ setInterval(async () => {
     // 日期边界用本地日期（day 列按本地时区存储；toISOString 是 UTC 日期，
     // +8 服务器下阈值漂移 8 小时 —— 方向保守但仍保持一致性）
     const visitsCutoff = localDateStr(new Date(Date.now() - 730 * 86400e3));
-    const [sessExp, sessRev, banDel, auditDel, visitDel, uvDel] = await Promise.all([
+    const [sessExp, sessRev, banDel, auditDel, visitDel, uvDel, ticketDel] = await Promise.all([
       db('sessions').where('expires_at', '<', db.fn.now()).del(),
       db('sessions').where('revoked', true).where('created_at', '<', dayAgo).del(),
       db('ip_bans').where('banned_until', '<', db.fn.now()).del(),
       db('audit_logs').where('created_at', '<', auditCutoff).del(),
       db('visits').where('day', '<', visitsCutoff).del(),
       db('visit_uv').where('day', '<', visitsCutoff).del(),
+      purgeExpiredTickets(),
     ]);
-    const total = sessExp + sessRev + banDel + auditDel + visitDel + uvDel;
+    const total = sessExp + sessRev + banDel + auditDel + visitDel + uvDel + ticketDel;
     if (total) {
-      console.log(`[cleanup] 清理过期会话 ${sessExp}、已撤销会话 ${sessRev}、过期封禁 ${banDel}、旧审计 ${auditDel}、旧访问明细 ${visitDel + uvDel}`);
+      console.log(`[cleanup] 清理过期会话 ${sessExp}、已撤销会话 ${sessRev}、过期封禁 ${banDel}、旧审计 ${auditDel}、旧访问明细 ${visitDel + uvDel}、过期票据 ${ticketDel}`);
     }
   } catch (e) { /* 数据库不可用时静默跳过 */ }
 }, 6 * 3600 * 1000).unref();
@@ -73,12 +76,14 @@ function shutdown(signal) {
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-// 进程兜底：单点异常仅记录，不让整个 API 进程退出
-// （生产建议接入集中日志/监控系统追踪这些事件）
+// 进程兜底：记录后退出，交给 systemd Restart=always。
+// 未捕获异常后堆可能已损坏，继续接请求比重启更危险。
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err && err.message ? err.message : err);
+  process.exit(1);
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason instanceof Error ? reason.message : reason);
+  process.exit(1);
 });
 } // main() 结束

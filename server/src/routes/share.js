@@ -2,7 +2,6 @@ const express = require('express');
 const db = require('../db');
 const config = require('../config');
 const { getAllSettings } = require('../utils/settings');
-const { plainText } = require('../utils/markdownText');
 
 const router = express.Router();
 
@@ -27,7 +26,7 @@ router.get('/share/:slug', async (req, res) => {
         .leftJoin('categories as c', 'a.category_id', 'c.id')
         .where('a.slug', req.params.slug)
         .where('a.status', 'published')
-        .select('a.title', 'a.summary', 'a.content', 'a.cover', 'a.published_at', 'c.name as category_name')
+        .select('a.title', 'a.summary', 'a.cover', 'a.published_at', 'c.name as category_name')
         .first(),
       getAllSettings(),
     ]);
@@ -47,7 +46,7 @@ router.get('/share/:slug', async (req, res) => {
     const shareUrl = esc(rawShareUrl);
     const selfUrl = esc(rawSelfUrl);
     const title = esc(article.title);
-    const desc = esc(article.summary || plainText(article.content).slice(0, 160));
+    const desc = esc(article.summary || '');
     // 封面缺失时回退站点头像（保证社交平台有可抓取的 OG 图片）
     const cover = article.cover
       ? (article.cover.startsWith('http') ? article.cover : siteUrl + article.cover)
@@ -64,7 +63,7 @@ router.get('/share/:slug', async (req, res) => {
       '@context': 'https://schema.org',
       '@type': 'BlogPosting',
       headline: article.title,
-      description: (article.summary || plainText(article.content)).slice(0, 200),
+      description: String(article.summary || '').slice(0, 200),
       datePublished: article.published_at,
       mainEntityOfPage: { '@type': 'WebPage', '@id': rawSelfUrl },
       author: { '@type': 'Person', name: authorName },

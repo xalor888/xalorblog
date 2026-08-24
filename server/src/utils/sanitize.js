@@ -79,4 +79,17 @@ function escapeLike(input) {
   return String(input).replace(/[\\%_]/g, (m) => `\\${m}`);
 }
 
-module.exports = { cleanText, cleanLine, safeUrl, safeEmail, escapeLike };
+/**
+ * 封面/头像站内路径白名单：默认 logo 或 /uploads/ 下的服务端随机文件名。
+ * 任意站内路径会把 javascript 风格或 CSS 注入带进 <img src>。
+ */
+function safeCover(input) {
+  if (typeof input !== 'string') return '';
+  const v = input.trim().replace(/[\r\n]+/g, '').slice(0, 500);
+  if (!v) return '';
+  if (v === '/logo.png') return v;
+  if (/^\/uploads\/[A-Za-z0-9._-]+$/.test(v)) return v;
+  return safeUrl(v, 500);
+}
+
+module.exports = { cleanText, cleanLine, safeUrl, safeEmail, escapeLike, safeCover };

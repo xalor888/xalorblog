@@ -1,15 +1,9 @@
 /**
- * 反爬闸门（企业级核心）
- * 1. PoW 工作量证明：服务器签发挑战，客户端需计算 SHA-256 前导零，
- *    只有执行真实 JS 的环境才能通过 —— 直接淘汰 curl/requests/脚本抓取
- *    - 难度自适应：信誉积分越高的 IP 难度越大（4 → 6 档）
- * 2. 设备指纹绑定：票据与指纹(X-Fp)强绑定，盗用票据无指纹即失效
- *    - 指纹格式强制校验：必须为 32~128 位十六进制（脚本伪造成本提高）
- * 3. 票据签名：HMAC(secret, v1|ip|fp|ua|ts|jti)，constant-time 校验
- *    - 版本号：未来算法升级可平滑废弃旧票据
- * 4. 签发登记：jti 必须由本服务签发（防旧密钥残留票据重放）
- * 5. 滑动续期：到期前调用 /anti/renew 续期，无需重复 PoW
- * 6. 写请求签名：X-Sig = HMAC(ticketKey, method|path|ts|bodyHash|jti|nonce)，防篡改防重放
+ * 反爬闸门
+ * 1. PoW：SHA-256 前导零；信誉分越高越难，生产默认 20 bit
+ * 2. 票据与 IP + 指纹 + UA 绑定；jti 登记（内存 L1 + 落库，重启可恢复）
+ * 3. 读/写请求都要 X-Sig（HMAC 票据 + nonce），裸票 GET 不再够用
+ * 4. 续期有上限，防一次 PoW 无限滑动抓站
  */
 
 const crypto = require('crypto');
@@ -19,11 +13,8 @@ const { getScore } = require('./ipGuard');
 
 const SECRET = config.jwt.secret + ':gate-v2';
 const VERSION = 'v2'; // 票据版本（签名输入的一部分）
-// PoW 难度（前导零位数，**bit 级**）：16 bits ≈ 平均 6.5 万次哈希（原实现误用
-// hex 字符数——1 hex 字符 = 4 bits，成本是 bit 语义的 4 倍；现统一为 bit 语义，
-// 与前端求解器一致，注释语义与哈希成本自洽）
-const POW_DIFF = 16;
-const POW_DIFF_MAX = 24; // 最高难度（24 bits ≈ 平均 1600 万次哈希）
+const POW_DIFF = config.security.powDifficulty;
+const POW_DIFF_MAX = Math.max(POW_DIFF, config.security.powDifficultyMax);
 const TICKET_TTL = config.security.ticketTtl;
 const RENEW_WINDOW = config.security.renewWindow;
 const PUZZLE_TTL = config.security.puzzleTtl;
@@ -190,24 +181,58 @@ function verifyPow(req, body) {
 
 /** 签发票据 token = ts.jti.sig（签名含版本号）
  * renews 继承自旧票据（续期链延续计数，防换新 jti 重置上限） */
-function issueTicket(ip, fp, ua, renews = 0) {
+function issueTicket(ip, fp, ua, renews = 0, persist = false) {
   const jti = crypto.randomBytes(9).toString('hex');
   const ts = Date.now();
   const sig = hmac([VERSION, ip, fp, ua, ts, jti].join('|'));
-  issuedJti.set(jti, { ts, renews });
+  rememberIssued(jti, ts, renews);
+  if (persist) persistTicket(jti, ts, renews);
+  return { token: [ts, jti, sig].join('.'), jti, ts };
+}
+
+function rememberIssued(jti, ts, renews = 0) {
+  issuedJti.set(jti, { ts, renews: Number(renews) || 0 });
   if (issuedJti.size > 20000) {
     const now = Date.now();
     for (const [j, t] of issuedJti) {
       if (now - t.ts > TICKET_TTL * 2) issuedJti.delete(j);
     }
-    // 全部票据仍新鲜时按最旧丢弃到安全水位，防止分布式攻击撑爆内存
     while (issuedJti.size > 18000) {
       const oldest = issuedJti.keys().next().value;
       if (oldest === undefined) break;
       issuedJti.delete(oldest);
     }
   }
-  return { token: [ts, jti, sig].join('.'), jti, ts };
+}
+
+function persistTicket(jti, ts, renews) {
+  try {
+    const db = require('../db');
+    const expires = new Date(Number(ts) + TICKET_TTL * 2);
+    db('gate_tickets')
+      .insert({ jti, issued_at: Number(ts), renews: Number(renews) || 0, expires_at: expires })
+      .onConflict('jti')
+      .merge({ issued_at: Number(ts), renews: Number(renews) || 0, expires_at: expires })
+      .catch(() => {});
+  } catch (e) { /* 表未就绪时降级纯内存 */ }
+}
+
+async function loadPersistedTickets() {
+  try {
+    const db = require('../db');
+    const rows = await db('gate_tickets').where('expires_at', '>', db.fn.now()).select('jti', 'issued_at', 'renews');
+    for (const row of rows) rememberIssued(row.jti, Number(row.issued_at), row.renews);
+    if (rows.length) console.log(`[gate] 已恢复 ${rows.length} 张未过期通行证`);
+  } catch (e) { /* 表不存在则跳过 */ }
+}
+
+async function purgeExpiredTickets() {
+  try {
+    const db = require('../db');
+    return await db('gate_tickets').where('expires_at', '<', db.fn.now()).del();
+  } catch (e) {
+    return 0;
+  }
 }
 
 /** 验证票据（constant-time + 签发登记校验） */
@@ -290,13 +315,17 @@ function hmacWithKey(key, data) {
   return crypto.createHmac('sha256', String(key)).update(data).digest('hex');
 }
 
-/** 闸门中间件：公开接口必须携带有效票据 */
+/** 闸门中间件：公开读接口必须携带有效票据 + 请求签名（HEAD 仅验票，供探活） */
 function gateRequired(req, res, next) {
   const t = verifyTicket(req);
   if (!t.ok) {
     return res.status(403).json({ code: 1, message: '访问被拒绝' });
   }
+  if (req.method !== 'HEAD' && !verifySig(req, t)) {
+    return res.status(403).json({ code: 1, message: '请求签名无效' });
+  }
   req.passTicket = t;
+  if (req.method !== 'HEAD') req.sigVerified = true;
   next();
 }
 
@@ -335,7 +364,7 @@ function renewTicket(req) {
     }
   }
   const fp = String(req.headers['x-fp'] || '').slice(0, 128);
-  const issued2 = issueTicket(req.ip || 'unknown', fp, normUa(req.headers['user-agent']), renews);
+  const issued2 = issueTicket(req.ip || 'unknown', fp, normUa(req.headers['user-agent']), renews, true);
   return { ok: true, token: issued2.token };
 }
 
@@ -472,4 +501,8 @@ module.exports = {
   verifyCrawlerIp,
   trackFpIp,
   isFpFlagged,
+  loadPersistedTickets,
+  purgeExpiredTickets,
+  POW_DIFF,
+  POW_DIFF_MAX,
 };

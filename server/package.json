@@ -13,7 +13,9 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "migrate": "node src/migrate.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "test": "node test/sanitize.test.js && node test/feed.test.js && node test/requestGuard.test.js && node test/likeGuard.test.js && node test/scrapeGuard.test.js && node test/contentCrypto.test.js",
+    "test:all": "node test/run.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

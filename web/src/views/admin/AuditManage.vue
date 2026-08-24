@@ -73,9 +73,8 @@ import { Search } from '@element-plus/icons-vue';
 import { auditApi } from '@/api';
 import { formatDateTime } from '@/utils/format';
 import { getCachedAdminPath } from '@/utils/adminPath';
-import { getTicket, ensurePass } from '@/utils/pass';
-import { getFingerprint } from '@/utils/fingerprint';
-import { getAuthToken } from '@/utils/authSession';
+import { ensurePass } from '@/utils/pass';
+import { signedFetch } from '@/utils/signedFetch';
 
 const list = ref([]);
 const loading = ref(false);
@@ -145,13 +144,7 @@ async function exportCsv() {
     const params = new URLSearchParams();
     if (keyword.value.trim()) params.set('keyword', keyword.value.trim());
     const qs = params.toString();
-    const resp = await fetch(`/api/${key}/audit/export${qs ? `?${qs}` : ''}`, {
-      headers: {
-        Authorization: `Bearer ${getAuthToken()}`,
-        'X-Pass': getTicket(),
-        'X-Fp': await getFingerprint(),
-      },
-    });
+    const resp = await signedFetch(`/api/${key}/audit/export${qs ? `?${qs}` : ''}`);
     if (!resp.ok) {
       ElMessage.error('导出失败，请重试');
       return;

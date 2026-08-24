@@ -1,4 +1,4 @@
-const { safeUrl } = require('../src/utils/sanitize');
+const { safeUrl, safeCover } = require('../src/utils/sanitize');
 
 let passed = 0;
 let failed = 0;
@@ -47,6 +47,14 @@ const denied = [
 
 for (const u of allowed) assert(`allow ${u}`, !!safeUrl(u));
 for (const u of denied) assert(`deny ${u}`, !safeUrl(u));
+
+assert('cover 允许默认 logo', safeCover('/logo.png') === '/logo.png');
+assert('cover 允许上传文件名', safeCover('/uploads/123-abcdef.png') === '/uploads/123-abcdef.png');
+assert('cover 拒绝任意站内路径', safeCover('/etc/passwd') === '');
+assert('cover 拒绝路径穿越', safeCover('/uploads/../logo.png') === '');
+assert('cover 拒绝属性注入', safeCover('/logo.png" onerror="alert(1)') === '');
+assert('cover 允许 https 外链', !!safeCover('https://example.com/a.png'));
+assert('cover 拒绝 javascript', safeCover('javascript:alert(1)') === '');
 
 console.log(`sanitize 套件结果: ${passed} 通过, ${failed} 失败`);
 if (failed) {

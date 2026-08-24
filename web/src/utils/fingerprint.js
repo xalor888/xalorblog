@@ -62,6 +62,10 @@ function collectRaw() {
     webglFingerprint(),
     !!window.chrome,
     nav.maxTouchPoints || 0,
+    !!nav.webdriver,
+    (() => {
+      try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; }
+    })(),
   ].join('|||');
 }
 
@@ -81,13 +85,13 @@ export async function getFingerprint() {
   if (cached) return cached;
   if (pending) return pending;
   pending = (async () => {
-    const stored = readSessionValue('xalor_fp_v2');
+    const stored = readSessionValue('xalor_fp_v3');
     if (/^[0-9a-f]{64}$/i.test(stored)) {
       cached = stored;
       return stored;
     }
     const fp = await sha256(collectRaw());
-    writeSessionValue('xalor_fp_v2', fp);
+    writeSessionValue('xalor_fp_v3', fp);
     cached = fp;
     return fp;
   })().finally(() => {

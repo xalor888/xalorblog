@@ -1,5 +1,5 @@
 /**
- * 应用层 WAF（企业级特征库 + 行为分析）
+ * 应用层 WAF（特征库 + 行为分析）
  * ============ 检测维度 ============
  * 1. 特征库：SQL 注入 / XSS / 路径遍历 / 命令注入 / SSRF / XXE / SSTI / 模板注入 /
  *            Log4Shell / Spring4Shell / CRLF / 原型污染 / 反序列化
@@ -498,7 +498,9 @@ function waf(req, res, next) {
     rawPath = rawPath.slice(prefix.length);
   }
   const pathOnly = rawPath.replace(/\/+$/, '') || '/';
-  if (HONEYPOT_SET.has(pathOnly) || HONEYPOT_SET.has(rawPath)) {
+  const adminBase = `/${config.adminPath}`;
+  const isAdminRoute = pathOnly === adminBase || pathOnly.startsWith(`${adminBase}/`);
+  if (!isAdminRoute && (HONEYPOT_SET.has(pathOnly) || HONEYPOT_SET.has(rawPath))) {
     // 蜜罐命中即重罚（honeypot 权重在 ipGuard 中为最高档）
     report(ip, 'honeypot', `HONEYPOT ${req.method} ${req.path}`);
     return res.status(404).json({ code: 1, message: '访问被拒绝' });

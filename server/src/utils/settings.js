@@ -1,5 +1,5 @@
 const db = require('../db');
-const { safeUrl } = require('./sanitize');
+const { safeUrl, safeCover } = require('./sanitize');
 
 const DEFAULT_SETTINGS = {
   site_name: 'Xalor的小站',
@@ -18,8 +18,8 @@ const DEFAULT_SETTINGS = {
   // 内容审核开关：开启后新评论/留言进入待审，需后台手动通过
   comment_moderation: false,
   message_moderation: false,
-  // RSS 输出模式：true 全文（content:encoded），false 仅摘要（description）
-  rss_full_content: true,
+  // RSS 默认仅摘要。全文会绕过文章详情的传输加密，须站长显式打开。
+  rss_full_content: false,
   // 自定义版权声明（文章页版权卡片；留空则使用默认 CC BY-NC 4.0 声明）
   copyright_text: '',
   // ICP 备案号（页脚展示；留空不显示）
@@ -74,10 +74,9 @@ async function saveSettings(entries) {
       const u = new URL(parsed);
       if (u.search || u.hash) continue;
     }
-    // avatar 允许站内相对路径（/logo.png、/uploads/...），其余必须 http(s)
+    // avatar 与封面同一白名单：/logo.png、/uploads/<随机文件名> 或 http(s)
     if (key === 'avatar' && value) {
-      const isSitePath = raw.startsWith('/') && !raw.startsWith('//');
-      if (!isSitePath && !safeUrl(raw, 500)) continue;
+      if (!safeCover(raw)) continue;
     }
     if ((key === 'social_github' || key === 'social_weibo') && value && !/^https?:\/\/[^\s]+$/i.test(raw)) continue;
     // 联系邮箱用于 security.txt / mailto 链接，拒绝空格/换行/角括号等异常值

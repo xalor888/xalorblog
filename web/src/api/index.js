@@ -63,7 +63,8 @@ request.interceptors.request.use(async (config) => {
   // JWT 认证头：后台接口依赖它通过 authRequired
   const token = getAuthToken();
   if (token) config.headers['Authorization'] = `Bearer ${token}`;
-  if (['post', 'put', 'delete'].includes((config.method || '').toLowerCase())) {
+  const method = (config.method || 'get').toLowerCase();
+  if (method !== 'head' && method !== 'options') {
     const { ts, sig, nonce } = await signRequest(config);
     config.headers['X-Timestamp'] = ts;
     config.headers['X-Sig'] = sig;
@@ -84,7 +85,11 @@ request.interceptors.response.use(
     const data = res.data;
     if (data && data.content_enc && typeof data.content === 'string') {
       try {
-        data.content = await decryptContent(data.content, response.config?._ticket);
+        data.content = await decryptContent(
+          data.content,
+          response.config?._ticket,
+          data.content_key || data.slug || '',
+        );
         data.content_enc = false;
       } catch (e) {
         data.content = '';
@@ -252,7 +257,7 @@ export const commentApi = {
   recent: () => request.get('/comments/recent'),
   create: (data, config) => request.post('/comments', data, config),
   like: (id) => request.post(`/comments/${id}/like`),
-  reAi: (id) => request.post(`/comments/${id}/re-ai`),
+  reAi: (id) => adminPost(`/comments/${id}/re-ai`),
   adminList: (params) => adminGet('/comments/admin/list', params),
   adminExport: (params) => adminGet('/comments/admin/export', params),
   updateStatus: (id, status) => adminPut(`/comments/${id}/status`, { status }),
@@ -275,7 +280,7 @@ export const linkApi = {
 export const messageApi = {
   list: (params) => request.get('/messages', { params }),
   create: (data, config) => request.post('/messages', data, config),
-  reAi: (id) => request.post(`/messages/${id}/re-ai`),
+  reAi: (id) => adminPost(`/messages/${id}/re-ai`),
   adminList: (params) => adminGet('/messages/admin/list', params),
   updateStatus: (id, status) => adminPut(`/messages/${id}/status`, { status }),
   remove: (id) => adminDelete(`/messages/${id}`),
