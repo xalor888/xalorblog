@@ -1,6 +1,7 @@
 const express = require('express');
 const { ok, fail } = require('../utils/response');
 const { getAllSettings } = require('../utils/settings');
+const { smtpReady } = require('../utils/notifyMail');
 
 const router = express.Router();
 
@@ -13,6 +14,7 @@ router.get('/', async (req, res) => {
     const settings = await getAllSettings();
     return ok(res, {
       ...settings,
+      mail_notify: smtpReady(),
       server_tz_offset_min: new Date().getTimezoneOffset(),
     });
   } catch (e) {

@@ -25,8 +25,17 @@
       <div class="form-row">
         <input v-model="form.nickname" class="form-input" placeholder="昵称 *" maxlength="50" autocomplete="nickname" aria-label="昵称"
           @keydown.enter.prevent="onFieldEnter" />
-        <input v-model="form.email" class="form-input" type="email" placeholder="邮箱（仅用于回复通知，不公开）" maxlength="100" autocomplete="email" aria-label="邮箱"
-          @keydown.enter.prevent="onFieldEnter" />
+        <input
+          v-if="mailNotify"
+          v-model="form.email"
+          class="form-input"
+          type="email"
+          placeholder="邮箱（仅用于回复通知，不公开）"
+          maxlength="100"
+          autocomplete="email"
+          aria-label="邮箱"
+          @keydown.enter.prevent="onFieldEnter"
+        />
       </div>
       <input v-model="form.website" class="form-input" placeholder="网站 / 博客（可选）" maxlength="200" autocomplete="url" aria-label="网站"
         @keydown.enter.prevent="onFieldEnter" />
@@ -119,6 +128,7 @@ import CommentItem from './CommentItem.vue';
 import { commentApi } from '@/api';
 import { getFormTokenInfo, refreshFormToken, getHpField } from '@/utils/formToken';
 import { readSessionValue, writeSessionValue } from '@/utils/secureStorage';
+import { useSiteStore } from '@/stores/site';
 
 const props = defineProps({
   articleId: { type: Number, required: true },
@@ -126,6 +136,8 @@ const props = defineProps({
   initialHighlight: { type: [Number, String], default: null },
 });
 
+const site = useSiteStore();
+const mailNotify = computed(() => !!site.settings.mail_notify);
 const comments = ref([]);
 const total = ref(0);
 const submitting = ref(false);
@@ -316,7 +328,7 @@ async function submit() {
         article_id: props.articleId,
         parent_id: replyingTo.value?.id || null,
         nickname,
-        email: form.value.email.trim(),
+        email: mailNotify.value ? form.value.email.trim() : '',
         website: form.value.website.trim(),
         content,
         [field]: form.value[field] || '',

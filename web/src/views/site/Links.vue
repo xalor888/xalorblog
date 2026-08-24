@@ -43,7 +43,7 @@
             <label class="field-label">网站图标 URL</label>
             <input v-model="form.avatar" class="field-input" type="url" maxlength="500" placeholder="https://…/icon.png" />
           </div>
-          <div class="field">
+          <div v-if="mailNotify" class="field">
             <label class="field-label">联系邮箱</label>
             <input v-model="form.email" class="field-input" type="email" maxlength="100" placeholder="用于审核反馈" autocomplete="email" />
           </div>
@@ -72,17 +72,20 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watchEffect } from 'vue';
+import { ref, computed, onMounted, watchEffect } from 'vue';
 import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { linkApi } from '@/api';
 import { getFormTokenInfo, refreshFormToken, getHpField } from '@/utils/formToken';
+import { useSiteStore } from '@/stores/site';
 
 // 浏览器标签页标题
 watchEffect(() => {
   document.title = '友情链接';
 });
 
+const site = useSiteStore();
+const mailNotify = computed(() => !!site.settings.mail_notify);
 const links = ref([]);
 const submitting = ref(false);
 const failedAvatars = ref(new Set());
@@ -120,6 +123,7 @@ async function submit() {
     await linkApi.apply(
       {
         ...form.value,
+        email: mailNotify.value ? form.value.email : '',
         [field]: form.value[field] || '',
         form_token: formToken,
       },

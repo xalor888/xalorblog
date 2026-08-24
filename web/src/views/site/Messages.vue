@@ -12,8 +12,17 @@
         <div class="form-row">
           <input v-model="form.nickname" class="form-input" placeholder="昵称 *" maxlength="50" autocomplete="nickname" aria-label="昵称"
             @keydown.enter.prevent="onFieldEnter" />
-          <input v-model="form.email" class="form-input" type="email" placeholder="邮箱（仅用于回复通知，不公开）" maxlength="100" autocomplete="email" aria-label="邮箱"
-            @keydown.enter.prevent="onFieldEnter" />
+          <input
+            v-if="mailNotify"
+            v-model="form.email"
+            class="form-input"
+            type="email"
+            placeholder="邮箱（仅用于回复通知，不公开）"
+            maxlength="100"
+            autocomplete="email"
+            aria-label="邮箱"
+            @keydown.enter.prevent="onFieldEnter"
+          />
         </div>
         <!-- 随机蜜罐字段：字段名由服务端动态签发 -->
         <input
@@ -89,7 +98,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, watchEffect } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, watchEffect } from 'vue';
 import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import EmojiPicker from '@/components/ui/EmojiPicker.vue';
@@ -97,12 +106,15 @@ import { messageApi } from '@/api';
 import { getFormTokenInfo, refreshFormToken, getHpField } from '@/utils/formToken';
 import { timeAgo } from '@/utils/format';
 import { readSessionValue, writeSessionValue } from '@/utils/secureStorage';
+import { useSiteStore } from '@/stores/site';
 
 // 浏览器标签页标题
 watchEffect(() => {
   document.title = '留言板';
 });
 
+const site = useSiteStore();
+const mailNotify = computed(() => !!site.settings.mail_notify);
 const messages = ref([]);
 const page = ref(1);
 const pageSize = 12;
@@ -235,7 +247,7 @@ async function submit() {
     const res = await messageApi.create(
       {
         nickname,
-        email: form.value.email.trim(),
+        email: mailNotify.value ? form.value.email.trim() : '',
         content,
         [field]: form.value[field] || '',
         form_token: formToken,
