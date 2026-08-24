@@ -148,7 +148,10 @@
             {{ fontStyle === 'serif' ? '衬线' : '无衬线' }}
           </button>
         </div>
-        <div class="markdown-body" :class="{ serif: fontStyle === 'serif' }" v-html="renderedContent" :style="{ fontSize: fontSize + 'px' }" @click="onContentClick"></div>
+        <div v-if="article.content_decrypt_failed" class="decrypt-fail">
+          正文解密失败，请刷新页面后重试。
+        </div>
+        <div v-else class="markdown-body" :class="{ serif: fontStyle === 'serif' }" v-html="renderedContent" :style="{ fontSize: fontSize + 'px' }" @click="onContentClick"></div>
 
           <!-- 点赞 -->
           <div class="like-zone">
@@ -319,6 +322,7 @@ import { renderMarkdown, extractToc, addHeadingIds, addImgAttrs } from '@/utils/
 import { formatDate, formatNumber, readingTime } from '@/utils/format';
 import { isBookmarked, addBookmark, removeBookmark } from '@/utils/bookmark';
 import { useSiteStore } from '@/stores/site';
+import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 
 const route = useRoute();
 const router = useRouter();
@@ -351,7 +355,8 @@ const bookmarked = ref(false);
 
 // 移动端 TOC 抽屉打开时锁定背景滚动（与灯箱行为对齐）
 watch(mobileTocOpen, (open) => {
-  document.body.style.overflow = open ? 'hidden' : '';
+  if (open) lockBodyScroll();
+  else unlockBodyScroll();
 });
 
 const ccLicenseUrl = 'https://creativecommons.org/licenses/by-nc/4.0/';
@@ -643,7 +648,7 @@ function setJsonLd(id, obj) {
     el.id = id;
     document.head.appendChild(el);
   }
-  el.textContent = JSON.stringify(obj);
+  el.textContent = JSON.stringify(obj).replace(/</g, '\\u003c');
 }
 
 /** 离开文章页时移除本文的 JSON-LD，避免与其他页面结构化数据叠加 */
@@ -763,7 +768,7 @@ onUnmounted(() => {
   document.removeEventListener('click', onShareDocClick);
   tocObserver?.disconnect();
   removeJsonLd(); // 移除本文 JSON-LD，防与后续页面结构化数据叠加
-  document.body.style.overflow = ''; // 兜底：抽屉/灯箱可能残留的滚动锁定
+  if (mobileTocOpen.value) unlockBodyScroll();
 });
 </script>
 
@@ -1140,6 +1145,15 @@ onUnmounted(() => {
 /* ============ 正文 ============ */
 .detail-content {
   padding-bottom: 40px;
+}
+
+.decrypt-fail {
+  padding: 28px 20px;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  text-align: center;
+  font-weight: 600;
 }
 
 /* 阅读工具栏：字号调节 */

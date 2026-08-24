@@ -475,14 +475,14 @@ async function seed() {
     console.log('[seed] 留言就绪');
   }
 
-  // 设置
+  // 设置：只补缺，不覆盖站长已改的项（尤其 rss_full_content）
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     const json = JSON.stringify(value);
     await db('settings').insert({ key, value: json })
       .onConflict('key')
-      .merge({ value: json, updated_at: db.fn.now() });
+      .ignore();
   }
-  console.log('[seed] 设置就绪');
+  console.log('[seed] 设置就绪（仅补缺，未覆盖已有项）');
 
   // 近 14 天访问数据（让仪表盘好看些）
   for (let i = 13; i >= 0; i--) {

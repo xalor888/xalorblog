@@ -53,7 +53,9 @@ const site = useSiteStore();
 const socials = computed(() => {
   const list = [];
   const s = site.settings;
-  if (s.social_github) list.push({ label: 'GitHub', url: s.social_github, icon: 'Github' });
+  if (s.social_github && !/^https?:\/\/github\.com\/?$/i.test(String(s.social_github).trim())) {
+    list.push({ label: 'GitHub', url: s.social_github, icon: 'Github' });
+  }
   if (s.social_weibo) list.push({ label: '微博', url: s.social_weibo, icon: 'AtSign' });
   if (s.social_email) list.push({ label: '联系邮箱', url: `mailto:${s.social_email}`, icon: 'Mail' });
   return list;

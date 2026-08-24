@@ -47,6 +47,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
+import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 
 const visible = ref(false);
 const src = ref('');
@@ -66,24 +67,23 @@ function open(s, a) {
   zoom.value = 1;
   dragging.value = false;
   dragStart = null;
+  if (!visible.value) lockScroll();
   visible.value = true;
-  lockScroll();
 }
 
 function close() {
+  if (visible.value) unlockScroll();
   visible.value = false;
   dragging.value = false;
   dragStart = null;
-  unlockScroll();
 }
 
-/** 背景滚动锁定：弹窗打开时禁止页面滚动，关闭恢复 */
 function lockScroll() {
-  document.body.style.overflow = 'hidden';
+  lockBodyScroll();
 }
 
 function unlockScroll() {
-  document.body.style.overflow = '';
+  unlockBodyScroll();
 }
 
 function zoomBy(delta) {
@@ -180,7 +180,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown);
-  unlockScroll(); // 兜底：组件卸载时确保解锁
+  if (visible.value) unlockScroll();
 });
 
 defineExpose({ open });

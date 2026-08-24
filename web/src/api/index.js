@@ -85,14 +85,18 @@ request.interceptors.response.use(
     const data = res.data;
     if (data && data.content_enc && typeof data.content === 'string') {
       try {
-        data.content = await decryptContent(
+        const plain = await decryptContent(
           data.content,
           response.config?._ticket,
           data.content_key || data.slug || '',
         );
+        data.content = plain;
         data.content_enc = false;
+        data.content_decrypt_failed = !plain;
       } catch (e) {
         data.content = '';
+        data.content_enc = false;
+        data.content_decrypt_failed = true;
       }
     }
     return data;

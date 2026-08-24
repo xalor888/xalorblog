@@ -4,9 +4,8 @@
  * articleKey 让同一张票解开的密文不能复用到另一篇。
  */
 
-import { getTicket, ENC_SALT } from './pass';
-
-const encSaltBuf = new TextEncoder().encode(ENC_SALT);
+import { getTicket } from './pass';
+import { getEncSalt } from './encSalt';
 
 function keyMaterial(ticket, articleKey) {
   const extra = articleKey == null || articleKey === '' ? '' : `|${articleKey}`;
@@ -17,7 +16,7 @@ function keyMaterial(ticket, articleKey) {
 async function deriveKey(ticket, articleKey) {
   const hmacKey = await crypto.subtle.importKey(
     'raw',
-    encSaltBuf,
+    new TextEncoder().encode(getEncSalt()),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']

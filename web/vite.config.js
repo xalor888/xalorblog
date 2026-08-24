@@ -18,8 +18,7 @@ export default defineConfig(({ mode }) => {
     .split(',')
     .map((host) => host.trim())
     .filter(Boolean);
-  // 内容加密盐（须与服务端 ENC_SALT 一致 —— 生产自定义后若不注入，前端解密
-  // 密钥不匹配 → 正文渲染为空；默认值与服务端 config 默认一致）
+  // 构建期默认盐；运行时闸门挑战会下发服务端 ENC_SALT 覆盖
   const ENC_SALT = env.VITE_ENC_SALT || 'xalor-content-v1';
 
   return {

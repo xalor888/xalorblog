@@ -38,6 +38,13 @@ r = noteArticleRead('198.51.100.1', fp, 'a');
 const r2 = noteArticleRead('198.51.100.2', fp, 'a');
 assert('不同 IP 窗口独立', r.ok && r2.ok);
 
+resetScrapeGuard();
+for (let i = 1; i <= MAX_UNIQUE; i++) {
+  noteArticleRead(ip, `fp-${i}`, `slug-${i}`);
+}
+r = noteArticleRead(ip, 'fp-overflow', 'slug-overflow');
+assert('同一 IP 轮换指纹仍计入刮取窗', r.ok === false, JSON.stringify(r));
+
 console.log(`\nscrapeGuard 套件结果: ${passed} 通过, ${failed} 失败`);
 if (failed) {
   console.error(failures.join('\n'));

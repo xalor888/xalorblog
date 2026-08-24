@@ -109,8 +109,16 @@ module.exports = {
     puzzleTtl: 60 * 1000,
     // 签名时间戳窗口（毫秒）
     sigWindow: 5 * 60 * 1000,
-    // 内容加密盐
-    encSalt: process.env.ENC_SALT || 'xalor-content-v1',
+    // 内容加密盐：生产必须自定义。默认值会出现在前端包与仓库里，不能当密钥。
+    encSalt: (function resolveEncSalt() {
+      const salt = String(process.env.ENC_SALT || '').trim();
+      if (isProd) {
+        if (!salt || salt.length < 16 || salt === 'xalor-content-v1') {
+          throw new Error('生产环境必须配置 ENC_SALT（至少 16 字符，且不能使用默认值 xalor-content-v1）');
+        }
+      }
+      return salt || 'xalor-content-v1';
+    })(),
   },
   // AI 评论审核（可选）：本地规则引擎默认开启；
   // 配置 AI_API_KEY / AI_BASE_URL / AI_MODEL 后启用 LLM 深度二判（兼容 OpenAI Chat Completions）

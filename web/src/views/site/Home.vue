@@ -2,7 +2,7 @@
   <div class="home">
     <!-- 全屏横幅 -->
     <section class="hero" aria-label="站点横幅">
-      <div class="hero-bg" aria-hidden="true"></div>
+      <div ref="heroBg" class="hero-bg" aria-hidden="true"></div>
       <div class="hero-veil" aria-hidden="true"></div>
       <div class="hero-dots" aria-hidden="true"></div>
 
@@ -20,7 +20,7 @@
       </div>
 
       <div class="hero-dock">
-        <a v-if="site.settings.social_github" :href="site.settings.social_github" target="_blank" rel="noopener" title="GitHub"><XIcon name="Github" :size="18" /></a>
+        <a v-if="githubHref" :href="githubHref" target="_blank" rel="noopener" title="GitHub"><XIcon name="Github" :size="18" /></a>
         <a v-if="site.settings.social_email" :href="'mailto:' + site.settings.social_email" title="邮箱"><XIcon name="Mail" :size="18" /></a>
         <a href="/api/rss.xml" title="RSS"><XIcon name="Rss" :size="18" /></a>
         <button class="hero-scroll" type="button" title="向下浏览" @click="scrollToFeed">
@@ -153,6 +153,7 @@ import { useSiteStore } from '@/stores/site';
 import { formatNumber } from '@/utils/format';
 
 const site = useSiteStore();
+const heroBg = ref(null);
 const articles = ref([]);
 const categories = ref([]);
 const tags = ref([]);
@@ -164,6 +165,11 @@ const loading = ref(true);
 const homeError = ref(false);
 
 const feedArticles = computed(() => articles.value);
+const githubHref = computed(() => {
+  const u = String(site.settings.social_github || '').trim();
+  if (!u || /^https?:\/\/github\.com\/?$/i.test(u)) return '';
+  return u;
+});
 
 async function setHotSort(s) {
   if (hotSort.value === s) return;
@@ -272,7 +278,7 @@ async function loadHome() {
 }
 
 function onHeroScroll() {
-  const hero = document.querySelector('.hero-bg');
+  const hero = heroBg.value;
   if (!hero) return;
   const y = Math.min(window.scrollY, window.innerHeight);
   hero.style.transform = `scale(1.08) translateY(${y * 0.18}px)`;

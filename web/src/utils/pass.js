@@ -7,6 +7,7 @@
 
 import { getFingerprint } from './fingerprint';
 import { solvePow } from './pow';
+import { applyEncSalt } from './encSalt';
 
 const BASE = import.meta.env.VITE_API_PREFIX || '/api';
 const RENEW_AT = 8 * 60 * 1000;
@@ -71,6 +72,7 @@ async function acquire() {
     headers: { 'X-Fp': fp },
     json: { id: puzzle.id, solution },
   });
+  if (issued.enc_salt) applyEncSalt(issued.enc_salt);
   ticket = issued.token;
   ticketTime = Date.now();
   scheduleRenew();
@@ -87,6 +89,7 @@ async function renew() {
       headers: { 'X-Fp': fp },
       json: {},
     });
+    if (issued.enc_salt) applyEncSalt(issued.enc_salt);
     ticket = issued.token;
     ticketTime = Date.now();
     scheduleRenew();
@@ -133,7 +136,5 @@ export async function forceRefresh() {
   return ensurePass();
 }
 
-/** 服务端派生内容解密密钥所用的 HMAC（与 server 一致） */
-// 内容加密盐（构建时注入 VITE_ENC_SALT；生产自定义 ENC_SALT 时须同步，
-// 否则前端派生密钥与服务端不一致 → 正文解密为空）
-export const ENC_SALT = import.meta.env.VITE_ENC_SALT || 'xalor-content-v1';
+/** 构建期默认盐；运行时以换票/续期响应的 enc_salt 为准 */
+export { DEFAULT_ENC_SALT as ENC_SALT } from './encSalt';

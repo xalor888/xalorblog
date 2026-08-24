@@ -38,7 +38,7 @@ function tick(c) {
   const h = window.innerHeight;
   ctx.clearRect(0, 0, w, h);
   const dark = document.documentElement.dataset.theme === 'dark';
-  ctx.fillStyle = dark ? '#ffffff' : '#ffffff';
+  ctx.fillStyle = dark ? '#ffffff' : '#1a1814';
   for (const p of particles) {
     p.y += p.s;
     p.x += p.drift;
@@ -84,7 +84,7 @@ onUnmounted(() => {
 .ambient {
   position: fixed;
   inset: 0;
-  z-index: 2;
+  z-index: 0;
   pointer-events: none;
   opacity: 0.55;
 }

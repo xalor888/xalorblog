@@ -46,7 +46,12 @@ router.post('/ticket', ticketLimiter, (req, res) => {
     const result = verifyPow(req, req.body);
     if (!result.ok) return fail(res, result.reason, 403);
     const issued = issueTicket(req.ip || 'unknown', fp, String(req.headers['user-agent'] || '').slice(0, 120), 0, true);
-    return ok(res, { token: issued.token, ttl: 600000, renew_at: 480000 }, 'ok');
+    return ok(res, {
+      token: issued.token,
+      ttl: 600000,
+      renew_at: 480000,
+      enc_salt: config.security.encSalt,
+    }, 'ok');
   } catch (e) {
     return fail(res, '票据签发失败', 500);
   }
@@ -61,7 +66,7 @@ router.post('/renew', ticketLimiter, (req, res) => {
     }
     const result = renewTicket(req);
     if (!result.ok) return fail(res, result.reason, 403);
-    return ok(res, { token: result.token, ttl: 600000 }, 'ok');
+    return ok(res, { token: result.token, ttl: 600000, enc_salt: config.security.encSalt }, 'ok');
   } catch (e) {
     return fail(res, '续期失败', 500);
   }

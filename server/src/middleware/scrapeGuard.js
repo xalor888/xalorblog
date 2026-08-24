@@ -11,8 +11,9 @@ const MAX_KEYS = 8000;
 
 const buckets = new Map(); // key -> { hits, slugs: Map(slug -> ts), start }
 
-function readerKey(ip, fp) {
-  return `${ip || 'unknown'}:${String(fp || '').slice(0, 128)}`;
+function readerKey(ip) {
+  // 指纹可任意轮换，不能进键；换 IP 才是真实成本
+  return String(ip || 'unknown');
 }
 
 function prune(now) {
@@ -31,7 +32,7 @@ function prune(now) {
  * @returns {{ ok: true } | { ok: false, reason: string }}
  */
 function noteArticleRead(ip, fp, slug) {
-  const key = readerKey(ip, fp);
+  const key = readerKey(ip, fp); // fp 保留入参兼容，不参与分桶
   const now = Date.now();
   let rec = buckets.get(key);
   if (!rec || now - rec.start > WINDOW_MS) {

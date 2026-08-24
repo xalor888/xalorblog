@@ -130,10 +130,10 @@
             </div>
             <p class="footer-desc">{{ site.settings.site_desc }}</p>
             <div class="footer-social">
-              <a v-if="site.settings.social_github" :href="site.settings.social_github" target="_blank" rel="noopener" class="social-link" title="GitHub"><XIcon name="Github" :size="16" /></a>
+              <a v-if="githubHref" :href="githubHref" target="_blank" rel="noopener" class="social-link" title="GitHub"><XIcon name="Github" :size="16" /></a>
               <a v-if="site.settings.social_weibo" :href="site.settings.social_weibo" target="_blank" rel="noopener" class="social-link" title="微博"><XIcon name="AtSign" :size="16" /></a>
               <a v-if="site.settings.social_email" :href="'mailto:' + site.settings.social_email" class="social-link" title="邮箱"><XIcon name="Mail" :size="16" /></a>
-              <a :href="`/api/rss.xml`" class="social-link rss-link" title="RSS 订阅"><XIcon name="Rss" :size="16" /></a>
+              <a href="/api/rss.xml" class="social-link rss-link" title="RSS 订阅"><XIcon name="Rss" :size="16" /></a>
             </div>
           </div>
 
@@ -224,6 +224,7 @@ import { statsApi } from '@/api';
 import { formatNumber } from '@/utils/format';
 import { adminHref, getAdminPath } from '@/utils/adminPath';
 import { warmFormToken } from '@/utils/formToken';
+import { lockBodyScroll, unlockBodyScroll, resetBodyScroll } from '@/utils/scrollLock';
 
 const route = useRoute();
 const theme = useThemeStore();
@@ -235,7 +236,11 @@ const mobileOpen = ref(false);
 const scrollPercent = ref(0);
 // 抽屉打开时锁定背景滚动（防双滚动与移动端底部误触）
 watch(mobileOpen, (open) => {
-  document.body.style.overflow = open ? 'hidden' : '';
+  if (open) lockBodyScroll();
+  else unlockBodyScroll();
+});
+watch(() => route.path, () => {
+  if (mobileOpen.value) mobileOpen.value = false;
 });
 // 管理后台链接（秘钥路径异步加载，加载完成后更新）
 const adminLink = ref(adminHref());
@@ -279,6 +284,11 @@ const navItems = [
 
 const isHome = computed(() => route.path === '/');
 const navOverlay = computed(() => isHome.value && !scrolled.value);
+const githubHref = computed(() => {
+  const u = String(site.settings.social_github || '').trim();
+  if (!u || /^https?:\/\/github\.com\/?$/i.test(u)) return '';
+  return u;
+});
 
 function isActive(item) {
   if (item.exact) return route.path === '/';
@@ -370,13 +380,14 @@ function applyWebSiteLd() {
     el.id = 'jsonld-website';
     document.head.appendChild(el);
   }
-  el.textContent = JSON.stringify(ld);
+  el.textContent = JSON.stringify(ld).replace(/</g, '\\u003c');
 }
 
 onUnmounted(() => {
   window.removeEventListener('scroll', onScroll);
   window.removeEventListener('keydown', onGlobalKeydown);
   document.getElementById('jsonld-website')?.remove();
+  resetBodyScroll();
 });
 </script>
 
@@ -740,6 +751,8 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 1;
 }
 
 .site-main.home-main {
@@ -764,6 +777,8 @@ onUnmounted(() => {
 
 /* ============ 页脚 ============ */
 .site-footer {
+  position: relative;
+  z-index: 1;
   margin-top: 0;
   background: color-mix(in srgb, var(--bg-soft) 88%, var(--card));
   border-top: 1px solid var(--border);

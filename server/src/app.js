@@ -52,19 +52,22 @@ const zlib = require('zlib');
 app.use((req, res, next) => {
   // 追加而非覆盖：CORS 会写 Vary: Origin，覆盖后中间代理可能按编码复用跨域响应
   res.append('Vary', 'Accept-Encoding');
-  if (!/gzip/.test(req.headers['accept-encoding'] || '')) return next();
+  if (req.method === 'HEAD' || !/gzip/.test(req.headers['accept-encoding'] || '')) return next();
   const send = res.send.bind(res);
   res.send = (body) => {
-    if (res.statusCode === 304 || typeof body !== 'string' || body.length < 1024) {
+    if (res.headersSent || res.statusCode === 304 || typeof body !== 'string' || body.length < 1024) {
       return send(body);
     }
-    const buf = Buffer.from(body, 'utf8');
-    zlib.gzip(buf, (err, zipped) => {
-      if (err || zipped.length >= buf.length) return send(body); // 压缩无收益则原样
+    try {
+      const buf = Buffer.from(body, 'utf8');
+      const zipped = zlib.gzipSync(buf);
+      if (zipped.length >= buf.length) return send(body);
       res.set('Content-Encoding', 'gzip');
       res.set('Content-Length', String(zipped.length));
       return send(zipped);
-    });
+    } catch (e) {
+      return send(body);
+    }
   };
   next();
 });
