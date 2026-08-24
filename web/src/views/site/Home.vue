@@ -190,9 +190,8 @@ const INTRO_LINES = [
   "👋 Hello, I'm Xalor, 一个普普通通的学生开发者",
   'The future is now. Infinite. Relentless. Evolving',
 ];
-let typeLines = [...INTRO_LINES];
 let typeTimer = null;
-let hitokotoTimer = null;
+let hitokotoRetry = null;
 
 const display = ref({ articles: 0, comments: 0, pv: 0 });
 
@@ -222,63 +221,98 @@ function runCountUps() {
   });
 }
 
-function startTyping() {
-  let line = 0;
+function stopTyping() {
+  clearInterval(typeTimer);
+  typeTimer = null;
+}
+
+function typeText(text, { hold = false, onDone } = {}) {
+  stopTyping();
+  const full = String(text || '');
+  typedFull.value = full;
   let i = 0;
   let deleting = false;
   let pause = 0;
   typed.value = '';
-  typedFull.value = typeLines[0] || '';
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-    typed.value = typeLines[0] || '';
-    return;
-  }
-  clearInterval(typeTimer);
   typeTimer = setInterval(() => {
     if (pause > 0) {
       pause -= 1;
       return;
     }
-    const text = typeLines[line] || '';
-    typedFull.value = text;
     if (!deleting) {
       i += 1;
-      typed.value = text.slice(0, i);
-      if (i >= text.length) {
+      typed.value = full.slice(0, i);
+      if (i >= full.length) {
+        if (hold) {
+          stopTyping();
+          onDone?.();
+          return;
+        }
         deleting = true;
-        pause = text.length > 40 ? 36 : 28;
+        pause = full.length > 40 ? 36 : 28;
       }
     } else {
       i -= 1;
-      typed.value = text.slice(0, Math.max(0, i));
+      typed.value = full.slice(0, Math.max(0, i));
       if (i <= 0) {
-        deleting = false;
-        line = (line + 1) % Math.max(typeLines.length, 1);
-        pause = 6;
+        stopTyping();
+        onDone?.();
       }
     }
   }, 42);
 }
 
-async function pullHitokoto() {
+async function fetchHitokoto() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 6000);
     const res = await fetch('https://v1.hitokoto.cn/?encode=json&charset=utf-8', {
       signal: ctrl.signal,
     });
-    clearTimeout(timer);
-    if (!res.ok) return;
+    if (!res.ok) return '';
     const data = await res.json();
     const quote = String(data.hitokoto || '').trim();
-    if (!quote) return;
+    if (!quote) return '';
     const from = String(data.from || '').trim();
-    const next = from ? `${quote} —— ${from}` : quote;
-    if (!typeLines.includes(next)) typeLines.push(next.slice(0, 120));
-    if (typeLines.length > 24) typeLines = [INTRO_LINES[0], INTRO_LINES[1], ...typeLines.slice(-20)];
+    return (from ? `${quote} —— ${from}` : quote).slice(0, 120);
   } catch (e) {
-    /* 一言失败时继续轮播已有句子 */
+    return '';
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+async function showHitokotoAndHold() {
+  const quote = await fetchHitokoto();
+  if (!quote) {
+    clearTimeout(hitokotoRetry);
+    hitokotoRetry = setTimeout(showHitokotoAndHold, 8000);
+    return;
+  }
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    typed.value = quote;
+    typedFull.value = quote;
+    return;
+  }
+  typeText(quote, { hold: true });
+}
+
+function startTyping() {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    typed.value = INTRO_LINES[0];
+    typedFull.value = INTRO_LINES[0];
+    hitokotoRetry = setTimeout(() => {
+      typed.value = INTRO_LINES[1];
+      typedFull.value = INTRO_LINES[1];
+      hitokotoRetry = setTimeout(showHitokotoAndHold, 1800);
+    }, 1800);
+    return;
+  }
+  typeText(INTRO_LINES[0], {
+    onDone: () => {
+      typeText(INTRO_LINES[1], { onDone: showHitokotoAndHold });
+    },
+  });
 }
 
 function scrollToFeed() {
@@ -324,8 +358,6 @@ onMounted(async () => {
   startTyping();
   runCountUps();
   window.addEventListener('scroll', onHeroScroll, { passive: true });
-  hitokotoTimer = setInterval(pullHitokoto, 18000);
-  setTimeout(pullHitokoto, 8000);
 });
 
 async function retryHome() {
@@ -342,8 +374,8 @@ async function retryHome() {
 }
 
 onUnmounted(() => {
-  clearInterval(typeTimer);
-  clearInterval(hitokotoTimer);
+  stopTyping();
+  clearTimeout(hitokotoRetry);
   window.removeEventListener('scroll', onHeroScroll);
 });
 </script>
