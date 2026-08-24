@@ -109,6 +109,12 @@ onUnmounted(() => {
 .nf-inner {
   text-align: center;
   position: relative;
+  padding: 48px 36px;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--card) 86%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: blur(16px);
 }
 
 /* 漂浮问号装饰 */

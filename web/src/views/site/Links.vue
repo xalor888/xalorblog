@@ -173,9 +173,9 @@ onMounted(load);
 }
 
 .link-card:hover {
-  border-color: var(--line);
+  border-color: var(--accent);
   box-shadow: var(--shadow-2);
-  transform: translateY(-2px);
+  transform: translateY(-4px) scale(1.01);
 }
 
 .link-avatar {

@@ -92,10 +92,14 @@ onMounted(async () => {
 }
 
 .cloud-item:hover {
-  color: var(--accent);
+  color: #fff;
   border-color: var(--accent);
-  background: var(--accent-soft);
-  transform: translateY(-2px);
+  background: var(--accent);
+  transform: translateY(-3px) scale(1.04);
+}
+
+.cloud-item:hover .cloud-count {
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .cloud-count {

@@ -576,8 +576,9 @@ watch(
 
 /* 表单 */
 .comment-form {
-  padding: 20px 22px;
+  padding: 22px 24px;
   margin-bottom: 32px;
+  border-radius: 18px;
 }
 
 .form-row {
@@ -690,7 +691,7 @@ watch(
 
 .submit-btn {
   padding: 9px 26px;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: var(--accent);
   color: #fff;
   font-size: 0.9rem;

@@ -1,9 +1,10 @@
 <template>
-  <div class="site-layout">
+  <div class="site-layout" :class="{ 'is-home': isHome }">
     <!-- 键盘无障碍：跳过导航直达正文（仅在 Tab 聚焦时可见） -->
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <!-- 顶部导航 -->
-    <header class="site-nav" :class="{ scrolled: scrolled }">
+    <header class="site-nav" :class="{ scrolled: scrolled, overlay: navOverlay }">
+      <div class="nav-progress" :style="{ transform: `scaleX(${scrollPercent / 100})` }"></div>
       <div class="container nav-inner">
         <router-link to="/" class="brand">
           <img src="/logo.png" alt="logo" class="brand-mark-img" />
@@ -12,7 +13,7 @@
 
         <nav class="nav-links">
           <router-link v-for="item in navItems" :key="item.to" :to="item.to" class="nav-link" :class="{ active: isActive(item) }">
-            {{ item.label }}
+            {{ item.short }}
           </router-link>
         </nav>
 
@@ -79,7 +80,8 @@
           :class="{ active: isActive(item) }"
           @click="mobileOpen = false"
         >
-          {{ item.label }}
+          <span>{{ item.short }}</span>
+          <span class="mobile-zh">{{ item.label }}</span>
         </router-link>
         <div class="mobile-actions">
           <button class="mobile-action" @click="openSearch">
@@ -97,7 +99,7 @@
 
     <!-- 公告 -->
     <transition name="ticker-slide">
-      <div v-if="site.settings.announcement && !announcementClosed" class="ticker">
+      <div v-if="site.settings.announcement && !announcementClosed" class="ticker" :class="{ overlay: isHome, compact: isHome && scrolled }">
         <div class="container ticker-inner">
           <span class="ticker-icon"><XIcon name="Megaphone" :size="14" /></span>
           <span class="ticker-text">{{ site.settings.announcement }}</span>
@@ -109,7 +111,7 @@
     </transition>
 
     <!-- 主体 -->
-    <main id="main-content" class="site-main" tabindex="-1">
+    <main id="main-content" class="site-main" :class="{ 'home-main': isHome }" tabindex="-1">
       <router-view v-slot="{ Component }">
         <transition name="page" mode="out-in">
           <component :is="Component" :key="route.path" />
@@ -123,7 +125,7 @@
         <div class="footer-grid">
           <div class="footer-col brand-col">
             <div class="footer-brand">
-              <span class="brand-mark sm">X</span>
+              <img src="/logo.png" alt="" class="footer-logo" />
               <span class="footer-name">{{ site.settings.site_name }}</span>
             </div>
             <p class="footer-desc">{{ site.settings.site_desc }}</p>
@@ -173,21 +175,33 @@
               title="工信部备案查询"
             >{{ site.settings.icp }}</a>
           </div>
-          <span class="footer-powered">Powered by <em>Vue 3</em> · Express · MySQL</span>
+          <span class="footer-powered">Designed with care · Vue 3</span>
         </div>
       </div>
     </footer>
 
-    <!-- 回到顶部 -->
-    <transition name="pop">
-      <button v-if="showTop" class="back-top" @click="scrollTop" title="回到顶部">
-        <svg class="progress-ring" viewBox="0 0 44 44">
-          <circle class="ring-bg" cx="22" cy="22" r="20" />
-          <circle class="ring-fill" cx="22" cy="22" r="20" :stroke-dasharray="ringDash" :stroke-dashoffset="ringOffset" />
-        </svg>
-        <XIcon name="ArrowUp" :size="18" class="top-icon" />
+    <AmbientParticles />
+
+    <div class="side-tools">
+      <button class="tool-btn theme-tool" :title="theme.isDark ? '切换亮色' : '切换暗色'" @click="theme.toggleTheme">
+        <XIcon :name="theme.isDark ? 'Sun' : 'Moon'" :size="18" />
       </button>
-    </transition>
+      <button class="tool-btn" title="搜索" @click="openSearch">
+        <XIcon name="Search" :size="17" />
+      </button>
+      <a class="tool-btn" href="/api/rss.xml" target="_blank" rel="noopener" title="RSS">
+        <XIcon name="Rss" :size="17" />
+      </a>
+      <transition name="pop">
+        <button v-if="showTop" class="tool-btn back-top" @click="scrollTop" title="回到顶部">
+          <svg class="progress-ring" viewBox="0 0 44 44">
+            <circle class="ring-bg" cx="22" cy="22" r="20" />
+            <circle class="ring-fill" cx="22" cy="22" r="20" :stroke-dasharray="ringDash" :stroke-dashoffset="ringOffset" />
+          </svg>
+          <XIcon name="ArrowUp" :size="16" class="top-icon" />
+        </button>
+      </transition>
+    </div>
 
     <!-- 全局搜索 (Ctrl+K) -->
     <SearchModal />
@@ -203,6 +217,7 @@ import { useRoute } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import SearchModal from '@/components/ui/SearchModal.vue';
 import ShortcutHelp from '@/components/ui/ShortcutHelp.vue';
+import AmbientParticles from '@/components/site/AmbientParticles.vue';
 import { useThemeStore, THEME_COLORS } from '@/stores/theme';
 import { useSiteStore } from '@/stores/site';
 import { statsApi } from '@/api';
@@ -252,15 +267,18 @@ const ringDash = RING_C;
 const ringOffset = computed(() => RING_C * (1 - scrollPercent.value / 100));
 
 const navItems = [
-  { to: '/', label: '首页', exact: true },
-  { to: '/articles', label: '文章' },
-  { to: '/archive', label: '归档' },
-  { to: '/tags', label: '标签' },
-  { to: '/bookmarks', label: '书签' },
-  { to: '/messages', label: '留言' },
-  { to: '/links', label: '友链' },
-  { to: '/about', label: '关于' },
+  { to: '/', label: '首页', short: 'HOME', exact: true },
+  { to: '/articles', label: '文章', short: 'POSTS' },
+  { to: '/archive', label: '归档', short: 'ARCHIVE' },
+  { to: '/tags', label: '标签', short: 'TAGS' },
+  { to: '/bookmarks', label: '书签', short: 'SAVED' },
+  { to: '/messages', label: '留言', short: 'BOARD' },
+  { to: '/links', label: '友链', short: 'LINKS' },
+  { to: '/about', label: '关于', short: 'ABOUT' },
 ];
+
+const isHome = computed(() => route.path === '/');
+const navOverlay = computed(() => isHome.value && !scrolled.value);
 
 function isActive(item) {
   if (item.exact) return route.path === '/';
@@ -271,7 +289,7 @@ function onScroll() {
   if (scrollTicking) return;
   scrollTicking = true;
   requestAnimationFrame(() => {
-    scrolled.value = window.scrollY > 8;
+    scrolled.value = window.scrollY > 24;
     showTop.value = window.scrollY > 480;
     const doc = document.documentElement;
     const max = doc.scrollHeight - window.innerHeight;
@@ -368,6 +386,17 @@ onUnmounted(() => {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+.site-layout.is-home {
+  --nav-h: 72px;
+}
+
+.site-layout.is-home .site-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
 }
 
 /* 键盘无障碍跳转链接：默认移出视口，Tab 聚焦时置顶显示 */
@@ -406,15 +435,52 @@ onUnmounted(() => {
   top: 0;
   z-index: 100;
   background: var(--card-trans);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   border-bottom: 1px solid transparent;
-  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.site-nav.overlay {
+  position: fixed;
+  left: 0;
+  right: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.site-nav.overlay .brand-text,
+.site-nav.overlay .icon-btn {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.site-nav.overlay .nav-link {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.site-nav.overlay .nav-link:hover,
+.site-nav.overlay .nav-link.active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.site-nav.overlay .nav-link.active::after {
+  background: #fff;
+}
+
+.site-nav.overlay .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.site-nav.overlay .hamburger span {
+  background: #fff;
 }
 
 .site-nav.scrolled {
   border-bottom-color: var(--border);
-  box-shadow: 0 1px 8px rgba(29, 27, 22, 0.04);
+  box-shadow: 0 8px 28px rgba(26, 24, 20, 0.08);
 }
 
 .nav-inner {
@@ -434,11 +500,12 @@ onUnmounted(() => {
 }
 
 .brand-mark-img {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
 
 .brand-mark {
@@ -464,8 +531,8 @@ onUnmounted(() => {
 
 .brand-text {
   font-weight: 700;
-  font-size: 1.05rem;
-  letter-spacing: -0.01em;
+  font-size: 1.08rem;
+  letter-spacing: 0.02em;
 }
 
 /* 导航链接 */
@@ -477,9 +544,11 @@ onUnmounted(() => {
 }
 
 .nav-link {
-  padding: 6px 13px;
-  border-radius: 7px;
-  font-size: 0.92rem;
+  padding: 7px 11px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   color: var(--text-2);
   position: relative;
   transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
@@ -498,9 +567,9 @@ onUnmounted(() => {
 .nav-link.active::after {
   content: '';
   position: absolute;
-  left: 13px;
-  right: 13px;
-  bottom: 1px;
+  left: 14px;
+  right: 14px;
+  bottom: 2px;
   height: 2px;
   border-radius: 1px;
   background: var(--accent);
@@ -515,9 +584,9 @@ onUnmounted(() => {
 }
 
 .icon-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -589,6 +658,32 @@ onUnmounted(() => {
   color: var(--text-2);
 }
 
+.ticker.overlay {
+  position: fixed;
+  top: var(--nav-h);
+  left: 0;
+  right: 0;
+  z-index: 90;
+  background: rgba(8, 7, 6, 0.28);
+  color: rgba(255, 255, 255, 0.88);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.ticker.overlay.compact {
+  background: var(--card-trans);
+  color: var(--text-2);
+  border-bottom-color: var(--border);
+}
+
+.ticker.overlay.compact .ticker-close {
+  color: var(--text-3);
+}
+
+.ticker.overlay .ticker-close {
+  color: rgba(255, 255, 255, 0.7);
+}
+
 .ticker-inner {
   display: flex;
   align-items: center;
@@ -647,6 +742,10 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
+.site-main.home-main {
+  padding-top: 0;
+}
+
 /* 路由过渡 */
 .page-enter-active,
 .page-leave-active {
@@ -665,8 +764,8 @@ onUnmounted(() => {
 
 /* ============ 页脚 ============ */
 .site-footer {
-  margin-top: 72px;
-  background: var(--bg-soft);
+  margin-top: 0;
+  background: color-mix(in srgb, var(--bg-soft) 88%, var(--card));
   border-top: 1px solid var(--border);
 }
 
@@ -686,6 +785,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.footer-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .footer-name {
@@ -804,29 +910,61 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-/* ============ 回到顶部 ============ */
-.back-top {
+.nav-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.side-tools {
   position: fixed;
-  right: 26px;
-  bottom: 30px;
+  right: 22px;
+  bottom: 28px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-btn {
   width: 44px;
   height: 44px;
-  border-radius: 50%;
+  border-radius: 14px;
   background: var(--card);
   border: 1px solid var(--border);
   color: var(--text-2);
-  box-shadow: var(--shadow-2);
+  box-shadow: var(--shadow-1);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 80;
-  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  position: relative;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease), transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
-.back-top:hover {
-  color: var(--accent);
+.tool-btn:hover {
+  color: #fff;
+  background: var(--accent);
   border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.theme-tool {
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 50%, #ffb4a2));
+  color: #fff;
+  border-color: transparent;
+}
+
+.theme-tool:hover {
   transform: translateY(-3px);
+}
+
+.tool-btn.back-top {
+  overflow: hidden;
 }
 
 .progress-ring {
@@ -903,28 +1041,47 @@ onUnmounted(() => {
 .mobile-menu {
   display: none;
   flex-direction: column;
-  padding: 8px 16px 14px;
-  background: var(--card);
+  padding: 18px 22px 22px;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
   border-bottom: 1px solid var(--border);
-  position: relative;
-  z-index: 81; /* 高于遮罩（80）与页脚（80） */
+  position: fixed;
+  top: var(--nav-h);
+  left: 0;
+  right: 0;
+  z-index: 95;
+  max-height: calc(100dvh - var(--nav-h));
+  overflow: auto;
+  backdrop-filter: blur(22px);
 }
 
 /* 抽屉遮罩：点击菜单外区域关闭（移动端导航完整性） */
 .drawer-scrim {
   position: fixed;
   inset: 0;
-  z-index: 80;
-  background: rgba(20, 18, 14, 0.32);
-  backdrop-filter: blur(1px);
+  z-index: 94;
+  background: rgba(20, 18, 14, 0.42);
+  backdrop-filter: blur(6px);
 }
 
 .mobile-link {
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  font-size: 0.98rem;
-  color: var(--text-2);
+  padding: 14px 8px;
+  border-radius: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
   transition: all var(--dur) var(--ease);
+}
+
+.mobile-zh {
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
 }
 
 .mobile-link.active {
@@ -991,6 +1148,14 @@ onUnmounted(() => {
 @media (max-width: 560px) {
   .brand-text {
     display: none;
+  }
+  .side-tools {
+    right: 12px;
+    bottom: 16px;
+  }
+  .tool-btn {
+    width: 40px;
+    height: 40px;
   }
   .footer-grid {
     grid-template-columns: 1fr;

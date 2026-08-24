@@ -435,7 +435,7 @@ onUnmounted(() => {
 
 .submit-btn {
   padding: 9px 28px;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: var(--accent);
   color: #fff;
   font-size: 0.9rem;

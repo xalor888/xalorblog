@@ -873,13 +873,19 @@ onUnmounted(() => {
   display: flex;
   gap: 44px;
   align-items: flex-start;
-  padding-top: 40px;
+  padding-top: 28px;
 }
 
 .detail-main {
   flex: 1;
   min-width: 0;
   max-width: var(--reading-w);
+  background: color-mix(in srgb, var(--card) 86%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 36px 40px 28px;
+  box-shadow: var(--shadow-1);
+  backdrop-filter: blur(12px);
 }
 
 /* ============ 文章头 ============ */
@@ -1009,10 +1015,10 @@ onUnmounted(() => {
 }
 
 .detail-title {
-  font-size: clamp(1.6rem, 3.4vw, 2.2rem);
+  font-size: clamp(1.85rem, 4vw, 2.6rem);
   font-weight: 800;
-  line-height: 1.4;
-  letter-spacing: -0.02em;
+  line-height: 1.28;
+  letter-spacing: -0.035em;
   margin-bottom: 20px;
   position: relative;
   display: inline-block;
@@ -1091,17 +1097,18 @@ onUnmounted(() => {
 
 /* ============ 封面 ============ */
 .detail-cover {
-  margin-bottom: 34px;
-  border-radius: var(--radius-lg);
+  margin: 0 0 40px;
+  border-radius: 22px;
   overflow: hidden;
-  box-shadow: var(--shadow-2);
+  box-shadow: var(--shadow-3);
   position: relative;
   background: var(--bg-soft);
 }
 
 .detail-cover img {
   width: 100%;
-  max-height: 420px;
+  max-height: 520px;
+  min-height: 240px;
   object-fit: cover;
   animation: coverFadeIn 0.8s var(--ease-out) both;
 }
@@ -1700,8 +1707,13 @@ onUnmounted(() => {
 }
 
 .toc-box {
-  border-left: 1px solid var(--border);
-  padding-left: 20px;
+  border-left: none;
+  padding: 16px 14px;
+  background: color-mix(in srgb, var(--card) 80%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-1);
+  backdrop-filter: blur(12px);
 }
 
 .toc-toggle {
@@ -1833,6 +1845,10 @@ onUnmounted(() => {
 @media (max-width: 640px) {
   .detail-layout {
     padding-top: 24px;
+  }
+  .detail-main {
+    padding: 22px 16px 18px;
+    border-radius: 16px;
   }
   .detail-head {
     padding-bottom: 24px;

@@ -309,13 +309,14 @@ onUnmounted(() => {
   top: 12vh;
   left: 50%;
   transform: translateX(-50%);
-  width: min(560px, calc(100vw - 32px));
-  background: var(--card);
+  width: min(620px, calc(100vw - 32px));
+  background: color-mix(in srgb, var(--card) 88%, transparent);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: 22px;
   box-shadow: var(--shadow-3);
   z-index: 301;
   overflow: hidden;
+  backdrop-filter: blur(22px);
   animation: slideDown 0.22s var(--ease-out);
 }
 

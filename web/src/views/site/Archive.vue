@@ -200,10 +200,14 @@ onMounted(async () => {
 }
 
 .tl-year-big {
-  font-size: 1.6rem;
+  font-size: 2rem;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
   line-height: 1;
+  background: linear-gradient(90deg, var(--text), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .tl-year-count {

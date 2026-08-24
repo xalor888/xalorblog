@@ -42,9 +42,11 @@
 }
 
 .markdown-body h2 {
-  font-size: 1.32rem;
+  font-size: 1.38rem;
   position: relative;
   padding-left: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
 }
 
 .markdown-body h2::before {

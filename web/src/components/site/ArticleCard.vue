@@ -1,5 +1,5 @@
 <template>
-  <router-link :to="`/article/${article.slug}`" class="article-card">
+  <router-link :to="`/article/${article.slug}`" class="article-card" :class="variant">
     <!-- 封面或文字排版 -->
     <div v-if="article.cover" class="cover">
       <img
@@ -67,6 +67,7 @@ import { formatDate } from '@/utils/format';
 
 const props = defineProps({
   article: { type: Object, required: true },
+  variant: { type: String, default: 'card' },
 });
 
 // 无封面时的精选摘要（取摘要前 60 字；空摘要给友好占位）
@@ -91,18 +92,66 @@ const excerpt = computed(() => {
 }
 
 .article-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-4px) scale(1.01);
   box-shadow: var(--shadow-2);
   border-color: var(--line);
 }
 
+.article-card.feed {
+  border-radius: var(--radius-lg);
+}
+
+.article-card.feed .cover {
+  height: 0;
+  padding-bottom: 46%;
+}
+
+.article-card.feed .cover::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 48%;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--card) 88%, transparent));
+  z-index: 2;
+  pointer-events: none;
+}
+
+.article-card.feed .body {
+  padding: 22px 26px 22px;
+  gap: 4px;
+}
+
+.article-card.feed .title {
+  font-size: 1.42rem;
+  letter-spacing: -0.02em;
+}
+
+.article-card.feed .summary {
+  -webkit-line-clamp: 3;
+  font-size: 0.95rem;
+}
+
 /* 封面图片 */
 .cover {
-  height: 168px;
+  height: 188px;
   overflow: hidden;
   flex-shrink: 0;
   position: relative;
   background: var(--bg-soft);
+}
+
+.article-card.feed .cover {
+  height: auto;
+}
+
+.article-card.feed .cover-img,
+.article-card.feed .cover-shimmer,
+.article-card.feed .cover-err,
+.article-card.feed .cover-text {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* 加载占位微光 */

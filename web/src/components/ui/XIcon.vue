@@ -12,7 +12,7 @@
 import { computed } from 'vue';
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, AtSign, Ban, BarChart3,
-  Calendar, Check, ChevronLeft, ChevronRight, Clock, Clock3, Copy, Crown, Download, Eye,
+  Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Clock3, Copy, Crown, Download, Eye,
   ExternalLink, FileClock, FileSearch, FileText, Flame, FolderOpen, Github, Globe, Heart, History,
   House, Keyboard, KeyRound, LayoutDashboard, Link, Link2, ListTree, Lock, LogOut,
   Mail, MailOpen, Megaphone, MessageCircleHeart, MessageSquare, MessagesSquare,
@@ -27,7 +27,7 @@ import {
 // 显式图标映射：避免全量引入导致 chunk 过大，且可 tree-shake
 const ICONS = {
   Activity, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, AtSign, Ban, BarChart3,
-  Calendar, Check, ChevronLeft, ChevronRight, Clock, Clock3, Copy, Crown, Download, Eye,
+  Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Clock3, Copy, Crown, Download, Eye,
   ExternalLink, FileClock, FileSearch, FileText, Flame, FolderOpen, Github, Globe, Heart, History,
   House, Keyboard, KeyRound, LayoutDashboard, Link, Link2, ListTree, Lock, LogOut,
   Mail, MailOpen, Megaphone, MessageCircleHeart, MessageSquare, MessagesSquare,

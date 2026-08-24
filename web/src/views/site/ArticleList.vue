@@ -294,7 +294,7 @@ const activeCategoryDesc = computed(() => {
 });
 
 // 视图模式：列表 / 卡片（localStorage 记忆偏好，刷新与下次访问保持）
-const viewMode = ref(localStorage.getItem('xl_view_mode') || 'list');
+const viewMode = ref(localStorage.getItem('xl_view_mode') || 'grid');
 function setViewMode(m) {
   viewMode.value = m;
   localStorage.setItem('xl_view_mode', m);
@@ -465,7 +465,7 @@ onMounted(async () => {
 }
 
 .narrow {
-  max-width: 840px;
+  max-width: 1080px;
 }
 
 .page-head .eyebrow {
@@ -488,12 +488,13 @@ onMounted(async () => {
 
 /* 筛选栏 */
 .filter-bar {
-  background: var(--card);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 18px;
   padding: 8px 24px;
   margin-bottom: 30px;
   box-shadow: var(--shadow-1);
+  backdrop-filter: blur(12px);
 }
 
 .filter-row {
@@ -870,8 +871,8 @@ onMounted(async () => {
 /* ============ 卡片视图 ============ */
 .list.grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(270px, 100%), 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: 22px;
 }
 
 .grid-item {
@@ -892,7 +893,7 @@ onMounted(async () => {
 }
 
 .grid-cover {
-  height: 150px;
+  height: 188px;
   flex-shrink: 0;
   background-size: cover;
   background-position: center;

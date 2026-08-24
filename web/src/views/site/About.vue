@@ -86,20 +86,21 @@ site.init();
 
 /* 个人卡片 */
 .profile {
-  padding: 44px 32px;
+  padding: 48px 32px 36px;
   text-align: center;
   margin-bottom: 28px;
+  border-radius: 24px;
 }
 
 .profile-avatar {
-  width: 96px;
-  height: 96px;
+  width: 108px;
+  height: 108px;
   border-radius: 50%;
   margin: 0 auto 18px;
   overflow: hidden;
   background: var(--bg-soft);
   border: 3px solid var(--card);
-  box-shadow: 0 0 0 1px var(--border), var(--shadow-1);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent), var(--shadow-1);
   display: flex;
   align-items: center;
   justify-content: center;
