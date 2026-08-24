@@ -1,6 +1,5 @@
 <template>
-  <router-link :to="`/article/${article.slug}`" class="article-card" :class="variant">
-    <!-- 封面或文字排版 -->
+  <router-link :to="`/article/${article.slug}`" class="article-card" :class="[variant, { 'no-cover': !article.cover }]">
     <div v-if="article.cover" class="cover">
       <img
         :src="article.cover"
@@ -15,11 +14,6 @@
       <div class="cover-err" aria-hidden="true">
         <XIcon name="ImageOff" :size="22" />
       </div>
-    </div>
-    <div v-else class="cover cover-text" :class="'tone-' + (article.id % 6)">
-      <span class="cover-quote">“</span>
-      <p class="cover-excerpt">{{ excerpt }}</p>
-      <span class="cover-line"></span>
     </div>
 
     <div class="body">
@@ -61,20 +55,12 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import { formatDate } from '@/utils/format';
 
-const props = defineProps({
+defineProps({
   article: { type: Object, required: true },
   variant: { type: String, default: 'card' },
-});
-
-// 无封面时的精选摘要（取摘要前 60 字；空摘要给友好占位）
-const excerpt = computed(() => {
-  const s = props.article.summary || '';
-  if (!s) return '点击阅读全文 →';
-  return s.length > 60 ? s.slice(0, 60) + '…' : s;
 });
 </script>
 
@@ -99,6 +85,10 @@ const excerpt = computed(() => {
 
 .article-card.feed {
   border-radius: var(--radius-lg);
+}
+
+.article-card.no-cover .body {
+  padding-top: 22px;
 }
 
 .article-card.feed .cover {
@@ -146,8 +136,7 @@ const excerpt = computed(() => {
 
 .article-card.feed .cover-img,
 .article-card.feed .cover-shimmer,
-.article-card.feed .cover-err,
-.article-card.feed .cover-text {
+.article-card.feed .cover-err {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -217,82 +206,6 @@ const excerpt = computed(() => {
 
 .article-card:hover .cover-img.loaded {
   transform: scale(1.05);
-}
-
-/* 无封面：抽象纹理排版（6 组低饱和色调 + 几何纹理） */
-.cover-text {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 22px 26px;
-  gap: 8px;
-  position: relative;
-  overflow: hidden;
-}
-
-/* 几何纹理：细网点 */
-.cover-text::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(circle, currentColor 1px, transparent 1px);
-  background-size: 14px 14px;
-  opacity: 0.06;
-  pointer-events: none;
-}
-
-/* 右上角装饰圆弧 */
-.cover-text::after {
-  content: '';
-  position: absolute;
-  top: -30px;
-  right: -30px;
-  width: 90px;
-  height: 90px;
-  border-radius: 50%;
-  border: 1px solid currentColor;
-  opacity: 0.1;
-  pointer-events: none;
-}
-
-.tone-0 { background: #f5ede6; color: #c4754a; }
-.tone-1 { background: #eef0e4; color: #6b7a3a; }
-.tone-2 { background: #e8eef1; color: #3a6b7a; }
-.tone-3 { background: #f3e9ee; color: #9a4a5e; }
-.tone-4 { background: #edeaf3; color: #5a4a9a; }
-.tone-5 { background: #f2efe4; color: #a0824a; }
-
-[data-theme='dark'] .tone-0 { background: #2a241d; color: #d49a72; }
-[data-theme='dark'] .tone-1 { background: #26281f; color: #9aa86a; }
-[data-theme='dark'] .tone-2 { background: #1f2830; color: #6a9aaa; }
-[data-theme='dark'] .tone-3 { background: #2a2126; color: #c47a8e; }
-[data-theme='dark'] .tone-4 { background: #252130; color: #8a7ab8; }
-[data-theme='dark'] .tone-5 { background: #292720; color: #b8985a; }
-
-.cover-quote {
-  font-family: Georgia, serif;
-  font-size: 2.2rem;
-  line-height: 1;
-  color: currentColor;
-  opacity: 0.55;
-}
-
-.cover-excerpt {
-  font-size: 0.95rem;
-  color: var(--text-2);
-  line-height: 1.7;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.cover-line {
-  width: 34px;
-  height: 3px;
-  border-radius: 2px;
-  background: currentColor;
-  opacity: 0.7;
 }
 
 /* 内容 */
@@ -423,7 +336,7 @@ const excerpt = computed(() => {
 }
 
 /* 图片封面底部渐变，增强纵深 */
-.cover:not(.cover-text)::after {
+.cover::after {
   content: '';
   position: absolute;
   inset: 0;

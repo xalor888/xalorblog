@@ -179,7 +179,7 @@
           </p>
           <div class="cc-actions">
             <button class="cc-btn" @click="copyLink"><XIcon name="Link" :size="13" /> 复制本文链接</button>
-            <span class="cc-url">{{ shareUrl }}</span>
+            <span class="cc-url">{{ pageUrl }}</span>
           </div>
         </div>
 
@@ -418,9 +418,17 @@ const wordCount = computed(() => {
   return cn + en;
 });
 
+const pageUrl = computed(() => {
+  if (!article.value) return '';
+  const base = String(site.settings.site_url || window.location.origin).replace(/\/+$/, '');
+  return `${base}/#/article/${article.value.slug}`;
+});
+
+/** 给爬虫抓 OG 的分享页；版权区与复制链接展示 SPA 文章地址 */
 const shareUrl = computed(() => {
   if (!article.value) return '';
-  return `${window.location.origin}/api/share/${article.value.slug}`;
+  const base = String(site.settings.site_url || window.location.origin).replace(/\/+$/, '');
+  return `${base}/api/share/${article.value.slug}`;
 });
 
 /**
@@ -593,7 +601,7 @@ function applyPageMeta() {
   setMeta('og:description', a.summary || a.title);
   setMeta('og:type', 'article');
   // og:url 指向 SPA 文章页（社交平台分享跳转目标）
-  setMeta('og:url', shareUrl.value);
+  setMeta('og:url', pageUrl.value);
   // og:image：文章封面绝对化（站内相对路径 → 站点设置域名），无封面时不设置
   const cover = a.cover
     ? (/^https?:\/\//i.test(a.cover)

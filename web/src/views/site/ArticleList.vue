@@ -175,9 +175,6 @@
                 :style="{ backgroundImage: `url(${a.cover})` }"
                 :aria-label="a.title"
               ></div>
-              <div v-else class="grid-cover grid-cover-empty">
-                <XIcon name="ImageOff" :size="24" />
-              </div>
               <div class="grid-body">
                 <div class="grid-meta">
                   <span v-if="a.is_top" class="grid-pin"><XIcon name="Pin" :size="11" /> 置顶</span>
@@ -903,14 +900,6 @@ onMounted(async () => {
 
 .grid-item:hover .grid-cover {
   transform: scale(1.04);
-}
-
-.grid-cover-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-3);
-  opacity: 0.6;
 }
 
 .grid-body {

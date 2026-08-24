@@ -441,7 +441,6 @@ input:-webkit-autofill:focus {
   box-shadow: 0 8px 28px rgba(29, 27, 22, 0.12) !important;
   padding: 12px 20px !important;
   min-width: 240px !important;
-  position: relative !important;
   overflow: hidden;
 }
 
@@ -454,6 +453,7 @@ input:-webkit-autofill:focus {
   bottom: 0;
   width: 4px;
   background: var(--el-color-primary, var(--accent));
+  pointer-events: none;
 }
 
 .el-message--success::before { background: #217a5e; }
