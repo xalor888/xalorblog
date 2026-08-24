@@ -13,7 +13,7 @@ EnvironmentFile=/path/to/xalorblog/server/.env
 # 仅监听本机，并只信任同机 Nginx。禁止 TRUST_PROXY=1/true。
 # .env 建议 root:www-data 0640；代码由 root 部署且不可由 www-data 修改。
 WorkingDirectory=/path/to/xalorblog/server
-ExecStart=/usr/bin/env NODE_ENV=production LISTEN_HOST=127.0.0.1 TRUST_PROXY=loopback /usr/bin/node src/server.js
+ExecStart=/usr/bin/env TZ=Asia/Shanghai NODE_ENV=production LISTEN_HOST=127.0.0.1 TRUST_PROXY=loopback /usr/bin/node src/server.js
 Restart=always
 RestartSec=3
 User=www-data

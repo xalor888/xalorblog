@@ -91,16 +91,24 @@
             </button>
           </div>
         </div>
-        <div class="chart-bars">
-          <div v-for="d in trend" :key="d.day" class="bar-col" :title="`${d.day} · PV ${d.pv} / UV ${d.uv}`">
-            <div class="bar-stack">
-              <div class="bar pv" :style="{ height: barHeight(d.pv, 'pv') }"></div>
-              <div class="bar uv" :style="{ height: barHeight(d.uv, 'uv') }"></div>
-            </div>
-            <span class="bar-label">{{ String(d.day || '').slice(5) }}</span>
+        <div v-if="trendEmpty" class="chart-empty">暂无访问数据</div>
+        <div v-else class="trend-chart">
+          <svg class="trend-svg" :viewBox="`0 0 ${TW} ${TH}`" role="img" aria-label="访问趋势">
+            <polyline class="trend-line pv" fill="none" :points="pvLine" />
+            <polyline class="trend-line uv" fill="none" :points="uvLine" />
+            <g v-for="p in trendPoints" :key="p.day">
+              <circle class="trend-dot pv" :cx="p.x" :cy="p.pvY" r="3">
+                <title>{{ p.day }} · PV {{ p.pv }}</title>
+              </circle>
+              <circle class="trend-dot uv" :cx="p.x" :cy="p.uvY" r="3">
+                <title>{{ p.day }} · UV {{ p.uv }}</title>
+              </circle>
+            </g>
+          </svg>
+          <div class="trend-labels">
+            <span v-for="d in trendLabels" :key="d">{{ d }}</span>
           </div>
         </div>
-        <div v-if="trendEmpty" class="chart-empty">暂无访问数据</div>
         <div class="legend">
           <span class="legend-item"><i class="dot pv-dot"></i> PV</span>
           <span class="legend-item"><i class="dot uv-dot"></i> UV</span>
@@ -208,8 +216,42 @@ function intBarHeight(v, kind) {
   return `${kind === 'msg' ? pct * 0.7 : pct}%`;
 }
 
-const maxPv = computed(() => Math.max(...trend.value.map((t) => Number(t.pv)), 1));
+const maxPv = computed(() => Math.max(...trend.value.map((t) => Math.max(Number(t.pv) || 0, Number(t.uv) || 0)), 1));
 const maxCount = computed(() => Math.max(...byCategory.value.map((c) => c.count), 1));
+const TW = 320;
+const TH = 150;
+const trendPoints = computed(() => {
+  const rows = trend.value;
+  const n = rows.length;
+  const max = maxPv.value;
+  const padX = 10;
+  const padY = 12;
+  return rows.map((t, i) => {
+    const x = n <= 1 ? TW / 2 : padX + (i / (n - 1)) * (TW - padX * 2);
+    const yOf = (v) => TH - padY - ((Number(v) || 0) / max) * (TH - padY * 2);
+    return {
+      day: t.day,
+      pv: Number(t.pv) || 0,
+      uv: Number(t.uv) || 0,
+      x,
+      pvY: yOf(t.pv),
+      uvY: yOf(t.uv),
+    };
+  });
+});
+const pvLine = computed(() => trendPoints.value.map((p) => `${p.x},${p.pvY}`).join(' '));
+const uvLine = computed(() => trendPoints.value.map((p) => `${p.x},${p.uvY}`).join(' '));
+const trendLabels = computed(() => {
+  const rows = trend.value;
+  if (!rows.length) return [];
+  const want = Math.min(7, rows.length);
+  const idx = new Set([0, rows.length - 1]);
+  if (want > 2) {
+    const step = (rows.length - 1) / (want - 1);
+    for (let i = 1; i < want - 1; i++) idx.add(Math.round(i * step));
+  }
+  return [...idx].sort((a, b) => a - b).map((i) => String(rows[i].day || '').slice(5));
+});
 
 const today = computed(() => trend.value[trend.value.length - 1] || { pv: 0, uv: 0 });
 
@@ -247,12 +289,6 @@ const recentItems = computed(() => {
   }
   return items.sort((x, y) => new Date(y.created_at) - new Date(x.created_at)).slice(0, 10);
 });
-
-function barHeight(v, kind) {
-  const value = Number(v);
-  const pct = (value / maxPv.value) * 100;
-  return `${Math.max(pct, value > 0 ? 6 : 2)}%`;
-}
 
 function catWidth(count) {
   return `${(count / maxCount.value) * 100}%`;
@@ -706,60 +742,52 @@ onMounted(loadAll);
   border-color: var(--line);
 }
 
-.chart-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 5px;
-  height: 190px;
+.trend-chart {
   padding-top: 8px;
 }
 
-.bar-col {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  height: 100%;
-  justify-content: flex-end;
-}
-
-.bar-stack {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 100%;
+.trend-svg {
   width: 100%;
-  max-width: 20px;
-  justify-content: center;
+  height: 168px;
+  display: block;
+  overflow: visible;
 }
 
-.bar {
-  width: 6px;
-  border-radius: 3px 3px 0 0;
-  min-height: 2px;
-  transition: height 0.4s var(--ease-out);
+.trend-line {
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.bar.pv {
-  background: var(--accent);
-  opacity: 0.85;
+.trend-line.pv {
+  stroke: var(--accent);
 }
 
-.bar.uv {
-  background: #2f6fb3;
-  opacity: 0.75;
+.trend-line.uv {
+  stroke: #2f6fb3;
 }
 
-/* 暗色模式：UV 柱提亮，保证深底对比度 */
-[data-theme='dark'] .bar.uv {
-  background: #5b8def;
-  opacity: 0.85;
+.trend-dot.pv {
+  fill: var(--accent);
 }
 
-.bar-label {
+.trend-dot.uv {
+  fill: #2f6fb3;
+}
+
+[data-theme='dark'] .trend-line.uv,
+[data-theme='dark'] .trend-dot.uv {
+  stroke: #5b8def;
+  fill: #5b8def;
+}
+
+.trend-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
   font-size: 0.66rem;
   color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .legend {

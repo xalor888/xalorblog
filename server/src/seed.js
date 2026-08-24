@@ -484,16 +484,20 @@ async function seed() {
   }
   console.log('[seed] 设置就绪（仅补缺，未覆盖已有项）');
 
-  // 近 14 天访问数据（让仪表盘好看些）
-  for (let i = 13; i >= 0; i--) {
-    const d = localDateStr(new Date(Date.now() - i * 24 * 3600 * 1000));
-    const pv = Math.floor(Math.random() * 80) + 20;
-    const uv = Math.floor(pv * 0.6);
-    await db('visits').insert({ day: d, pv, uv })
-      .onConflict('day')
-      .merge({ pv: db.raw('visits.pv + ?', [pv]), uv: db.raw('visits.uv + ?', [uv]) });
+  // 访问趋势只记真实 /stats/record，不再灌随机数把仪表盘画歪
+  if (isTestEnvironment) {
+    for (let i = 13; i >= 0; i--) {
+      const d = localDateStr(new Date(Date.now() - i * 24 * 3600 * 1000));
+      const pv = 20 + (i % 7) * 3;
+      const uv = Math.max(1, Math.floor(pv * 0.4));
+      await db('visits').insert({ day: d, pv, uv })
+        .onConflict('day')
+        .merge({ pv: db.raw('visits.pv + ?', [pv]), uv: db.raw('visits.uv + ?', [uv]) });
+    }
+    console.log('[seed] 测试环境写入访问统计');
+  } else {
+    console.log('[seed] 跳过访问统计种子（生产只记真实访问）');
   }
-  console.log('[seed] 访问统计就绪');
 
   console.log('\n✅ 种子数据全部完成！');
   if (adminPasswordChanged && !isTestEnvironment) {

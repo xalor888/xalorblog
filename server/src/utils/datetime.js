@@ -1,17 +1,35 @@
-/** 本地时间工具：生成 MySQL DATETIME/DATE 字符串（本地时区，非 UTC） */
+/** 站点日历：固定 Asia/Shanghai，避免服务器 TZ=UTC 把「今天」错一天 */
 
-function pad(n) {
-  return String(n).padStart(2, '0');
+const SITE_TZ = 'Asia/Shanghai';
+
+function zonedParts(d = new Date()) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SITE_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+  const parts = {};
+  for (const p of fmt.formatToParts(d)) {
+    if (p.type !== 'literal') parts[p.type] = p.value;
+  }
+  return parts;
 }
 
-/** 本地日期字符串 YYYY-MM-DD */
+/** 站点日期字符串 YYYY-MM-DD（上海日历） */
 function localDateStr(d = new Date()) {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const p = zonedParts(d);
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
-/** 本地日期时间字符串 YYYY-MM-DD HH:mm:ss */
+/** 站点日期时间字符串 YYYY-MM-DD HH:mm:ss（上海时钟） */
 function localDateTimeStr(d = new Date()) {
-  return `${localDateStr(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const p = zonedParts(d);
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
 }
 
-module.exports = { localDateStr, localDateTimeStr };
+module.exports = { localDateStr, localDateTimeStr, SITE_TZ };
