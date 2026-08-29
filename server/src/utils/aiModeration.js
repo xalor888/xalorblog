@@ -18,22 +18,30 @@ const config = require('../config');
 const REJECT_SCORE = Number.isFinite(config.ai?.rejectScore) ? config.ai.rejectScore : 60;
 const PENDING_SCORE = Number.isFinite(config.ai?.pendingScore) ? config.ai.pendingScore : 30;
 
-/* ---------- 广告/推广关键词（命中即高可疑） ---------- */
+/* ---------- 广告/推广关键词（命中即高可疑） ----------
+ * 拉丁词（eth/btc/usdt 等）在 countHits 中按词边界匹配：
+ * "method/something" 不会命中 eth（子串匹配曾让每个含 eth 的英文词 +20 分）。
+ * 中文歧义词改为精确话术：裸「合约/代理/挖矿/交易所/发票/领取/赚钱」在技术
+ * 讨论（智能合约/设计模式/垃圾回收等）中常见，只有具体诈骗话术形态才计分 */
 const AD_KEYWORDS = [
   '加微信', '微信号', 'vx', 'v信', '加qq', 'qq群', '加群', '扫码', '二维码',
   '刷单', '兼职', '日结', '打字员', '手工活', '做任务', '拉人头', '返利',
   '博彩', '彩票', '开户', '投注', '百家乐', '六合彩', '时时彩', '上分', '充值提现',
-  '代开发票', '发票', '办证', '刻章', '贷款', '借款', '秒批', '无抵押', '低息',
-  '币圈', '合约', '带单', '跟单', '交易所', 'usdt', 'eth', 'btc', '挖矿', '矿机',
-  '私聊', '私我', '主页有', '点击链接', '复制链接', '领取', '免费领取', '红包群',
-  '加盟', '代理', '推广员', '赚零花', '赚钱', '日赚', '月入', '躺赚',
+  '代开发票', '办证', '刻章', '贷款', '借款', '秒批', '无抵押', '低息',
+  '币圈', '合约群', '永续合约', '带单', '跟单', 'usdt', 'eth', 'btc', '以太坊', '矿机',
+  '挖矿木马', '云挖矿', '代理ip', 'ip代理', '高匿代理', '招代理',
+  '代购', '信用卡', '套现', '中奖', '领奖',
+  '私聊', '私我', '主页有', '点击链接', '复制链接', '免费领取', '红包群',
+  '加盟', '推广员', '赚零花', '日赚', '月入', '躺赚',
   '同城约', '约炮', '外围', '援交', '特殊服务', '上门服务',
 ];
 
-/* ---------- 辱骂词库（宽松匹配，避免误伤谐音） ---------- */
+/* ---------- 辱骂词库（宽松匹配，避免误伤谐音） ----------
+ * 「垃圾」「恶心」不在此列：技术语境高频（Java 垃圾回收/这段代码真恶心），
+ * 真辱骂由具体人称指向词覆盖 */
 const ABUSE_KEYWORDS = [
   '傻逼', '煞笔', '脑残', '贱人', '婊子', '狗东西', '去死', '废物',
-  '垃圾', '恶心', '滚蛋', '白痴', '智障', '他妈', '操你', '草泥马',
+  '滚蛋', '白痴', '智障', '他妈', '操你', '草泥马',
 ];
 
 /* ---------- 色情词库 ---------- */
@@ -52,12 +60,18 @@ const ATTACK_KEYWORDS = [
   '爆破密码', '拖库', 'getshell', '提权', '反弹shell',
 ];
 
-/** 广告词命中数 */
+/** 广告词命中数：拉丁词按词边界匹配（method 不命中 eth），中文词按子串 */
+const LATIN_WORD_RE = /^[a-z0-9+]+$/i;
+
 function countHits(text, words) {
   const lower = String(text).toLowerCase();
   let n = 0;
   for (const w of words) {
-    if (lower.includes(w)) n += 1;
+    if (LATIN_WORD_RE.test(w)) {
+      if (new RegExp(`(?<![a-z0-9])${w}(?![a-z0-9])`, 'i').test(lower)) n += 1;
+    } else if (lower.includes(w)) {
+      n += 1;
+    }
   }
   return n;
 }
@@ -77,7 +91,9 @@ function localModeration(content, nickname = '', website = '') {
   const ad = countHits(text, AD_KEYWORDS) + countHits(nick, AD_KEYWORDS);
   if (ad > 0) { score += ad * 20; reasons.push(`广告词×${ad}`); }
   const abuse = countHits(text, ABUSE_KEYWORDS) + countHits(nick, ABUSE_KEYWORDS);
-  if (abuse > 0) { score += abuse * 15; reasons.push(`辱骂词×${abuse}`); }
+  // 辱骂词单个即 30 分（必进待审人工复核）：明确辱骂词无技术语境误伤，
+  // 自动放行（旧权重 15）会让单条辱骂评论直接展示
+  if (abuse > 0) { score += abuse * 30; reasons.push(`辱骂词×${abuse}`); }
   const porn = countHits(text, PORN_KEYWORDS);
   if (porn > 0) { score += porn * 25; reasons.push(`敏感词×${porn}`); }
   // 攻击意图（求攻击/渗透协助）：计 30 分必进待审（技术讨论与攻击求助

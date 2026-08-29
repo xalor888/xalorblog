@@ -6,8 +6,7 @@
  * 3. 校验：
  *    - 签名正确（constant-time，防伪造）
  *    - IP / 指纹 / UA / 路径全匹配（防盗用）
- *    - 新鲜度：10 分钟过期
- *    - 最小间隔：2 秒内提交判定为机器人（人类填表不可能这么快）
+ *    - 新鲜度：60 分钟过期（读完长文再评论不过期）
  *    - 单次使用（nonce 一次性消费，到期自动清理）
  * 4. 随机蜜罐字段：字段名每次动态派生，爬虫无法预知
  */
@@ -16,8 +15,8 @@ const crypto = require('crypto');
 const config = require('../config');
 
 const SECRET = config.jwt.secret + ':anti-token-v2';
-const TOKEN_TTL = 10 * 60 * 1000;
-const MIN_INTERVAL = 2000;
+// 60 分钟：读完长文再评论不过期；nonce 一次性消费承担防重放职责
+const TOKEN_TTL = 60 * 60 * 1000;
 const USED = new Map(); // nonce -> expiresAt
 const USED_MAX = 3000;
 
@@ -59,7 +58,6 @@ function verifyToken(req, token, path = '') {
 
   const now = Date.now();
   if (now - ts > TOKEN_TTL) return { ok: false, reason: '安全令牌已过期，请刷新页面' };
-  if (now - ts < MIN_INTERVAL) return { ok: false, reason: '提交过快，疑似机器人' };
 
   const exp = USED.get(nonce);
   if (exp) {

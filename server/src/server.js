@@ -4,6 +4,7 @@ const db = require('./db');
 const { loadPersistedBans } = require('./middleware/ipGuard');
 const { loadPersistedTickets, purgeExpiredTickets } = require('./middleware/gate');
 const { localDateStr } = require('./utils/datetime');
+const securitySettings = require('./utils/securitySettings');
 
 // 仅直接运行时启动服务（npm start / npm run dev）；
 // 被其他模块 require 时（如测试/工具脚本）不监听端口
@@ -17,9 +18,11 @@ if (require.main !== module) {
 }
 
 async function main() {
-  // 先恢复有效封禁，再监听端口：避免启动瞬间被封禁 IP 乘窗口请求
+  // 先恢复有效封禁与安全配置，再监听端口：避免启动瞬间被封禁 IP 乘窗口请求、
+  // 或首请求读到默认安全配置（WAF 开关/白名单在保存后重启必须立即生效）
   await loadPersistedBans();
   await loadPersistedTickets();
+  await securitySettings.reload().catch(() => {});
 
 // 定时清理（每 6 小时一次，unref 不阻止进程退出）：
 // 过期会话 / 已撤销超 24h 的会话 / 过期封禁 / 90 天前审计日志 / 2 年前访问明细

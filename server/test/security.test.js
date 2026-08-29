@@ -209,13 +209,18 @@ async function suite() {
   }
   assert('UA 轮换计分后同 UA 请求被拒绝（自动封禁）', sawReject, '未观察到 403');
 
-  console.log('\n=== 11. 反爬 UA 拦截（+9 积分，触发封禁） ===');
+  console.log('\n=== 11. 扫描器 / AI 爬虫 UA 拦截（+3 积分/次，累计封禁） ===');
+  // 通用客户端（python-requests/curl/空 UA）已不再被 WAF 拦截计分：
+  // 它们在 /api 上由闸门拒绝（无票据 403，不计信誉分），RSS 等放行通道可用
   r = await c.asBotUA('/api/articles');
-  assert('python-requests UA 被拒', r.status === 403);
-  r = await c.asBotUA('/api/articles', 'curl/8.0');
-  assert('curl UA 被拒', r.status === 403);
-  r = await c.asBotUA('/api/articles', '');
-  assert('空 UA 被拒', r.status === 403);
+  assert('python-requests 无票据被闸门拒绝（不记分）', r.status === 403);
+  // 扫描器与 AI 爬虫 UA 在 gate-skip 通道（rss.xml）上由 WAF 硬拦并计分
+  r = await c.asBotUA('/api/rss.xml', 'sqlmap/1.7');
+  assert('sqlmap UA 被拒', r.status === 403);
+  r = await c.asBotUA('/api/rss.xml', 'nikto/2.5.0');
+  assert('nikto UA 被拒', r.status === 403);
+  r = await c.asBotUA('/api/rss.xml', 'GPTBot/1.0');
+  assert('GPTBot UA 被拒', r.status === 403);
 
   console.log('\n=== 12. Host 头校验（+3 积分 → 累计封禁） ===');
   r = await c.req('GET', '/api/health', { headers: { Host: 'evil.com', 'User-Agent': c.UA } });

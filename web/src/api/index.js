@@ -315,6 +315,12 @@ export const securityApi = {
   overview: () => adminGet('/security'),
   audit: () => adminGet('/security/audit'),
   unban: (ip) => adminPost('/security/unban', { ip }),
+  getConfig: () => adminGet('/security/config'),
+  saveConfig: (data) => adminPut('/security/config', data),
+  // 测试文本 base64 传输：测试器必须能接收攻击载荷本身（绕过全局 WAF body 扫描）
+  testRule: (text) => adminPost('/security/test', {
+    text_b64: btoa(unescape(encodeURIComponent(String(text || '')))),
+  }),
 };
 
 export const auditApi = {

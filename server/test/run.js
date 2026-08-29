@@ -10,7 +10,17 @@ const path = require('path');
 const fs = require('fs');
 
 const serverDir = path.join(__dirname, '..');
-const MYSQL = 'C:/Program Files/MySQL/MySQL Server 8.4/bin/mysql.exe';
+// mysql 客户端：优先 MYSQL_BIN 环境变量，其次 PATH 探测（macOS/Linux/Windows 通用）
+function resolveMysql() {
+  if (process.env.MYSQL_BIN) return process.env.MYSQL_BIN;
+  try {
+    const which = process.platform === 'win32' ? 'where mysql' : 'command -v mysql';
+    return execSync(which, { timeout: 5000 }).toString().trim().split(/\r?\n/)[0];
+  } catch (e) {
+    return 'mysql';
+  }
+}
+const MYSQL = resolveMysql();
 
 function run(cmd) {
   console.log(`$ ${cmd}`);
@@ -76,7 +86,7 @@ async function runTests() {
   // 传参可指定单个文件：node test/run.js security.test.js
   const suites = process.argv[2]
     ? [process.argv[2]]
-    : ['admin.test.js', '2fa.test.js', 'session.test.js', 'lockout.test.js', 'journey.test.js', 'waf.test.js', 'requestGuard.test.js', 'likeGuard.test.js', 'sanitize.test.js', 'feed.test.js', 'scrapeGuard.test.js', 'contentCrypto.test.js', 'security.test.js'];
+    : ['admin.test.js', '2fa.test.js', 'session.test.js', 'lockout.test.js', 'journey.test.js', 'waf.test.js', 'falsePositive.test.js', 'requestGuard.test.js', 'likeGuard.test.js', 'sanitize.test.js', 'feed.test.js', 'scrapeGuard.test.js', 'contentCrypto.test.js', 'security.test.js'];
   for (const s of suites) {
     // 套件间重启服务：隔离信誉积分/限流窗口/票据内存状态
     // （2fa/lockout 套件会留下认证失败积分与持久化封禁，不隔离会污染后续套件）

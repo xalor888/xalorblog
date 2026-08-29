@@ -1,6 +1,6 @@
 #!/bin/bash
 # macOS 版测试运行器：逐套件清库 + 重启服务（等端口释放，防串状态）
-MYSQL=/opt/homebrew/opt/mysql/bin/mysql
+MYSQL=${MYSQL_BIN:-$(command -v mysql || echo /opt/homebrew/opt/mysql/bin/mysql)}
 cd "$(dirname "$0")/.." || exit 1
 reset_db() {
   $MYSQL -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1'); DELETE FROM messages WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1');" 2>/dev/null
@@ -20,7 +20,7 @@ restart_server() {
   done
   echo "服务启动超时"; tail -5 /tmp/blog-server.log; return 1
 }
-SUITES="${@:-admin.test.js 2fa.test.js session.test.js lockout.test.js journey.test.js waf.test.js requestGuard.test.js likeGuard.test.js sanitize.test.js feed.test.js security.test.js}"
+SUITES="${@:-admin.test.js 2fa.test.js session.test.js lockout.test.js journey.test.js waf.test.js falsePositive.test.js requestGuard.test.js likeGuard.test.js sanitize.test.js feed.test.js scrapeGuard.test.js contentCrypto.test.js security.test.js}"
 PASS=0; FAIL=0; FAILED=""
 for s in $SUITES; do
   reset_db

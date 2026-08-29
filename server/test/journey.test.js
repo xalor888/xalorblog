@@ -31,7 +31,7 @@ async function suite() {
   console.log('\n=== 2. 文章阅读（加密→解密） ===');
   r = await c.req('GET', '/api/articles/slug/welcome-to-xalor-blog', { ticket, silent: true });
   assert('详情返回加密正文', r.status === 200 && r.body.data.content_enc === true, `status=${r.status}`);
-  const plain = decryptPayload(r.body.data.content, ticket);
+  const plain = decryptPayload(r.body.data.content, ticket, r.body.data.content_key);
   assert('票据可解密正文', !!plain && plain.includes('欢迎'), `len=${plain ? plain.length : 0}`);
 
   console.log('\n=== 3. 互动 ===');

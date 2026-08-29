@@ -15,6 +15,8 @@ const { localDateTimeStr } = require('../utils/datetime');
 const { cleanText, cleanLine, safeUrl, safeEmail, escapeLike, safeCover } = require('../utils/sanitize');
 const { securityStats, unban } = require('../middleware/ipGuard');
 const { verifyTicket } = require('../middleware/gate');
+const { getConfig, saveConfig, isValidIpOrCidr } = require('../utils/securitySettings');
+const { RULE_INDEX, scanText } = require('../middleware/waf');
 const { saveSettings, getAllSettings, ALLOWED_KEYS } = require('../utils/settings');
 
 const router = express.Router();
@@ -1616,6 +1618,63 @@ router.get('/security/audit', async (req, res) => {
   } catch (e) {
     return ok(res, []);
   }
+});
+
+/** 安全配置读取（当前生效值 + 规则索引，供安全中心渲染） */
+router.get('/security/config', (req, res) => {
+  return ok(res, {
+    config: getConfig(),
+    rules: Object.values(RULE_INDEX),
+  });
+});
+
+/** 安全配置保存（强校验：规则 ID 白名单 / IP-CIDR 格式 / 数值区间在 securitySettings 内收敛） */
+router.put('/security/config', async (req, res) => {
+  const patch = req.body || {};
+  if (patch.disabledRules !== undefined) {
+    if (!Array.isArray(patch.disabledRules)) return fail(res, '禁用规则必须为数组');
+    const bad = patch.disabledRules.filter((id) => !RULE_INDEX[id]);
+    if (bad.length) return fail(res, `未知规则 ID：${bad.slice(0, 5).join('、')}`);
+  }
+  if (patch.trustedIps !== undefined) {
+    if (!Array.isArray(patch.trustedIps)) return fail(res, '可信 IP 必须为数组');
+    const bad = patch.trustedIps.filter((s) => !isValidIpOrCidr(String(s || '').trim()));
+    if (bad.length) return fail(res, `IP/CIDR 格式不正确：${bad.slice(0, 5).join('、')}`);
+  }
+  for (const key of ['customSensitiveWords', 'allowWords']) {
+    if (patch[key] !== undefined && !Array.isArray(patch[key])) {
+      return fail(res, `${key === 'allowWords' ? '豁免词' : '自定义敏感词'}必须为数组`);
+    }
+  }
+  try {
+    const cfg = await saveConfig(patch);
+    return ok(res, cfg, '安全配置已保存');
+  } catch (e) {
+    console.error('[admin] 保存安全配置失败:', e.message);
+    return fail(res, '保存失败（配置表不可用，请先执行数据库迁移）', 500);
+  }
+});
+
+/** 规则测试器（dry-run）：粘贴文本返回命中的规则，不记分不拦截
+ * 文本经 base64 传输 —— 测试器必须能接收攻击载荷本身，绕过全局 WAF 的 body 扫描 */
+router.post('/security/test', (req, res) => {
+  const raw = String(req.body?.text_b64 || '');
+  if (!raw || raw.length > 6000 || !/^[A-Za-z0-9+/=]*$/.test(raw)) {
+    return fail(res, '请通过 text_b64 传入待检测文本（base64）');
+  }
+  const text = Buffer.from(raw, 'base64').toString('utf8');
+  if (!text.trim()) return fail(res, '请输入要检测的文本');
+  if (text.length > 4000) return fail(res, '文本过长（最多 4000 字符）');
+  const hits = [];
+  const seen = new Set();
+  for (const scope of ['query', 'body']) {
+    const h = scanText(text, scope);
+    if (h && !seen.has(h.id)) {
+      seen.add(h.id);
+      hits.push({ id: h.id, group: h.group, scope, note: RULE_INDEX[h.id]?.note || '' });
+    }
+  }
+  return ok(res, { hits, blocked: hits.length > 0 });
 });
 
 module.exports = router;

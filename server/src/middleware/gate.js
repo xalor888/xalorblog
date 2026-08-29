@@ -487,12 +487,18 @@ async function verifyCrawlerIp(ip, ua) {
       }
     }));
     const ok = confirmations.some(Boolean);
+    if (!ok) {
+      // PTR 存在但不含官方域：确定伪造，拒绝并缓存
+      cacheCrawlerResult(cacheKey, false);
+      return { ok: false, checked: true };
+    }
     cacheCrawlerResult(cacheKey, ok);
     return { ok, checked: true };
   } catch (e) {
-    // DNS 查询失败：fail-closed（拒绝）。正常浏览器不走此路径（走 PoW），
-    // 误伤面仅限「DNS 解析失败时自称爬虫的请求」，安全性优先
-    return { ok: false, checked: false };
+    // DNS 查询失败/超时：fail-open 放行 —— DNS 抖动不再误拒真爬虫；
+    // 攻击者伪装爬虫 UA 的收益本就有限（放行的只是 GET 只读接口，另有读限流兜底）
+    console.warn(`[gate] 爬虫 DNS 核验失败，fail-open 放行: ${normalizedIp}`);
+    return { ok: true, checked: false, degraded: true };
   }
 }
 

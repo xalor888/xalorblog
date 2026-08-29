@@ -63,7 +63,9 @@ async function suite() {
   assert('无来源无标记 → 403', r.status === 403 && r.message === '来源不合法', JSON.stringify(r));
 
   r = runRef(mockReq({ origin: 'null' }));
-  assert('Origin:null → 403（沙箱/隐私容器）', r.status === 403 && r.message === '来源不合法', JSON.stringify(r));
+  // 未签名请求的 Origin:null 仍拒绝（Origin:null 本身不再直接拒绝——签名验证的
+  // 合法浏览器请求走旁路；未签名请求因解析不出有效来源 host 而被拒）
+  assert('未签名 Origin:null → 403（无有效来源）', r.status === 403 && r.message === '来源不合法', JSON.stringify(r));
 
   r = runRef(mockReq({ origin: 'http://evil.com' }));
   assert('外域 Origin → 403', r.status === 403 && r.message === '来源不合法', JSON.stringify(r));
@@ -113,17 +115,20 @@ async function suite() {
   r = runTs(mockReq({ 'x-timestamp': 'abc' }));
   assert('非数字 X-Timestamp → 403', r.status === 403 && r.message === '请求时间戳缺失', JSON.stringify(r));
 
-  r = runTs(mockReq({ 'x-timestamp': String(Date.now() - 6 * 60 * 1000) }));
-  assert('6 分钟前 → 403 已过期', r.status === 403 && r.message === '请求已过期，请刷新页面', JSON.stringify(r));
+  r = runTs(mockReq({ 'x-timestamp': String(Date.now() - 31 * 60 * 1000) }));
+  assert('31 分钟前 → 403 已过期（窗口 ±30 分钟）', r.status === 403 && r.message === '请求已过期，请刷新页面', JSON.stringify(r));
 
-  r = runTs(mockReq({ 'x-timestamp': String(Date.now() + 6 * 60 * 1000) }));
-  assert('6 分钟后 → 403 已过期', r.status === 403 && r.message === '请求已过期，请刷新页面', JSON.stringify(r));
+  r = runTs(mockReq({ 'x-timestamp': String(Date.now() + 31 * 60 * 1000) }));
+  assert('31 分钟后 → 403 已过期', r.status === 403 && r.message === '请求已过期，请刷新页面', JSON.stringify(r));
 
   r = runTs(mockReq({ 'x-timestamp': String(Date.now()) }));
   assert('当前时间 → 放行', r.nexted === true, JSON.stringify(r));
 
-  r = runTs(mockReq({ 'x-timestamp': String(Date.now() + 4 * 60 * 1000) }));
-  assert('+4 分钟（窗口内）→ 放行', r.nexted === true, JSON.stringify(r));
+  r = runTs(mockReq({ 'x-timestamp': String(Date.now() + 29 * 60 * 1000) }));
+  assert('+29 分钟（窗口内）→ 放行', r.nexted === true, JSON.stringify(r));
+
+  r = runTs(mockReq({ 'x-timestamp': String(Date.now() - 29 * 60 * 1000) }));
+  assert('-29 分钟（时钟偏移大的真实用户）→ 放行', r.nexted === true, JSON.stringify(r));
 
   console.log('=== E. gateWriteRequired 写入 sigVerified 标记（签名链路闭环） ===');
   // 构造合法票据 + 签名（与 client.js 签名格式一致）

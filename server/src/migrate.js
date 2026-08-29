@@ -326,6 +326,18 @@ async function migrate() {
     }
   });
 
+  // ---------- 安全中心配置（WAF 开关/白名单/阈值；独立表防公开 settings 接口泄露） ----------
+  await db.schema.hasTable('security_config').then(async (exists) => {
+    if (!exists) {
+      await db.schema.createTable('security_config', (t) => {
+        t.string('id', 16).primary();
+        t.text('data').notNullable();
+        t.timestamp('updated_at').defaultTo(db.fn.now());
+      });
+      console.log('[migrate] security_config 表已创建');
+    }
+  });
+
   // ---------- 索引优化（幂等：仅在缺失时创建） ----------
   async function ensureIndex(table, indexName, columns) {
     const exists = await db.schema.hasTable(table);

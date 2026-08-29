@@ -14,7 +14,7 @@ const PROD_ORIGIN_HOSTS = config.allowedHosts.map((h) => h.toLowerCase());
 // 本地开发来源（允许任意端口）
 const DEV_ORIGIN_HOSTS = ['localhost', '127.0.0.1', '::1'];
 
-const TIMESTAMP_WINDOW = 5 * 60 * 1000; // ±5 分钟
+const TIMESTAMP_WINDOW = 30 * 60 * 1000; // ±30 分钟（时钟偏移大的真实用户不再被拒；防重放由 nonce 一次性消费兜底）
 
 /** 提取 URL 的 hostname（小写；解析失败返回空串） */
 function safeHost(urlStr) {
@@ -48,9 +48,11 @@ function refererRequired(req, res, next) {
   const origin = req.headers.origin || '';
   const referer = req.headers.referer || '';
 
-  // Origin: null —— 沙箱 iframe、部分隐私扩展的跨站请求特征，一律拒绝
+  // Origin: null（沙箱 iframe / 隐私容器 / 部分扩展剥离）：不再直接拒绝 ——
+  // 跨站伪造已被 SameSite cookie + 表单令牌 + 闸门签名兜底，
+  // 这里只记日志供排查，避免误杀正常用户
   if (origin && origin.toLowerCase() === 'null') {
-    return res.status(403).json({ code: 1, message: '来源不合法' });
+    console.warn(`[requestGuard] Origin:null 放行（仅记录） ${req.method} ${req.originalUrl}`);
   }
 
   const oriHost = origin ? safeHost(origin) : '';

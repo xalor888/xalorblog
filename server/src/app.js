@@ -155,11 +155,13 @@ app.use((req, res, next) => {
 });
 
 // CORS：仅允许白名单来源（默认本地开发端口；生产用 CORS_ORIGINS 配置）
+// Origin: null（沙箱 iframe / 部分隐私容器）放行 —— 跨站伪造已被
+// SameSite cookie + 表单令牌 + 闸门签名兜底，且脚本本可不带 Origin 头
 const allowedOrigins = config.corsOrigins;
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      if (!origin || origin === 'null' || allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error('不允许的跨域来源'));
     },
     methods: ALLOWED_METHODS,
@@ -213,6 +215,30 @@ const uploadsLimiter = rateLimit({
   message: { code: 1, message: '读取过于频繁，请稍后再试' },
 });
 
+// 上传文件静态资源：置于 WAF/信誉闸门之前 —— 图片请求不付全量特征扫描成本，
+// 自带限流与安全头；文件名服务端随机且上传经类型/大小校验
+app.use(
+  '/uploads',
+  uploadsLimiter,
+  express.static(config.uploadDir, {
+    dotfiles: 'deny',
+    index: false,
+    fallthrough: true,
+    setHeaders: (res, filePath) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
+      // 上传资源允许跨站读取：保证社交平台/分享卡片能抓取 OG 图片（API 已收紧为 same-origin）
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      // 文件名服务端随机生成且不可变 → 可长缓存（7 天 + immutable）
+      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+      if (filePath.toLowerCase().endsWith('.svg')) {
+        res.setHeader('Content-Type', 'image/svg+xml');
+        res.setHeader('Content-Disposition', 'attachment');
+      }
+    },
+  })
+);
+
 // 应用层 WAF（在限流与路由之前）
 app.use(waf);
 
@@ -247,7 +273,7 @@ app.use(api, async (req, res, next) => {
     }
     const ua = String(req.headers['user-agent'] || '');
     if (!ua) {
-      report(req.ip, 'waf', '空 UA');
+      // 空 UA（curl 默认/探活脚本）：拒绝但不记信誉分 —— 普通脚本行为非攻击
       return res.status(403).json({ code: 1, message: '访问被拒绝' });
     }
     // HEAD 与 GET 同为只读语义，只需票据（CDN 探测/预检/监控探活均发 HEAD）
@@ -270,29 +296,6 @@ app.use(api, (req, res, next) => {
   }
   next();
 });
-
-// 静态资源：上传文件（安全 serve —— 禁用目录列表、强制 nosniff、SVG 防执行；前置限流防刷带宽）
-app.use(
-  '/uploads',
-  uploadsLimiter,
-  express.static(config.uploadDir, {
-    dotfiles: 'deny',
-    index: false,
-    fallthrough: true,
-    setHeaders: (res, filePath) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
-      // 上传资源允许跨站读取：保证社交平台/分享卡片能抓取 OG 图片（API 已收紧为 same-origin）
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-      // 文件名服务端随机生成且不可变 → 可长缓存（7 天 + immutable）
-      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
-      if (filePath.toLowerCase().endsWith('.svg')) {
-        res.setHeader('Content-Type', 'image/svg+xml');
-        res.setHeader('Content-Disposition', 'attachment');
-      }
-    },
-  })
-);
 
 // robots.txt 根路径（搜索引擎标准位置）
 app.get('/robots.txt', async (req, res) => {
@@ -385,7 +388,8 @@ app.use((req, res) => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   if (err.message === '不允许的跨域来源') {
-    report(req.ip, 'waf', '非法跨域来源');
+    // 配置不匹配/外站直调，非攻击行为：仅记录不计信誉分
+    console.warn(`[cors] 非法跨域来源 ${req.headers.origin || '-'} ${req.method} ${req.path}`);
     return res.status(403).json({ code: 1, message: err.message });
   }
   if (err.code === 'LIMIT_FILE_SIZE') {

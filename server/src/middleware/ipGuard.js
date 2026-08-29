@@ -10,18 +10,18 @@
 const config = require('../config');
 const db = require('../db');
 const { ipKeyGenerator } = require('express-rate-limit');
+const securitySettings = require('../utils/securitySettings');
 
-const BAN_SCORE = 10;             // 触发封禁的积分阈值
-const HONEYPOT_WEIGHT = 6;        // 蜜罐命中：2 次即封禁
-const WAF_WEIGHT = 3;             // 一次 WAF 命中（4 次触发封禁）
-const AUTH_WEIGHT = 3;            // 一次认证失败（4 次触发封禁）
-const RATE_WEIGHT = 2;            // 一次限流命中（5 次触发封禁）
-const SPAM_WEIGHT = 1;            // 一次垃圾提交
-const BASE_BAN_MS = 15 * 60 * 1000; // 首次封禁 15 分钟
+// 权重与阈值的代码级兜底（运行时以 securitySettings 配置为准，安全中心可调）
+const FALLBACK_WEIGHTS = { honeypot: 6, waf: 3, auth: 3, rate: 2, scan: 2, spam: 1 };
+const FALLBACK_BAN_SCORE = 10;
+const BASE_BAN_MS_FALLBACK = 15 * 60 * 1000;
+const MAX_BAN_MS_FALLBACK = 24 * 3600 * 1000;
 const DECAY_MS = 30 * 60 * 1000;  // 积分每 30 分钟衰减一半
-const MAX_BAN_MS = 24 * 3600 * 1000; // 最长封禁 24 小时
 const REPUTATION_MAX = 50000;      // 信誉表硬上限
 const REPUTATION_FLOOR = 40000;    // 超限时回落到该水位
+/** 累犯轮次老化：距上次封禁超过该天数重新从 1 轮计（0 = 永不重置） */
+const BAN_COUNT_RESET_MS = 30 * 86400 * 1000;
 
 /** canonical IPv4 / IPv6-/56-prefix -> { score, updatedAt, strikes, banUntil, banCount } */
 const records = new Map();
@@ -35,14 +35,15 @@ let lastClean = Date.now();
 let dbLoaded = false;
 
 /**
- * 与 express-rate-limit 一致地聚合 IPv6 /56；IPv4（含 mapped IPv6）保持单地址。
- * 去掉展示用的 /56 后缀但保留已清零的网络地址，使后台现有 net.isIP 校验仍可解封。
+ * 与 express-rate-limit 一致地聚合 IPv6 /64（标准子网划分，整栋楼连坐面比 /56 小）；
+ * IPv4（含 mapped IPv6）保持单地址。
+ * 去掉展示用的 /64 后缀但保留已清零的网络地址，使后台现有 net.isIP 校验仍可解封。
  */
 function reputationKey(ip) {
   const raw = String(ip || '').trim();
   if (!raw) return '';
   try {
-    return ipKeyGenerator(raw, 56).replace(/\/56$/, '').toLowerCase();
+    return ipKeyGenerator(raw, 64).replace(/\/64$/, '').toLowerCase();
   } catch (e) {
     return raw.toLowerCase();
   }
@@ -198,8 +199,8 @@ async function loadPersistedBans() {
       });
     }
 
-    // 将旧版“精确 IPv6 地址”原子折叠到 /56 规范键；失败时内存仍按 /56 生效，
-    // legacyBanKeys 也会让手动解封/到期清理覆盖旧行。
+    // 将旧版「精确 IPv6 地址」持久化键原子折叠到当前规范键（/64 聚合）；
+    // 失败时内存仍按规范键生效，legacyBanKeys 也会让手动解封/到期清理覆盖旧行。
     if (legacyBanKeys.size) {
       try {
         await db.transaction(async (trx) => {
@@ -240,12 +241,15 @@ async function loadPersistedBans() {
 function report(ip, type, path = '') {
   decay();
   if (!ip) return false;
+  // 可信 IP 白名单（安全中心维护）：不记分、不封禁 —— 站长调试/自家监控不被误伤
+  if (securitySettings.isTrustedIp(ip)) return false;
+  const sec = securitySettings.getConfig();
   const key = reputationKey(ip);
   if (!key) return false;
   const now = Date.now();
   let rec = records.get(key);
   if (!rec) {
-    rec = { score: 0, updatedAt: now, strikes: 0, banUntil: 0, banCount: 0 };
+    rec = { score: 0, updatedAt: now, strikes: 0, banUntil: 0, banCount: 0, lastBanUntil: 0 };
     records.set(key, rec);
     if (records.size > REPUTATION_MAX) pruneReputation(key);
   }
@@ -255,21 +259,27 @@ function report(ip, type, path = '') {
     return false;
   }
 
-  let weight = RATE_WEIGHT;
-  if (type === 'honeypot') weight = HONEYPOT_WEIGHT;
-  if (type === 'waf') weight = WAF_WEIGHT;
-  if (type === 'auth') weight = AUTH_WEIGHT;
-  if (type === 'spam') weight = SPAM_WEIGHT;
-
+  const weights = { ...FALLBACK_WEIGHTS, ...(sec.weights || {}) };
+  const weight = weights[type] ?? FALLBACK_WEIGHTS.rate;
   rec.score += weight;
   rec.updatedAt = now;
   rec.strikes += 1;
   logEvent(type, key, path);
 
-  if (rec.score >= BAN_SCORE) {
+  const banScore = Number(sec.banScore) || FALLBACK_BAN_SCORE;
+  if (rec.score >= banScore) {
+    // 累犯轮次老化：距上次封禁超过 30 天的 IP 重新从第 1 轮计，
+    // 不再终身指数翻倍（一个月前的 3 轮封禁不应让今天的首次违规直接 2 小时起步）
+    const resetDays = Number(sec.banCountResetDays ?? 30);
+    if (resetDays > 0 && rec.lastBanUntil && now - rec.lastBanUntil > resetDays * 86400 * 1000) {
+      rec.banCount = 0;
+    }
     rec.banCount += 1;
-    const duration = Math.min(BASE_BAN_MS * Math.pow(2, rec.banCount - 1), MAX_BAN_MS);
+    const baseBanMs = (Number(sec.baseBanMinutes) || 15) * 60 * 1000;
+    const maxBanMs = (Number(sec.maxBanHours) || 24) * 3600 * 1000;
+    const duration = Math.min(baseBanMs * Math.pow(2, rec.banCount - 1), maxBanMs);
     rec.banUntil = now + duration;
+    rec.lastBanUntil = rec.banUntil;
     rec.score = 0;
     // 记录本次封禁的触发原因（最近一次违规行为）
     rec.lastBanReason = String(path || type || '').slice(0, 120);
@@ -292,6 +302,8 @@ function report(ip, type, path = '') {
 /** 当前是否被封禁 */
 function isBanned(ip) {
   if (!ip) return false;
+  // 白名单 IP 即使有历史封禁记录也直接视为未封禁（双保险：手动解封遗漏时不误伤）
+  if (securitySettings.isTrustedIp(ip)) return false;
   decay();
   const key = reputationKey(ip);
   const rec = records.get(key);
@@ -348,7 +360,7 @@ function ipGuard(req, res, next) {
   next();
 }
 
-/** 后台面板数据（实时内存事件 + 持久化历史事件） */
+/** 后台面板数据（实时内存事件 + 持久化历史事件 + 真实总数统计） */
 async function securityStats() {
   const now = Date.now();
   const banned = [];
@@ -363,7 +375,7 @@ async function securityStats() {
       });
     }
   }
-  // 攻击类型分布（内存实时 + DB 历史合并，重启后统计不归零）
+  // 攻击类型分布（内存实时 + DB 近 7 天真实计数合并 —— 此前仅统计最近 100 条却展示为总数）
   const typeCounts = {};
   const countType = (type) => {
     const key = type === 'ban' || type === 'unban' ? 'ban' : type;
@@ -371,6 +383,7 @@ async function securityStats() {
   };
   for (const e of events) countType(e.type);
   let persisted = [];
+  let dbCounts = {};
   try {
     // 持久化历史（最近 50 条；与实时事件按时间倒序合并展示）
     persisted = await db('audit_logs')
@@ -378,6 +391,19 @@ async function securityStats() {
       .orderBy('id', 'desc')
       .limit(50)
       .select('id', 'action', 'detail', 'ip', 'created_at');
+    // 近 7 天各类型真实计数（供分布图与总数展示）
+    const since = new Date(now - 7 * 86400 * 1000);
+    const rows = await db('audit_logs')
+      .where('action', 'like', 'SEC-EVENT%')
+      .where('created_at', '>', since)
+      .select('action')
+      .count('* as cnt')
+      .groupBy('action');
+    for (const r of rows) {
+      const type = String(r.action).replace('SEC-EVENT ', '') || 'event';
+      const key = type === 'ban' || type === 'unban' ? 'ban' : type;
+      dbCounts[key] = (dbCounts[key] || 0) + Number(r.cnt);
+    }
   } catch (e) { /* 表不可用忽略 */ }
   const persistedEvents = persisted.map((p) => ({
     t: new Date(p.created_at).getTime(),
@@ -387,13 +413,15 @@ async function securityStats() {
     detail: p.detail,
     persisted: true,
   }));
-  // 去重合并：内存实时事件 + DB 历史（事件总数含历史）
+  // 去重合并：内存实时事件 + DB 历史
   const merged = [...persistedEvents, ...events.slice(-50).reverse()];
-  for (const p of persisted) countType(String(p.action).replace('SEC-EVENT ', ''));
+  // 分布以「DB 近 7 天真实计数」为基，内存实时事件叠加（未落库的部分）
+  for (const [k, v] of Object.entries(dbCounts)) typeCounts[k] = (typeCounts[k] || 0) + v;
+  const eventTotal = Object.values(typeCounts).reduce((a, b) => a + b, 0);
   return {
     banned,
     events: merged.slice(0, 50),
-    event_total: merged.length,
+    event_total: eventTotal,
     type_counts: typeCounts,
   };
 }

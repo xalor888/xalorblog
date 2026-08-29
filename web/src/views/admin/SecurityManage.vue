@@ -180,6 +180,96 @@
         </el-table-column>
       </el-table>
     </div>
+
+    <!-- WAF 防护设置 -->
+    <div class="panel" v-if="cfg">
+      <div class="panel-head">
+        <h3 class="panel-title"><XIcon name="SlidersHorizontal" :size="16" /> WAF 防护设置</h3>
+        <div class="panel-actions">
+          <span v-if="cfgDirty" class="panel-hint dirty">有未保存的修改</span>
+          <el-button size="small" type="primary" :loading="savingCfg" :disabled="!cfgDirty" @click="saveCfg">
+            保存配置
+          </el-button>
+          <el-button size="small" :disabled="!cfgDirty" @click="resetCfg">放弃修改</el-button>
+        </div>
+      </div>
+
+      <div class="cfg-grid">
+        <!-- 防护开关 -->
+        <div class="cfg-section">
+          <p class="cfg-title">防护开关</p>
+          <div class="switch-row"><span>扫描器 / AI 爬虫 UA 硬拦</span><el-switch v-model="cfg.scannerUaBlock" @change="markDirty" /></div>
+          <div class="switch-row"><span>蜜罐路径</span><el-switch v-model="cfg.honeypotEnabled" @change="markDirty" /></div>
+          <div class="switch-row"><span>404 目录爆破检测</span><el-switch v-model="cfg.scan404Enabled" @change="markDirty" /></div>
+          <div class="switch-row" v-for="(label, g) in GROUP_LABELS" :key="g">
+            <span>{{ label }}规则组</span>
+            <el-switch v-model="cfg.groups[g]" @change="markDirty" />
+          </div>
+        </div>
+
+        <!-- 阈值 -->
+        <div class="cfg-section">
+          <p class="cfg-title">封禁阈值</p>
+          <div class="num-row"><span>封禁积分门槛</span><el-input-number v-model="cfg.banScore" :min="5" :max="100" size="small" @change="markDirty" /></div>
+          <div class="num-row"><span>蜜罐命中权重</span><el-input-number v-model="cfg.weights.honeypot" :min="1" :max="20" size="small" @change="markDirty" /></div>
+          <div class="num-row"><span>WAF 命中权重</span><el-input-number v-model="cfg.weights.waf" :min="1" :max="20" size="small" @change="markDirty" /></div>
+          <div class="num-row"><span>认证失败权重</span><el-input-number v-model="cfg.weights.auth" :min="1" :max="20" size="small" @change="markDirty" /></div>
+          <div class="num-row"><span>限流/扫描权重</span><el-input-number v-model="cfg.weights.rate" :min="1" :max="20" size="small" @change="markDirty" /></div>
+          <div class="num-row"><span>垃圾提交权重</span><el-input-number v-model="cfg.weights.spam" :min="1" :max="20" size="small" @change="markDirty" /></div>
+          <div class="num-row"><span>首次封禁（分钟）</span><el-input-number v-model="cfg.baseBanMinutes" :min="1" :max="1440" size="small" @change="markDirty" /></div>
+          <div class="num-row"><span>封禁上限（小时）</span><el-input-number v-model="cfg.maxBanHours" :min="1" :max="720" size="small" @change="markDirty" /></div>
+          <div class="num-row"><span>累犯轮次重置（天，0 不重置）</span><el-input-number v-model="cfg.banCountResetDays" :min="0" :max="365" size="small" @change="markDirty" /></div>
+          <div class="num-row"><span>404 扫描阈值（30 秒）</span><el-input-number v-model="cfg.scanThreshold" :min="3" :max="100" size="small" @change="markDirty" /></div>
+        </div>
+
+        <!-- 白名单与词库 -->
+        <div class="cfg-section">
+          <p class="cfg-title">可信 IP 白名单</p>
+          <p class="cfg-hint">白名单 IP 不记分、不封禁。支持单 IP 与 CIDR（如 10.0.0.0/8），回车添加</p>
+          <el-select v-model="cfg.trustedIps" multiple filterable allow-create default-first-option
+            placeholder="如 203.0.113.7 或 198.51.100.0/24" class="cfg-tags" @change="markDirty" />
+          <p class="cfg-title">自定义敏感词</p>
+          <p class="cfg-hint">追加到评论硬拒词库（≥2 字），回车添加</p>
+          <el-select v-model="cfg.customSensitiveWords" multiple filterable allow-create default-first-option
+            placeholder="如 某某推广" class="cfg-tags" @change="markDirty" />
+          <p class="cfg-title">豁免词</p>
+          <p class="cfg-hint">文本包含豁免词时跳过对应敏感词判定（如「回收」豁免「垃圾回收」触发的辱骂分）</p>
+          <el-select v-model="cfg.allowWords" multiple filterable allow-create default-first-option
+            placeholder="如 回收" class="cfg-tags" @change="markDirty" />
+        </div>
+      </div>
+
+      <!-- 禁用规则 -->
+      <div class="cfg-rules">
+        <p class="cfg-title">禁用单条规则</p>
+        <p class="cfg-hint">误杀排查时可精确关闭某条规则，其余规则照常生效</p>
+        <el-select v-model="cfg.disabledRules" multiple filterable clearable placeholder="选择要禁用的规则 ID"
+          class="cfg-tags" @change="markDirty">
+          <el-option-group v-for="(rules, g) in rulesByGroup" :key="g" :label="GROUP_LABELS[g] || g">
+            <el-option v-for="r in rules" :key="r.id" :value="r.id" :label="`${r.id} ${r.note}`" />
+          </el-option-group>
+        </el-select>
+      </div>
+
+      <!-- 规则测试器 -->
+      <div class="cfg-tester">
+        <p class="cfg-title">规则测试器</p>
+        <p class="cfg-hint">粘贴任意文本/URL 参数，dry-run 返回会命中的规则（不拦截不记分）</p>
+        <div class="test-row">
+          <el-input v-model="testText" type="textarea" :rows="2" maxlength="4000"
+            placeholder="例如：union select 1,2,3 或 select the color from the palette" class="test-input" />
+          <el-button type="primary" plain :loading="testLoading" @click="runTest">检测</el-button>
+        </div>
+        <div v-if="testResult" class="test-result">
+          <el-tag v-if="!testResult.hits.length" type="success" effect="light">未命中任何规则（正常文本）</el-tag>
+          <template v-else>
+            <el-tag v-for="h in testResult.hits" :key="h.id" type="danger" effect="light" class="test-hit">
+              {{ h.id }}（{{ GROUP_LABELS[h.group] || h.group }} · {{ h.note }} · 命中面 {{ h.scope === 'query' ? '查询串' : '请求体' }}）
+            </el-tag>
+          </template>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -355,8 +445,94 @@ async function logoutAll() {
   }
 }
 
+/* ==================== WAF 防护设置 ==================== */
+const GROUP_LABELS = {
+  SQL: 'SQL 注入',
+  XSS: 'XSS',
+  TRAVERSAL: '路径遍历',
+  CMD: '命令注入',
+  SSRF: 'SSRF',
+  MISC: '注入杂项',
+};
+
+const cfg = ref(null);          // 本地可编辑副本
+const rulesByGroup = ref({});
+const cfgDirty = ref(false);
+const savingCfg = ref(false);
+const testText = ref('');
+const testResult = ref(null);
+const testLoading = ref(false);
+
+function markDirty() {
+  cfgDirty.value = true;
+}
+
+async function loadConfig() {
+  try {
+    const data = await securityApi.getConfig();
+    const c = data?.config || {};
+    cfg.value = {
+      ...c,
+      groups: { SQL: true, XSS: true, TRAVERSAL: true, CMD: true, SSRF: true, MISC: true, ...(c.groups || {}) },
+      weights: { honeypot: 6, waf: 3, auth: 3, rate: 2, spam: 1, ...(c.weights || {}) },
+      disabledRules: c.disabledRules || [],
+      trustedIps: c.trustedIps || [],
+      customSensitiveWords: c.customSensitiveWords || [],
+      allowWords: c.allowWords || [],
+    };
+    const byGroup = {};
+    for (const r of data?.rules || []) {
+      (byGroup[r.group] = byGroup[r.group] || []).push(r);
+    }
+    rulesByGroup.value = byGroup;
+    cfgDirty.value = false;
+  } catch (e) {
+    /* 配置面板隐藏（cfg 为 null 不渲染），日志区照常 */
+  }
+}
+
+function resetCfg() {
+  loadConfig();
+}
+
+async function saveCfg() {
+  try {
+    await ElMessageBox.confirm('保存后立即对全站生效，确定提交？', '保存安全配置', {
+      type: 'warning',
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+    });
+  } catch (e) {
+    return;
+  }
+  savingCfg.value = true;
+  try {
+    await securityApi.saveConfig(cfg.value);
+    ElMessage.success('安全配置已保存');
+    await loadConfig();
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '保存失败');
+  } finally {
+    savingCfg.value = false;
+  }
+}
+
+async function runTest() {
+  if (!testText.value.trim()) return ElMessage.info('请输入要检测的文本');
+  testLoading.value = true;
+  try {
+    const data = await securityApi.testRule(testText.value);
+    testResult.value = data || { hits: [] };
+  } catch (e) {
+    ElMessage.error('检测失败');
+  } finally {
+    testLoading.value = false;
+  }
+}
+
 onMounted(() => {
   refresh();
+  loadConfig();
   timer = setInterval(refresh, 5000);
 });
 
@@ -605,5 +781,95 @@ onUnmounted(() => {
   font-size: 0.74rem;
   color: var(--text-2);
   word-break: break-all;
+}
+
+/* ============ WAF 防护设置 ============ */
+.dirty {
+  color: #c9900f;
+  font-weight: 600;
+}
+
+.cfg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.cfg-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cfg-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-1);
+  margin-bottom: 2px;
+}
+
+.cfg-hint {
+  font-size: 0.74rem;
+  color: var(--text-3);
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 0;
+  font-size: 0.84rem;
+  color: var(--text-2);
+  border-bottom: 1px dashed var(--border);
+}
+
+.switch-row:last-child {
+  border-bottom: none;
+}
+
+.num-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+
+.cfg-tags {
+  width: 100%;
+}
+
+.cfg-rules,
+.cfg-tester {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.test-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.test-input {
+  flex: 1;
+}
+
+.test-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.test-hit {
+  max-width: 100%;
 }
 </style>

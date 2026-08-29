@@ -37,7 +37,7 @@ function req(method, path, { body, headers = {}, ticket, silent = false, ua } = 
       const nonce = Math.random().toString(36).slice(2, 14) + Math.random().toString(36).slice(2, 6);
       const bodyHash = sha256hex(data || '{}');
       // 签名路径 = 挂载点相对路径（服务端 req.path 相对 api 挂载点，去掉前缀）
-      const sigPath = path.replace(/^\/api(?=\/)/, '');
+      const sigPath = path.replace(/^\/api(?=\/)/, '').split('?')[0];
       const sig = hmac(ticket, `${method.toUpperCase()}|${sigPath}|${ts}|${bodyHash}|${ticket.split('.')[1]}|${nonce}`);
       h['X-Pass'] = ticket;
       h['X-Timestamp'] = String(ts);
@@ -142,7 +142,7 @@ function uploadFile(path, fileBuffer, filename, mime, ticket, extraHeaders = {})
       // 签名：multipart 请求的 bodyHash 按空对象计算（与前端 FormData 行为一致）
       const ts = Date.now();
       const nonce = Math.random().toString(36).slice(2, 14) + Math.random().toString(36).slice(2, 6);
-      const sigPath = path.replace(/^\/api(?=\/)/, '');
+      const sigPath = path.replace(/^\/api(?=\/)/, '').split('?')[0];
       const sig = hmac(ticket, `POST|${sigPath}|${ts}|${sha256hex('{}')}|${ticket.split('.')[1]}|${nonce}`);
       h['X-Pass'] = ticket;
       h['X-Timestamp'] = String(ts);
