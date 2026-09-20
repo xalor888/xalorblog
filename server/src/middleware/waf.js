@@ -313,7 +313,7 @@ function scopeGroups(scope, sec) {
  * 扫描一段文本，返回命中规则 { id, group } 或 null。
  * scope 决定规则集；urlKey 仅对 body 面 SSRF 生效。
  */
-function scanText(text, scope = 'body', { urlKey = false } = {}) {
+function scanText(text, scope = 'body', { urlKey = false, skipGroups = null } = {}) {
   if (typeof text !== 'string' || !text.length) return null;
   if (text.length > 4000) text = text.slice(0, 4000);
   const sec = securitySettings.getConfig();
@@ -324,6 +324,8 @@ function scanText(text, scope = 'body', { urlKey = false } = {}) {
   const runGroup = (patterns) => {
     for (const [id, re] of patterns) {
       if (disabled && disabled.has(id)) continue;
+      // skipGroups：按规则组前缀整体跳过（如 keyword 自由文本跳过 SSRF）
+      if (skipGroups && skipGroups.some((p) => id.startsWith(`${p}-`))) continue;
       for (const v of variants) {
         if (re.test(v)) return { id, group: RULE_INDEX[id]?.group || '' };
       }
@@ -563,6 +565,11 @@ function waf(req, res, next) {
   const pathHit = scanText(pathTarget, 'path');
   if (pathHit) hits.push(pathHit);
   // query 键名与值递归提取：数组/嵌套参数同样纳入检测
+  // keyword 是自由文本搜索词：键名跳过（键名本身没有检测意义），但**值必须照常检测**。
+  // 旧实现 `if (k === 'keyword') continue;` 会跳过整条 entry（连值一起），
+  // 等于给 ?keyword= 留了 WAF 后门 —— SQL 注入 / XSS / 路径遍历 / Log4Shell
+  // 载荷放进 keyword 后完全不被扫描。这里只对 keyword 的值排除 SSRF 组：
+  // 搜索词里出现内网 IP 文本（如「内网 192.168.1.50 的说明」）属正常讨论内容。
   let keyInjected = false;
   const collectQuery = (node) => {
     if (node === null || typeof node === 'undefined') return;
@@ -572,11 +579,18 @@ function waf(req, res, next) {
     }
     if (typeof node === 'object') {
       for (const [k, v] of Object.entries(node)) {
-        if (k === 'keyword') continue;
         if (!keyInjected && /^(?:__proto__|constructor|prototype)$/i.test(k)) keyInjected = true;
-        const kh = scanText(k, 'query');
-        if (kh) hits.push(kh);
-        collectQuery(v);
+        const isKeyword = /^keyword$/i.test(k);
+        if (!isKeyword) {
+          const kh = scanText(k, 'query');
+          if (kh) hits.push(kh);
+        }
+        if (v !== null && typeof v === 'object') {
+          collectQuery(v);
+          continue;
+        }
+        const vh = scanText(String(v), 'query', isKeyword ? { skipGroups: ['SSRF'] } : {});
+        if (vh) hits.push(vh);
       }
       return;
     }
