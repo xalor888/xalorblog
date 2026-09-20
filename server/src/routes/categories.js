@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
       .leftJoin('articles as a', function () {
         this.on('a.category_id', 'c.id').andOn('a.status', '=', db.raw('?', ['published']));
       })
-      .groupBy('c.id')
+      .groupBy('c.id', 'c.name', 'c.slug', 'c.description', 'c.color', 'c.sort')
       .select('c.id', 'c.name', 'c.slug', 'c.description', 'c.color', 'c.sort')
       .count('a.id as article_count')
       .orderBy([{ column: 'c.sort', order: 'asc' }, { column: 'c.id', order: 'asc' }]);

@@ -26,10 +26,14 @@
 <script setup>
 import { ref, onMounted, watchEffect } from 'vue';
 import { tagApi } from '@/api';
+import { useSiteStore } from '@/stores/site';
+
+const site = useSiteStore();
 
 // 浏览器标签页标题
 watchEffect(() => {
-  document.title = '标签云';
+  const siteName = site.settings.site_name || 'Xalor的小站';
+  document.title = `标签云 · ${siteName}`;
 });
 
 const tags = ref([]);

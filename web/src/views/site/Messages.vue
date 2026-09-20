@@ -110,7 +110,8 @@ import { useSiteStore } from '@/stores/site';
 
 // 浏览器标签页标题
 watchEffect(() => {
-  document.title = '留言板';
+  const siteName = site.settings.site_name || 'Xalor的小站';
+  document.title = `留言板 · ${siteName}`;
 });
 
 const site = useSiteStore();
@@ -132,7 +133,9 @@ savedEmail = readSessionValue('xalor_memail');
 const form = ref({ nickname: savedName, email: savedEmail, content: '' });
 const hpField = ref(getHpField('/messages'));
 // 表情面板折叠（与评论区共用偏好）
-const showEmoji = ref(localStorage.getItem('xalor_emoji_open') === '1');
+const showEmoji = ref((() => {
+  try { return localStorage.getItem('xalor_emoji_open') === '1'; } catch (e) { return false; }
+})());
 function toggleEmoji() {
   showEmoji.value = !showEmoji.value;
   try {
@@ -213,10 +216,15 @@ async function load() {
 async function loadMore() {
   loading.value = true;
   try {
-    page.value += 1;
-    const res = await messageApi.list({ page: page.value, pageSize });
+    // 用局部游标请求，成功后才推进 page：失败时游标不前移，
+    // 否则下次"加载更多"会从跳过的页开始，中间一页留言永久丢失
+    const next = page.value + 1;
+    const res = await messageApi.list({ page: next, pageSize });
+    page.value = next;
     messages.value = [...messages.value, ...res.list];
     hasMore.value = messages.value.length < res.pagination.total;
+  } catch (e) {
+    ElMessage.error('加载失败，请重试');
   } finally {
     loading.value = false;
   }

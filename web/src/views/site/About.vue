@@ -22,7 +22,7 @@
           <div class="ps-item"><b class="num">{{ formatNumber(site.stats.total_uv) }}</b><span>访客</span></div>
         </div>
         <div class="profile-social" v-if="socials.length">
-          <a v-for="s in socials" :key="s.label" :href="s.url" target="_blank" rel="noopener" class="social-chip">
+          <a v-for="s in socials" :key="s.label" :href="s.url" target="_blank" rel="noopener noreferrer" class="social-chip">
             <XIcon :name="s.icon" :size="14" /> {{ s.label }}
           </a>
         </div>
@@ -45,7 +45,8 @@ import { formatNumber } from '@/utils/format';
 
 // 浏览器标签页标题
 watchEffect(() => {
-  document.title = '关于';
+  const siteName = site.settings.site_name || 'Xalor的小站';
+  document.title = `关于 · ${siteName}`;
 });
 
 const site = useSiteStore();

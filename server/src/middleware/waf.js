@@ -382,6 +382,7 @@ const MISS_EXEMPT_RE = [
   /^\/(?:humans|ads|app-ads)\.txt$/i,
   /^\/\.well-known\//i,
   /^\/(?:rss|feed|sitemap)(?:\.xml)?$/i,
+  /^\/health(?:\/(?:live|ready))?$/i,
 ];
 
 /** UA 轮换检测：同一 IP 在 5 分钟窗口内出现 ≥6 个不同 UA → 脚本轮换 UA 规避指纹识别
@@ -401,7 +402,7 @@ function trackUaRotation(ip, ua) {
   // 仅对「声明是浏览器」的 UA 计数（爬虫 UA 已被独立机制拦截，不重复计）
   const lower = ua.toLowerCase();
   if (!/(mozilla|chrome|safari|edge|firefox|opera)/.test(lower)) return false;
-  if (rec.uas.size < UA_DIFF_THRESHOLD) rec.uas.add(ua.slice(0, 200));
+  rec.uas.add(ua.slice(0, 200));
   if (uaTracker.size > 3000) {
     for (const [k, v] of uaTracker) {
       if (now - v.windowStart > UA_WINDOW) uaTracker.delete(k);
@@ -645,7 +646,7 @@ function recordMiss(ip, path) {
   const sec = securitySettings.getConfig();
   if (!sec.scan404Enabled) return false;
   // 静态资源、已知引导路径与浏览器默认请求不计数，避免误报
-  if (path.startsWith('/uploads/') || path === '/' || path === '/robots.txt') return false;
+  if (path.startsWith('/uploads/') || path === '/' || path === '/robots.txt' || path === '/sitemap.xml' || path === '/rss.xml') return false;
   if (MISS_EXEMPT_RE.some((re) => re.test(path))) return false;
   if (trackMiss(ip, sec.scanThreshold)) {
     report(ip, 'scan', `404 扫描 ${path}`);

@@ -120,25 +120,34 @@ router.get('/', async (req, res) => {
       base
         .leftJoin('comments as cm', function () {
           this.on('cm.article_id', 'a.id').andOn('cm.status', '=', db.raw('?', ['approved']));
-        })
-        .groupBy('a.id');
+        });
+      // groupBy 只加在数据查询上：混进计数查询会让每组 cnt 恒为 1（total 恒为 1，翻页失效）
       orderBy = [{ column: 'a.is_top', order: 'desc' }, { column: db.raw('COUNT(cm.id)'), order: 'desc' }, { column: 'a.published_at', order: 'desc' }];
     } else {
       orderBy = [{ column: 'a.is_top', order: 'desc' }, { column: 'a.published_at', order: 'desc' }];
     }
 
+    const rowsQuery = base.clone()
+      .select(
+        'a.id', 'a.title', 'a.slug', 'a.summary', 'a.cover', 'a.is_top', 'a.views', 'a.likes',
+        'a.published_at', 'a.created_at', 'a.category_id',
+        'c.name as category_name', 'c.slug as category_slug', 'c.color as category_color'
+      )
+      .orderBy(orderBy);
+    if (sort === 'commented') {
+      rowsQuery.groupBy(
+        'a.id', 'a.title', 'a.slug', 'a.summary', 'a.cover', 'a.is_top', 'a.views', 'a.likes',
+        'a.published_at', 'a.created_at', 'a.category_id',
+        'c.name', 'c.slug', 'c.color'
+      );
+    }
+
     const [total, rows] = await Promise.all([
-      // commented 模式有 groupBy，用 countDistinct 保证计数正确
+      // commented 模式的 join 会让文章行按评论数翻倍，用 countDistinct 保证计数正确
       sort === 'commented'
         ? base.clone().countDistinct('a.id as cnt').first()
         : base.clone().count('a.id as cnt').first(),
-      base.clone()
-        .select(
-          'a.id', 'a.title', 'a.slug', 'a.summary', 'a.cover', 'a.is_top', 'a.views', 'a.likes',
-          'a.published_at', 'a.created_at', 'a.category_id',
-          'c.name as category_name', 'c.slug as category_slug', 'c.color as category_color'
-        )
-        .orderBy(orderBy)
+      rowsQuery
         .limit(pageSize)
         .offset((page - 1) * pageSize),
     ]);
@@ -239,13 +248,22 @@ router.get('/neighbors/:id', async (req, res) => {
     const cur = await db('articles').where('id', id).where('status', 'published').select('published_at').first();
     if (!cur) return notFound(res, '文章不存在');
     const [prev, next] = await Promise.all([
-      // 同秒发布的文章也互为邻居（时间 <=/>= + 排除自身 + id 作为并列 tiebreaker）
+      // 上一篇：比当前更早（published_at < cur 或 published_at == cur 且 id < cur）
       db('articles')
-        .where('status', 'published').where('published_at', '<=', cur.published_at).whereNot('id', id)
+        .where('status', 'published')
+        .where((b) => {
+          b.where('published_at', '<', cur.published_at)
+            .orWhere((b2) => b2.where('published_at', cur.published_at).where('id', '<', id));
+        })
         .orderBy([{ column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }])
         .select('id', 'title', 'slug').first(),
+      // 下一篇：比当前更新（published_at > cur 或 published_at == cur 且 id > cur）
       db('articles')
-        .where('status', 'published').where('published_at', '>=', cur.published_at).whereNot('id', id)
+        .where('status', 'published')
+        .where((b) => {
+          b.where('published_at', '>', cur.published_at)
+            .orWhere((b2) => b2.where('published_at', cur.published_at).where('id', '>', id));
+        })
         .orderBy([{ column: 'published_at', order: 'asc' }, { column: 'id', order: 'asc' }])
         .select('id', 'title', 'slug').first(),
     ]);
@@ -280,7 +298,7 @@ router.get('/related/:id', async (req, res) => {
           .where('a.status', 'published')
           .whereNot('a.id', id)
           .where('a.category_id', cur.category_id)
-          .orderBy('a.published_at', 'desc')
+          .orderBy([{ column: 'a.published_at', order: 'desc' }, { column: 'a.id', order: 'desc' }])
           .limit(4)
       );
     }
@@ -289,19 +307,23 @@ router.get('/related/:id', async (req, res) => {
     if (rows.length < 4) {
       const tagRows = await db('article_tags').where('article_id', id).pluck('tag_id');
       if (tagRows.length) {
-        const extra = await baseSelect(
-          db('articles as a')
-            .join('article_tags as at', 'a.id', 'at.article_id')
-            .leftJoin('categories as c', 'a.category_id', 'c.id')
-            .where('a.status', 'published')
-            .whereNot('a.id', id)
-            .whereIn('at.tag_id', tagRows)
-            .whereNotIn('a.id', rows.map((r) => r.id))
-            .groupBy('a.id')
-            .orderBy('a.published_at', 'desc')
-            .limit(4 - rows.length)
-        );
-        rows = rows.concat(extra);
+        const taggedArticleIds = await db('article_tags')
+          .whereIn('tag_id', tagRows)
+          .whereNot('article_id', id)
+          .whereNotIn('article_id', rows.map((r) => r.id))
+          .distinct()
+          .pluck('article_id');
+        if (taggedArticleIds.length) {
+          const extra = await baseSelect(
+            db('articles as a')
+              .leftJoin('categories as c', 'a.category_id', 'c.id')
+              .where('a.status', 'published')
+              .whereIn('a.id', taggedArticleIds)
+              .orderBy([{ column: 'a.published_at', order: 'desc' }, { column: 'a.id', order: 'desc' }])
+              .limit(4 - rows.length)
+          );
+          rows = rows.concat(extra);
+        }
       }
     }
 
@@ -313,7 +335,7 @@ router.get('/related/:id', async (req, res) => {
           .where('a.status', 'published')
           .whereNot('a.id', id)
           .whereNotIn('a.id', rows.map((r) => r.id))
-          .orderBy('a.published_at', 'desc')
+          .orderBy([{ column: 'a.published_at', order: 'desc' }, { column: 'a.id', order: 'desc' }])
           .limit(4 - rows.length)
       );
       rows = rows.concat(extra);
@@ -361,7 +383,7 @@ router.get('/archive', async (req, res) => {
   try {
     const rows = await db('articles')
       .where('status', 'published')
-      .orderBy('published_at', 'desc')
+      .orderBy([{ column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }])
       .select('id', 'title', 'slug', 'published_at', 'views');
     const groups = {};
     for (const r of rows) {
@@ -402,3 +424,4 @@ router.post('/:id/like', async (req, res) => {
 module.exports = router;
 module.exports.canLike = canLike;
 module.exports.LIKE_WINDOW = LIKE_WINDOW;
+module.exports.shouldCountView = shouldCountView;

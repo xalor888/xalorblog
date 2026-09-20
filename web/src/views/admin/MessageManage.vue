@@ -9,6 +9,15 @@
         <el-radio-button value="rejected">已拒绝</el-radio-button>
       </el-radio-group>
       <el-checkbox v-model="aiOnly" class="ai-filter" @change="load">仅看 AI 标记</el-checkbox>
+      <el-input
+        v-model="keyword"
+        placeholder="搜索昵称/内容"
+        size="small"
+        clearable
+        style="width: 200px"
+        @keyup.enter="load(1)"
+        @clear="load(1)"
+      />
       <el-button size="small" plain :loading="exporting" @click="exportCsv">
         <XIcon name="Download" :size="13" /> 导出 CSV
       </el-button>
@@ -100,6 +109,7 @@
         placeholder="写下你的回复…"
       />
       <template #footer>
+        <el-button v-if="replyForm.hasExisting" type="danger" plain :loading="replying" @click="clearReply">清空回复</el-button>
         <el-button @click="replyDialog = false">取消</el-button>
         <el-button type="primary" :loading="replying" @click="submitReply">发布回复</el-button>
       </template>
@@ -124,6 +134,7 @@ const list = ref([]);
 const loading = ref(false);
 const status = ref('all');
 const aiOnly = ref(false);
+const keyword = ref('');
 const page = ref(1);
 const pageSize = 20;
 const total = ref(0);
@@ -144,6 +155,7 @@ async function load(p = page.value) {
       pageSize,
       status: status.value,
       ai_only: aiOnly.value ? '1' : undefined,
+      keyword: keyword.value.trim() || undefined,
     });
     list.value = res.list;
     total.value = res.pagination.total;
@@ -218,6 +230,7 @@ async function exportCsv() {
     const params = new URLSearchParams();
     if (status.value !== 'all') params.set('status', status.value);
     if (aiOnly.value) params.set('ai_only', '1');
+    if (keyword.value.trim()) params.set('keyword', keyword.value.trim());
     const qs = params.toString();
     const resp = await signedFetch(`/api/${key}/messages/admin/export${qs ? `?${qs}` : ''}`);
     if (!resp.ok) {
@@ -257,10 +270,10 @@ async function remove(row) {
 
 // ---------- 站长回复 ----------
 const replyDialog = ref(false);
-const replyForm = ref({ id: null, content: '' });
+const replyForm = ref({ id: null, content: '', hasExisting: false });
 
 function openReply(row) {
-  replyForm.value = { id: row.id, content: row.reply || '' };
+  replyForm.value = { id: row.id, content: row.reply || '', hasExisting: !!row.reply };
   replyDialog.value = true;
 }
 
@@ -283,6 +296,29 @@ async function submitReply() {
   }
 }
 
+async function clearReply() {
+  try {
+    await ElMessageBox.confirm('确定清空此留言的站长回复吗？', '清空确认', {
+      type: 'warning',
+      confirmButtonText: '确定清空',
+      cancelButtonText: '取消',
+    });
+  } catch (e) {
+    return;
+  }
+  replying.value = true;
+  try {
+    await messageApi.reply(replyForm.value.id, '');
+    ElMessage.success('回复已清空');
+    replyDialog.value = false;
+    load();
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    replying.value = false;
+  }
+}
+
 // ---------- 批量操作 ----------
 const selection = ref([]);
 const batchLoading = ref(false);
@@ -294,7 +330,7 @@ function onSelectionChange(rows) {
 async function batchSetStatus(s) {
   batchLoading.value = true;
   try {
-    await Promise.all(selection.value.map((row) => messageApi.updateStatus(row.id, s)));
+    await messageApi.batchStatus(selection.value.map((r) => r.id), s);
     ElMessage.success(`已${s === 'approved' ? '通过' : '拒绝'} ${selection.value.length} 条留言`);
     selection.value = [];
     load();
@@ -322,13 +358,17 @@ async function batchReAi() {
 }
 
 async function batchRemove() {
-  batchLoading.value = true;
   try {
     await ElMessageBox.confirm(`确定删除选中的 ${selection.value.length} 条留言吗？`, '批量删除', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     });
+  } catch (e) {
+    return;
+  }
+  batchLoading.value = true;
+  try {
     await messageApi.batchDelete(selection.value.map((r) => r.id));
     ElMessage.success(`已删除 ${selection.value.length} 条留言`);
     // 当前页被删空后回退一页
@@ -336,7 +376,7 @@ async function batchRemove() {
     selection.value = [];
     load();
   } catch (e) {
-    /* 取消 */
+    /* 拦截器已提示 */
   } finally {
     batchLoading.value = false;
   }

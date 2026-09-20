@@ -1,11 +1,16 @@
 const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
+const config = require('../config');
 const { getAllSettings } = require('../utils/settings');
 const { plainText } = require('../utils/markdownText');
 const sanitizeHtml = require('sanitize-html');
 
 const router = express.Router();
+
+// 对外 URL 统一走配置前缀（与 share.js 一致）：自定义 API_PREFIX 后
+// RSS 链接/sitemap/robots 里的 /api 硬编码会全部指向死链
+const apiPrefix = config.apiPrefix;
 
 /**
  * 条件发送：ETag + If-None-Match → 304（订阅器高频轮询时显著节省带宽）
@@ -167,16 +172,16 @@ async function robotsTxt(req) {
   const siteUrl = await baseSiteUrl(req);
   return `# Xalor的小站 robots.txt
 User-agent: *
-Disallow: /api/
+Disallow: ${apiPrefix}/
 Disallow: /uploads/
 Disallow: /#/
 
 # 放行：RSS / Sitemap / 分享页（真实 HTML，利于收录与社交预览）
-Allow: /api/rss.xml
-Allow: /api/sitemap.xml
-Allow: /api/share/
+Allow: ${apiPrefix}/rss.xml
+Allow: ${apiPrefix}/sitemap.xml
+Allow: ${apiPrefix}/share/
 
-Sitemap: ${siteUrl}/api/sitemap.xml
+Sitemap: ${siteUrl}${apiPrefix}/sitemap.xml
 `;
 }
 
@@ -214,7 +219,7 @@ router.get('/rss.xml', async (req, res) => {
           const desc = esc(a.summary || plainText(a.content).slice(0, 300));
           // 全文：mdToHtml 做 XML 转义 + URL 绝对化，sanitizeRssHtml 再做白名单清洗
           const full = sanitizeRssHtml(mdToHtml(a.content, siteUrl));
-          const link = `${esc(siteUrl)}/api/share/${a.slug}`;
+          const link = `${esc(siteUrl)}${apiPrefix}/share/${a.slug}`;
           const pubDate = toRfc822(a.published_at);
           const cats = (tagsByArticle[a.id] || [])
             .map((t) => `      <category>${esc(t)}</category>`)
@@ -242,7 +247,7 @@ ${contentPart}
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:media="http://search.yahoo.com/mrss/">
   <channel>
     <title>${esc(settings.site_name)}</title>
-    <link>${esc(siteUrl)}/api/share/</link>
+    <link>${esc(siteUrl)}${apiPrefix}/share/</link>
     <description>${esc(settings.site_desc)}</description>
     <language>zh-cn</language>
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
@@ -299,7 +304,7 @@ router.get('/sitemap.xml', async (req, res) => {
           // lastmod 优先文章更新时间（内容修改后搜索引擎应重新抓取）
           const lastmod = String(a.updated_at || a.published_at).slice(0, 10);
           return `  <url>
-    <loc>${esc(siteUrl)}/api/share/${a.slug}</loc>
+    <loc>${esc(siteUrl)}${apiPrefix}/share/${a.slug}</loc>
     <lastmod>${lastmod}</lastmod>
     <priority>0.6</priority>
   </url>`;

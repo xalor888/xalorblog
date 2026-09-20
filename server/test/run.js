@@ -22,6 +22,20 @@ function resolveMysql() {
 }
 const MYSQL = resolveMysql();
 
+// 套件间的环境隔离 SQL：
+// - ip_bans：持久化封禁跨重启存在
+// - users.totp_*：2FA 套件异常中断会残留 totp_enabled，导致后续登录全要验证码
+// - comments/messages：清掉本机测试留言，避免重复内容检测与列表断言相互污染
+// - links：journey 套件每次申请同一个 https://example.com，links.js 的
+//   「防重复申请」会拦下上一次遗留的 pending 记录（400），必须一并清掉
+const RESET_SQL = [
+  'DELETE FROM ip_bans',
+  'UPDATE users SET totp_secret = NULL, totp_enabled = false',
+  "DELETE FROM comments WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1')",
+  "DELETE FROM messages WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1')",
+  "DELETE FROM links WHERE url = 'https://example.com'",
+].join('; ');
+
 function run(cmd) {
   console.log(`$ ${cmd}`);
   try {
@@ -35,7 +49,7 @@ function run(cmd) {
 async function main() {
   // 1. 清空封禁表 + 重置 TOTP 状态（内存封禁随重启消失；DB 持久化封禁在此清除；
   //    2FA 测试异常中断会残留 totp_enabled，导致后续登录全部需要验证码）
-  run(`"${MYSQL}" -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1'); DELETE FROM messages WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1');"`);
+  run(`"${MYSQL}" -u root xalor_blog -e "${RESET_SQL}"`);
 
   // 2. 重启服务（内存封禁权威）
   if (!process.env.TEST_NO_RESTART) {
@@ -51,14 +65,39 @@ async function main() {
 
 function restartServer() {
   try {
-    const portPid = execSync('netstat -ano | findstr :3000 | findstr LISTENING', { timeout: 5000 })
-      .toString().trim().split(/\s+/).pop();
-    if (portPid && /^\d+$/.test(portPid)) {
-      execSync(`taskkill /F /PID ${portPid}`, { stdio: 'ignore', timeout: 5000 });
+    if (process.platform === 'win32') {
+      const portPid = execSync('netstat -ano | findstr :3000 | findstr LISTENING', { timeout: 5000 })
+        .toString().trim().split(/\s+/).pop();
+      if (portPid && /^\d+$/.test(portPid)) {
+        execSync(`taskkill /F /PID ${portPid}`, { stdio: 'ignore', timeout: 5000 });
+      }
+    } else {
+      const myPid = process.pid;
+      try {
+        const pids = execSync('lsof -ti :3000', { timeout: 5000 }).toString().trim().split(/\s+/);
+        for (const pidStr of pids) {
+          if (pidStr && /^\d+$/.test(pidStr)) {
+            const pid = parseInt(pidStr, 10);
+            if (pid !== myPid && pid !== process.ppid) {
+              try { process.kill(pid, 'SIGKILL'); } catch (e) {}
+            }
+          }
+        }
+      } catch (e) {}
+      // Wait a moment for OS to release the port
+      execSync('sleep 0.5');
     }
   } catch (e) { /* 无旧进程 */ }
   const out = fs.openSync(path.join(serverDir, 'test-run.log'), 'a');
-  const child = spawn('node', ['src/server.js'], { cwd: serverDir, detached: true, stdio: ['ignore', out, out] });
+  const child = spawn('node', ['src/server.js'], {
+    cwd: serverDir,
+    detached: true,
+    // 不要把口令写死在测试脚本里：config.js 会拒绝 <16 字符的 DB_PASSWORD，
+    // 旧的 'xalorblog123' 兜底会让服务启动即崩（表现为连不上 3000 的超时）。
+    // 这里只透传外部环境变量，未设置时由 src/config.js 的 dotenv 读 server/.env。
+    env: { ...process.env },
+    stdio: ['ignore', out, out]
+  });
   child.unref();
   return child.pid;
 }
@@ -86,17 +125,25 @@ async function runTests() {
   // 传参可指定单个文件：node test/run.js security.test.js
   const suites = process.argv[2]
     ? [process.argv[2]]
-    : ['admin.test.js', '2fa.test.js', 'session.test.js', 'lockout.test.js', 'journey.test.js', 'waf.test.js', 'falsePositive.test.js', 'requestGuard.test.js', 'likeGuard.test.js', 'sanitize.test.js', 'feed.test.js', 'scrapeGuard.test.js', 'contentCrypto.test.js', 'security.test.js'];
+    : ['admin.test.js', '2fa.test.js', 'session.test.js', 'lockout.test.js', 'journey.test.js', 'waf.test.js', 'falsePositive.test.js', 'requestGuard.test.js', 'likeGuard.test.js', 'sanitize.test.js', 'feed.test.js', 'scrapeGuard.test.js', 'contentCrypto.test.js', 'browserCrypto.test.js', 'security.test.js'];
   for (const s of suites) {
     // 套件间重启服务：隔离信誉积分/限流窗口/票据内存状态
     // （2fa/lockout 套件会留下认证失败积分与持久化封禁，不隔离会污染后续套件）
-    console.log(`[run] 重置环境（清库 + 重启服务）…`);
-    run(`"${MYSQL}" -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1'); DELETE FROM messages WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1');"`);
-    restartServer();
-    await waitServer();
+    if (!process.argv[2] && s === suites[0]) {
+      // 首个套件前在 main() 已经重置并启动了，无需重复重启
+    } else {
+      console.log(`[run] 重置环境（清库 + 重启服务）…`);
+      run(`"${MYSQL}" -u root xalor_blog -e "${RESET_SQL}"`);
+      restartServer();
+      await waitServer();
+      // 等待服务初始化及配置加载完成
+      await new Promise((r) => setTimeout(r, 500));
+    }
     console.log(`\n========== 运行 ${s} ==========`);
+    const isLongSuite = s === 'security.test.js' || s === '2fa.test.js';
+    const timeoutMs = isLongSuite ? 240000 : 60000;
     try {
-      execSync(`node test/${s}`, { stdio: 'inherit', cwd: serverDir });
+      execSync(`node test/${s}`, { stdio: 'inherit', cwd: serverDir, timeout: timeoutMs });
     } catch (e) {
       // 测试失败退出码 1：保留输出继续下一套件
     }

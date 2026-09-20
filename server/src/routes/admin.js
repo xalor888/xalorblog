@@ -12,7 +12,8 @@ const { ok, fail, notFound } = require('../utils/response');
 const { slugify } = require('../utils/slugify');
 const { authRequired } = require('../middleware/auth');
 const { localDateTimeStr } = require('../utils/datetime');
-const { cleanText, cleanLine, safeUrl, safeEmail, escapeLike, safeCover } = require('../utils/sanitize');
+const { plainText } = require('../utils/markdownText');
+const { cleanText, cleanLine, cleanMarkdown, safeUrl, safeEmail, escapeLike, safeCover } = require('../utils/sanitize');
 const { securityStats, unban } = require('../middleware/ipGuard');
 const { verifyTicket } = require('../middleware/gate');
 const { getConfig, saveConfig, isValidIpOrCidr } = require('../utils/securitySettings');
@@ -43,7 +44,7 @@ router.get('/articles/admin/list', async (req, res) => {
         if (status && status !== 'all') b.where('a.status', status);
         // 分类筛选（整数校验防注入；0=未分类）
         const cid = Number(category_id);
-        if (category_id && category_id === '0') b.whereNull('a.category_id');
+        if (category_id !== undefined && String(category_id).trim() === '0') b.whereNull('a.category_id');
         else if (category_id && Number.isInteger(cid) && cid > 0) b.where('a.category_id', cid);
         if (keyword) {
           const kw = escapeLike(String(keyword).slice(0, 50));
@@ -53,10 +54,10 @@ router.get('/articles/admin/list', async (req, res) => {
     // 排序：latest 默认（创建）/ updated 最近更新 / views 浏览量
     const orderBy =
       sort === 'updated'
-        ? [{ column: 'a.updated_at', order: 'desc' }]
+        ? [{ column: 'a.updated_at', order: 'desc' }, { column: 'a.id', order: 'desc' }]
         : sort === 'views'
-          ? [{ column: 'a.views', order: 'desc' }]
-          : [{ column: 'a.created_at', order: 'desc' }];
+          ? [{ column: 'a.views', order: 'desc' }, { column: 'a.id', order: 'desc' }]
+          : [{ column: 'a.created_at', order: 'desc' }, { column: 'a.id', order: 'desc' }];
 
     const [total, rows] = await Promise.all([
       base.clone().count('a.id as cnt').first(),
@@ -171,7 +172,7 @@ router.post('/articles', async (req, res) => {
   try {
     const { title, content, summary, cover, category_id, tags = [], status = 'draft', is_top = false, allow_comment = true } = req.body;
     const cleanTitle = cleanLine(title, 200);
-    const cleanContent = cleanText(content, 100000);
+    const cleanContent = cleanMarkdown(content, 100000);
     if (!cleanTitle) return fail(res, '标题不能为空');
     if (!cleanContent) return fail(res, '正文不能为空');
     const cleanStatus = status === 'published' ? 'published' : 'draft';
@@ -179,8 +180,12 @@ router.post('/articles', async (req, res) => {
     const cleanAllowComment = toBool(allow_comment, true);
 
     // 边界场景：引用的分类已被删除（如另一管理员同时操作）→ 明确拒绝而非写入孤儿 ID
+    // 非数值（如 "abc"）显式 400：Number() 得 NaN 直接进查询会变成 500
+    let cleanCategoryId = null;
     if (category_id) {
-      const cat = await db('categories').where('id', Number(category_id)).first('id');
+      cleanCategoryId = Number(category_id);
+      if (!Number.isInteger(cleanCategoryId) || cleanCategoryId <= 0) return fail(res, '所选分类不合法');
+      const cat = await db('categories').where('id', cleanCategoryId).first('id');
       if (!cat) return fail(res, '所选分类不存在，请刷新页面后重试');
     }
 
@@ -193,8 +198,8 @@ router.post('/articles', async (req, res) => {
     try {
       [id] = await trx('articles').insert({
         title: cleanTitle, slug, content: cleanContent,
-        summary: cleanText(summary || cleanContent.replace(/[#>*_`~\-\[\]()!]/g, '').slice(0, 150), 500),
-        cover: safeCover(cover), category_id: category_id || null,
+        summary: cleanText(summary || plainText(cleanContent).slice(0, 150), 500),
+        cover: safeCover(cover), category_id: cleanCategoryId,
         status: cleanStatus, is_top: cleanIsTop, allow_comment: cleanAllowComment,
         published_at,
       });
@@ -209,7 +214,7 @@ router.post('/articles', async (req, res) => {
         } else {
           [tagId] = await trx('tags').insert({ name: t, slug: slugify(t, await trx('tags').pluck('slug')) });
         }
-        await trx('article_tags').insert({ article_id: id, tag_id: tagId });
+        await trx('article_tags').insert({ article_id: id, tag_id: tagId }).onConflict(['article_id', 'tag_id']).ignore();
       }
       await trx.commit();
     } catch (e) {
@@ -236,17 +241,26 @@ router.put('/articles/:id', async (req, res) => {
 
     const { title, content, summary, cover, category_id, tags, status, is_top, allow_comment, slug, published_at } = req.body;
     const patch = { updated_at: db.fn.now() };
-    if (title !== undefined) patch.title = cleanLine(title, 200);
-    if (content !== undefined) patch.content = cleanText(content, 100000);
+    if (title !== undefined) {
+      // 空标题显式 400：cleanLine('') 得空串，直接落库触发 notNullable → 500
+      const cleanTitle = cleanLine(title, 200);
+      if (!cleanTitle) return fail(res, '标题不能为空');
+      patch.title = cleanTitle;
+    }
+    if (content !== undefined) patch.content = cleanMarkdown(content, 100000);
     if (summary !== undefined) patch.summary = cleanText(summary, 500);
     if (cover !== undefined) patch.cover = safeCover(cover);
     if (category_id !== undefined) {
-      // 边界场景：引用的分类已被删除 → 明确拒绝而非写入孤儿 ID
+      // 非数值（如 "abc"）显式 400：NaN 进查询会变成 500
+      let cleanCategoryId = null;
       if (category_id) {
-        const cat = await db('categories').where('id', Number(category_id)).first('id');
+        cleanCategoryId = Number(category_id);
+        if (!Number.isInteger(cleanCategoryId) || cleanCategoryId <= 0) return fail(res, '所选分类不合法');
+        // 边界场景：引用的分类已被删除 → 明确拒绝而非写入孤儿 ID
+        const cat = await db('categories').where('id', cleanCategoryId).first('id');
         if (!cat) return fail(res, '所选分类不存在，请刷新页面后重试');
       }
-      patch.category_id = category_id || null;
+      patch.category_id = cleanCategoryId;
     }
     if (is_top !== undefined) patch.is_top = toBool(is_top, row.is_top);
     if (allow_comment !== undefined) patch.allow_comment = toBool(allow_comment, row.allow_comment);
@@ -284,7 +298,7 @@ router.put('/articles/:id', async (req, res) => {
           } else {
             [tagId] = await trx('tags').insert({ name: t, slug: slugify(t, await trx('tags').pluck('slug')) });
           }
-          await trx('article_tags').insert({ article_id: id, tag_id: tagId });
+          await trx('article_tags').insert({ article_id: id, tag_id: tagId }).onConflict(['article_id', 'tag_id']).ignore();
         }
       }
       await trx.commit();
@@ -390,14 +404,23 @@ router.post('/articles/batch-update', async (req, res) => {
     const patch = {};
     if (action === 'publish') {
       // 仅对尚未发布过的文章补 published_at，避免覆盖原始发布时间
-      const needDate = await db('articles')
-        .whereIn('id', safeIds)
-        .whereNull('published_at')
-        .pluck('id');
-      if (needDate.length) {
-        await db('articles').whereIn('id', needDate).update({ published_at: localDateTimeStr() });
+      // 事务保证补时间与状态更新原子生效（中途失败不会留下"有发布时间的草稿"）
+      const trx = await db.transaction();
+      try {
+        const needDate = await trx('articles')
+          .whereIn('id', safeIds)
+          .whereNull('published_at')
+          .pluck('id');
+        if (needDate.length) {
+          await trx('articles').whereIn('id', needDate).update({ published_at: localDateTimeStr() });
+        }
+        await trx('articles').whereIn('id', safeIds).update({ status: 'published', updated_at: db.fn.now() });
+        await trx.commit();
+      } catch (e) {
+        await trx.rollback();
+        throw e;
       }
-      patch.status = 'published';
+      return ok(res, { affected: safeIds.length }, `已发布 ${safeIds.length} 篇文章`);
     }
     else if (action === 'draft') patch.status = 'draft';
     else if (action === 'top') patch.is_top = true;
@@ -597,7 +620,11 @@ router.put('/categories/:id', async (req, res) => {
     if (name !== undefined) patch.name = cleanLine(name, 50);
     if (description !== undefined) patch.description = cleanLine(description, 255);
     if (color !== undefined) patch.color = validHexColor(color);
-    if (slug) patch.slug = slugify(slug, (await db('categories').whereNot('id', id).pluck('slug')));
+    if (slug) {
+      patch.slug = slugify(slug, (await db('categories').whereNot('id', id).pluck('slug')));
+    } else if (name !== undefined && patch.name) {
+      patch.slug = slugify(patch.name, (await db('categories').whereNot('id', id).pluck('slug')));
+    }
     // 排序值（0-100 整数）：前台展示顺序
     if (sort !== undefined) {
       const n = Number(sort);
@@ -674,13 +701,13 @@ router.post('/tags/merge', async (req, res) => {
       const to = await trx('tags').where('id', toId).first('id', 'name');
       if (!from || !to) return; // 任一方不存在：回滚且标记未合并
       const articleIds = await trx('article_tags').where('tag_id', fromId).pluck('article_id');
+      await trx('article_tags').where('tag_id', fromId).del();
       if (articleIds.length) {
         await trx('article_tags')
           .insert(articleIds.map((aid) => ({ article_id: aid, tag_id: toId })))
           .onConflict(['article_id', 'tag_id'])
           .ignore();
       }
-      await trx('article_tags').where('tag_id', fromId).del();
       await trx('tags').where('id', fromId).del();
       merged = { from: from.name, to: to.name };
     });
@@ -729,7 +756,7 @@ router.get('/comments/admin/list', async (req, res) => {
         .select('c.id', 'c.article_id', 'c.parent_id', 'c.nickname', 'c.email', 'c.content',
           'c.status', 'c.likes', 'c.created_at', 'c.ip', 'c.ai_reason', 'a.title as article_title', 'a.slug as article_slug',
           'p.nickname as parent_nickname')
-        .orderBy('c.created_at', 'desc')
+        .orderBy([{ column: 'c.created_at', order: 'desc' }, { column: 'c.id', order: 'desc' }])
         .limit(pageSize).offset((page - 1) * pageSize),
     ]);
     return ok(res, { list: rows, pagination: { page, pageSize, total: Number(total.cnt || 0) } });
@@ -761,7 +788,7 @@ router.get('/comments/admin/export', async (req, res) => {
         }
       });
     const rows = await base
-      .orderBy('c.created_at', 'desc')
+      .orderBy([{ column: 'c.created_at', order: 'desc' }, { column: 'c.id', order: 'desc' }])
       .limit(1000)
       .select('c.id', 'c.nickname', 'c.email', 'c.content', 'c.status', 'c.ai_reason', 'c.created_at', 'a.title as article_title');
     const esc = (s) => {
@@ -811,7 +838,7 @@ router.delete('/comments/:id', async (req, res) => {
   }
 });
 
-/** 批量删除评论（显式清理子回复） */
+/** 批量删除评论（显式清理子回复，事务保护） */
 router.post('/comments/batch-delete', async (req, res) => {
   try {
     const { ids } = req.body || {};
@@ -819,8 +846,10 @@ router.post('/comments/batch-delete', async (req, res) => {
     if (ids.length > 500) return fail(res, '单次最多操作 500 条');
     const safeIds = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
     if (!safeIds.length) return fail(res, '参数不合法');
-    await db('comments').whereIn('parent_id', safeIds).del();
-    await db('comments').whereIn('id', safeIds).del();
+    await db.transaction(async (trx) => {
+      await trx('comments').whereIn('parent_id', safeIds).del();
+      await trx('comments').whereIn('id', safeIds).del();
+    });
     return ok(res, { deleted: safeIds.length }, `已删除 ${safeIds.length} 条评论`);
   } catch (e) {
     return fail(res, '批量删除失败', 500);
@@ -846,10 +875,12 @@ router.post('/comments/batch-status', async (req, res) => {
 /** 全部通过（审核工作流提速）：当前待审评论一键通过（上限 1000，防超大事务） */
 router.post('/comments/approve-all', async (req, res) => {
   try {
-    const affected = await db('comments')
+    const pendingIds = await db('comments')
       .where('status', 'pending')
       .limit(1000)
-      .update({ status: 'approved' });
+      .pluck('id');
+    if (!pendingIds.length) return ok(res, { affected: 0 }, '暂无待审评论');
+    const affected = await db('comments').whereIn('id', pendingIds).update({ status: 'approved' });
     return ok(res, { affected }, `已通过 ${affected} 条待审评论`);
   } catch (e) {
     return fail(res, '操作失败', 500);
@@ -881,11 +912,19 @@ router.post('/comments/:id/re-ai', async (req, res) => {
 /** 后台友链列表 */
 router.get('/links/admin/list', async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, keyword } = req.query;
     const base = db('links').modify((b) => {
       if (status && status !== 'all') b.where('status', status);
+      if (keyword && String(keyword).trim()) {
+        const kw = escapeLike(String(keyword).slice(0, 50));
+        b.where((q) => {
+          q.where('name', 'like', `%${kw}%`)
+            .orWhere('url', 'like', `%${kw}%`)
+            .orWhere('description', 'like', `%${kw}%`);
+        });
+      }
     });
-    const rows = await base.orderBy('created_at', 'desc').select('*');
+    const rows = await base.orderBy([{ column: 'sort', order: 'asc' }, { column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }]).select('*');
     return ok(res, rows);
   } catch (e) {
     return fail(res, '获取友链失败', 500);
@@ -898,14 +937,18 @@ router.put('/links/:id/status', async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
     const { status, sort } = req.body;
-    if (!['pending', 'approved', 'rejected'].includes(status)) return fail(res, '非法状态');
-    const patch = { status };
+    const patch = {};
+    if (status !== undefined) {
+      if (!['pending', 'approved', 'rejected'].includes(status)) return fail(res, '非法状态');
+      patch.status = status;
+    }
     // 排序值钳制（0-100，防恶意写入超范围值破坏排序稳定性）
     if (sort !== undefined) {
       const n = Number(sort);
       if (!Number.isFinite(n)) return fail(res, '排序值不合法');
       patch.sort = Math.min(100, Math.max(0, Math.round(n)));
     }
+    if (Object.keys(patch).length === 0) return fail(res, '无更新内容');
     await db('links').where('id', id).update(patch);
     return ok(res, null, '友链状态已更新');
   } catch (e) {
@@ -922,6 +965,22 @@ router.delete('/links/:id', async (req, res) => {
     return ok(res, null, '友链已删除');
   } catch (e) {
     return fail(res, '删除友链失败', 500);
+  }
+});
+
+/** 批量更新友链状态 */
+router.post('/links/batch-status', async (req, res) => {
+  try {
+    const { ids, status } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length) return fail(res, '请选择要操作的友链');
+    if (!['pending', 'approved', 'rejected'].includes(status)) return fail(res, '非法状态');
+    if (ids.length > 500) return fail(res, '单次最多操作 500 条');
+    const safeIds = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    if (!safeIds.length) return fail(res, '参数不合法');
+    await db('links').whereIn('id', safeIds).update({ status });
+    return ok(res, { updated: safeIds.length }, `已更新 ${safeIds.length} 条友链状态`);
+  } catch (e) {
+    return fail(res, '批量更新失败', 500);
   }
 });
 
@@ -943,10 +1002,12 @@ router.post('/links/batch-delete', async (req, res) => {
 /** 全部通过（友链审核提速）：当前待审友链一键通过（上限 1000） */
 router.post('/links/approve-all', async (req, res) => {
   try {
-    const affected = await db('links')
+    const pendingIds = await db('links')
       .where('status', 'pending')
       .limit(1000)
-      .update({ status: 'approved' });
+      .pluck('id');
+    if (!pendingIds.length) return ok(res, { affected: 0 }, '暂无待审友链');
+    const affected = await db('links').whereIn('id', pendingIds).update({ status: 'approved' });
     return ok(res, { affected }, `已通过 ${affected} 个待审友链`);
   } catch (e) {
     return fail(res, '操作失败', 500);
@@ -960,7 +1021,7 @@ router.get('/messages/admin/list', async (req, res) => {
   try {
     const page = Math.min(10000, Math.max(1, parseInt(req.query.page) || 1)); // page 上限防超大 offset 拖慢查询
     const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 20));
-    const { status, ai_only } = req.query;
+    const { status, ai_only, keyword } = req.query;
     const base = db('messages')
       .modify((b) => {
         if (status && status !== 'all') b.where('status', status);
@@ -968,11 +1029,18 @@ router.get('/messages/admin/list', async (req, res) => {
         if (ai_only === '1') {
           b.whereNotNull('ai_reason').where('ai_reason', '!=', '');
         }
+        if (keyword) {
+          const kw = escapeLike(String(keyword).slice(0, 50));
+          b.where((q) => {
+            q.where('nickname', 'like', `%${kw}%`)
+              .orWhere('content', 'like', `%${kw}%`);
+          });
+        }
       });
     const [total, rows] = await Promise.all([
       base.clone().count('id as cnt').first(),
       base.clone()
-        .orderBy('created_at', 'desc')
+        .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
         .select('*')
         .limit(pageSize).offset((page - 1) * pageSize),
     ]);
@@ -985,15 +1053,22 @@ router.get('/messages/admin/list', async (req, res) => {
 /** 留言全量导出 CSV（审核备份；最近 1000 条，尊重当前筛选；公式注入防护） */
 router.get('/messages/admin/export', async (req, res) => {
   try {
-    const { status, ai_only } = req.query;
+    const { status, ai_only, keyword } = req.query;
     const base = db('messages').modify((b) => {
       if (status && status !== 'all') b.where('status', status);
       if (ai_only === '1') {
         b.whereNotNull('ai_reason').where('ai_reason', '!=', '');
       }
+      if (keyword) {
+        const kw = escapeLike(String(keyword).slice(0, 50));
+        b.where((q) => {
+          q.where('nickname', 'like', `%${kw}%`)
+            .orWhere('content', 'like', `%${kw}%`);
+        });
+      }
     });
     const rows = await base
-      .orderBy('created_at', 'desc')
+      .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
       .limit(1000)
       .select('id', 'nickname', 'email', 'content', 'status', 'ai_reason', 'created_at');
     const esc = (s) => {
@@ -1035,6 +1110,12 @@ router.put('/messages/:id/reply', async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
+    // 契约：显式传 reply='' 表示清空已发布的回复（replied_at 一并置空）
+    if (req.body.reply === '') {
+      const affected = await db('messages').where('id', id).whereNotNull('reply').where('reply', '!=', '').update({ reply: '', replied_at: null });
+      if (!affected) return notFound(res, '留言不存在或暂无回复');
+      return ok(res, null, '回复已清空');
+    }
     const reply = cleanText(req.body.reply, 2000);
     if (!reply) return fail(res, '回复内容不能为空');
     const row = await db('messages').where('id', id).select('nickname', 'email', 'content').first();
@@ -1060,10 +1141,12 @@ router.put('/messages/:id/reply', async (req, res) => {
 /** 全部通过（留言审核提速）：当前待审留言一键通过（上限 1000） */
 router.post('/messages/approve-all', async (req, res) => {
   try {
-    const affected = await db('messages')
+    const pendingIds = await db('messages')
       .where('status', 'pending')
       .limit(1000)
-      .update({ status: 'approved' });
+      .pluck('id');
+    if (!pendingIds.length) return ok(res, { affected: 0 }, '暂无待审留言');
+    const affected = await db('messages').whereIn('id', pendingIds).update({ status: 'approved' });
     return ok(res, { affected }, `已通过 ${affected} 条待审留言`);
   } catch (e) {
     return fail(res, '操作失败', 500);
@@ -1117,6 +1200,22 @@ router.post('/messages/batch-delete', async (req, res) => {
   }
 });
 
+/** 批量修改留言状态（通过/拒绝/待审核） */
+router.post('/messages/batch-status', async (req, res) => {
+  try {
+    const { ids, status } = req.body || {};
+    if (!['approved', 'rejected', 'pending'].includes(status)) return fail(res, '状态不合法');
+    if (!Array.isArray(ids) || !ids.length) return fail(res, '请选择要操作的留言');
+    if (ids.length > 500) return fail(res, '单次最多操作 500 条');
+    const safeIds = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    if (!safeIds.length) return fail(res, '参数不合法');
+    await db('messages').whereIn('id', safeIds).update({ status });
+    return ok(res, { updated: safeIds.length }, `已更新 ${safeIds.length} 条留言状态`);
+  } catch (e) {
+    return fail(res, '批量更新失败', 500);
+  }
+});
+
 // ============ 统计 / 设置 ============
 
 /** 后台仪表盘数据 */
@@ -1137,37 +1236,37 @@ router.get('/stats/dashboard', async (req, res) => {
         .leftJoin('articles as a', function () {
           this.on('a.category_id', 'c.id').andOn('a.status', '=', db.raw('?', ['published']));
         })
-        .groupBy('c.id')
+        .groupBy('c.id', 'c.name')
         .select('c.name')
         .count('a.id as cnt'),
       db('comments').where('status', 'pending').count('* as cnt').first(),
       db('links').where('status', 'pending').count('* as cnt').first(),
       db('messages').where('status', 'pending').count('* as cnt').first(),
       db('articles').count('* as cnt').first(),
-      // 热门文章 TOP 5（按浏览量）
+      // 热门文章 TOP 5（按浏览量，相同按发布时间）
       db('articles')
         .where('status', 'published')
-        .orderBy('views', 'desc')
+        .orderBy([{ column: 'views', order: 'desc' }, { column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }])
         .limit(5)
         .select('id', 'title', 'slug', 'views', 'likes', 'published_at'),
       // 最新动态：最近 5 条评论（含所属文章标题）
       db('comments as cm')
         .leftJoin('articles as a', 'cm.article_id', 'a.id')
-        .orderBy('cm.created_at', 'desc')
+        .orderBy([{ column: 'cm.created_at', order: 'desc' }, { column: 'cm.id', order: 'desc' }])
         .limit(5)
         .select('cm.id', 'cm.nickname', 'cm.content', 'cm.status', 'cm.created_at', 'a.title as article_title'),
       // 最新动态：最近 5 条留言
-      db('messages').orderBy('created_at', 'desc').limit(5).select('id', 'nickname', 'content', 'status', 'created_at'),
+      db('messages').orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }]).limit(5).select('id', 'nickname', 'content', 'status', 'created_at'),
       // 最新动态：最近 5 篇文章
-      db('articles').where('status', 'published').orderBy('published_at', 'desc').limit(5).select('id', 'title', 'slug', 'published_at'),
-      // 互动趋势：近 14 天评论/留言数（按天聚合，图表展示）
+      db('articles').where('status', 'published').orderBy([{ column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }]).limit(5).select('id', 'title', 'slug', 'published_at'),
+      // 互动趋势：近 days 天评论/留言数（按天聚合，图表展示）
       db('comments')
-        .where('created_at', '>=', localDateTimeStr(new Date(Date.now() - 13 * 24 * 3600 * 1000)))
+        .where('created_at', '>=', localDateTimeStr(new Date(Date.now() - (days - 1) * 24 * 3600 * 1000)))
         .groupBy(db.raw('DATE(created_at)'))
         .select(db.raw('DATE(created_at) as day'))
         .count('* as cnt'),
       db('messages')
-        .where('created_at', '>=', localDateTimeStr(new Date(Date.now() - 13 * 24 * 3600 * 1000)))
+        .where('created_at', '>=', localDateTimeStr(new Date(Date.now() - (days - 1) * 24 * 3600 * 1000)))
         .groupBy(db.raw('DATE(created_at)'))
         .select(db.raw('DATE(created_at) as day'))
         .count('* as cnt'),
@@ -1200,14 +1299,14 @@ router.get('/stats/dashboard', async (req, res) => {
         if (uncat > 0) list.push({ name: '未分类', count: uncat });
         return list;
       })(),
-      // 互动趋势：14 天补零对齐
+      // 互动趋势：近 days 天补零对齐
       interact_trend: (() => {
         const cMap = {}; const mMap = {};
         for (const r of commentTrend) cMap[String(r.day || '').slice(0, 10)] = Number(r.cnt);
         for (const r of messageTrend) mMap[String(r.day || '').slice(0, 10)] = Number(r.cnt);
         const out = [];
-        for (let i = 0; i < 14; i++) {
-          const d = localDateStr(new Date(Date.now() - (13 - i) * 24 * 3600 * 1000));
+        for (let i = 0; i < days; i++) {
+          const d = localDateStr(new Date(Date.now() - (days - 1 - i) * 24 * 3600 * 1000));
           out.push({ day: d, comments: cMap[d] || 0, messages: mMap[d] || 0 });
         }
         return out;
@@ -1289,7 +1388,8 @@ router.post('/settings/import', async (req, res) => {
     const entries = {};
     for (const [k, v] of Object.entries(data)) {
       if (!ALLOWED_KEYS.has(k)) continue;
-      if (typeof v === 'string' && v.length > 5000) continue;
+      const maxLen = k === 'about_content' ? 50000 : 5000;
+      if (typeof v === 'string' && v.length > maxLen) continue;
       entries[k] = v;
     }
     if (!Object.keys(entries).length) return fail(res, '备份数据中没有可导入的字段', 400);
@@ -1333,6 +1433,15 @@ router.delete('/audit/logs', async (req, res) => {
   try {
     if (req.body?.confirm !== true) return fail(res, '请确认后重试', 400);
     await db('audit_logs').del();
+    // 写入清空自身的审计留痕，保证清空操作可追溯
+    await db('audit_logs').insert({
+      user_id: req.user?.sub || 0,
+      username: req.user?.username || 'admin',
+      action: 'AUDIT_CLEAR',
+      detail: '清空历史审计日志',
+      ip: req.ip || '',
+      fp: String(req.headers['x-fp'] || '').slice(0, 128),
+    });
     return ok(res, null, '审计日志已清空');
   } catch (e) {
     return fail(res, '清空失败', 500);
@@ -1491,14 +1600,16 @@ async function collectReferencedUploads() {
     if (typeof s !== 'string') return;
     for (const m of s.matchAll(/\/uploads\/([A-Za-z0-9._-]+)/g)) referenced.add(m[1]);
   };
-  const [covers, contents, settings] = await Promise.all([
+  const [covers, contents, settings, linkAvatars] = await Promise.all([
     db('articles').whereNotNull('cover').pluck('cover'),
     db('articles').pluck('content'),
     db('settings').pluck('value'),
+    db('links').whereNotNull('avatar').pluck('avatar'),
   ]);
   covers.forEach(extract);
   contents.forEach(extract);
   settings.forEach(extract);
+  linkAvatars.forEach(extract);
   return referenced;
 }
 
@@ -1600,10 +1711,10 @@ router.get('/security', async (req, res) => {
 });
 
 /** 手动解封 IP */
-router.post('/security/unban', (req, res) => {
+router.post('/security/unban', async (req, res) => {
   const ip = cleanLine(req.body?.ip, 64);
   if (!ip || require('net').isIP(ip) === 0) return fail(res, 'IP 地址格式不正确');
-  unban(ip);
+  await unban(ip);
   return ok(res, null, '已解封');
 });
 
@@ -1611,7 +1722,7 @@ router.post('/security/unban', (req, res) => {
 router.get('/security/audit', async (req, res) => {
   try {
     const rows = await db('audit_logs')
-      .orderBy('created_at', 'desc')
+      .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
       .limit(100)
       .select('id', 'username', 'action', 'detail', 'ip', 'created_at');
     return ok(res, rows);

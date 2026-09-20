@@ -8,9 +8,9 @@
       </el-button>
       <span v-if="editingId" class="edit-mode-tag">编辑模式</span>
       <div class="topbar-right">
-        <span class="save-hint">Ctrl+S 快速保存</span>
-        <el-button @click="saveDraft">保存草稿</el-button>
-        <el-button type="primary" @click="publish">发布</el-button>
+        <span class="save-hint">Ctrl+S 保存 · Ctrl+Enter 发布</span>
+        <el-button :loading="savingDraft" @click="saveDraft">保存草稿</el-button>
+        <el-button type="primary" :loading="publishing" @click="publish">发布</el-button>
       </div>
     </div>
 
@@ -66,12 +66,11 @@
           </div>
         </el-form-item>
         <el-form-item label="文章摘要">
-          <el-input v-model="form.summary" type="textarea" :rows="2" maxlength="500" show-word-limit
-            placeholder="留空则自动截取正文前 150 字">
-            <template #append>
-              <el-button :disabled="!form.content" @click="autoSummary" title="从正文提取前 150 字">自动生成</el-button>
-            </template>
-          </el-input>
+          <div class="summary-field">
+            <el-input v-model="form.summary" type="textarea" :rows="2" maxlength="500" show-word-limit
+              placeholder="留空则自动截取正文前 150 字" />
+            <el-button size="small" plain class="auto-summary-btn" :disabled="!form.content" @click="autoSummary" title="从正文提取前 150 字">自动生成</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="其他选项">
           <div class="option-row">
@@ -136,8 +135,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, computed, onMounted, onUnmounted, watch, watchEffect, nextTick } from 'vue';
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { articleApi, categoryApi, tagApi, uploadApi } from '@/api';
@@ -154,6 +153,12 @@ const route = useRoute();
 const router = useRouter();
 
 const editingId = computed(() => route.params.id || null);
+
+watchEffect(() => {
+  const mode = editingId.value ? '编辑文章' : '写文章';
+  const title = form.value.title ? `${form.value.title} · ${mode}` : mode;
+  document.title = `${title} · 管理后台`;
+});
 
 function goBack() {
   router.push(adminHref('articles'));
@@ -242,6 +247,8 @@ const mode = ref('write');
 const categories = ref([]);
 const allTags = ref([]); // 已有标签（下拉选择数据源）
 const uploading = ref(false);
+const savingDraft = ref(false);
+const publishing = ref(false);
 // 当前编辑文章的服务端状态（用于发布二次确认：已发布文章直接保存不打扰）
 const articleStatus = ref('');
 const dirty = ref(false);
@@ -319,6 +326,20 @@ function onBeforeUnload(e) {
   e.preventDefault();
   e.returnValue = '';
 }
+
+onBeforeRouteLeave(async () => {
+  if (!dirty.value) return true;
+  try {
+    await ElMessageBox.confirm('当前文章有尚未保存的修改，离开将丢失本次更改，是否确定离开？', '未保存提示', {
+      confirmButtonText: '确定离开',
+      cancelButtonText: '继续编辑',
+      type: 'warning',
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+});
 
 const previewHtml = computed(() => renderMarkdown(form.value.content));
 
@@ -414,7 +435,12 @@ async function save(data) {
 }
 
 async function saveDraft() {
-  await save({ status: 'draft' });
+  savingDraft.value = true;
+  try {
+    await save({ status: 'draft' });
+  } finally {
+    savingDraft.value = false;
+  }
 }
 
 async function publish() {
@@ -430,17 +456,36 @@ async function publish() {
       return; // 取消发布
     }
   }
-  await save({ status: 'published' });
+  publishing.value = true;
+  try {
+    await save({ status: 'published' });
+  } finally {
+    publishing.value = false;
+  }
 }
 
 onMounted(async () => {
-  const cats = await categoryApi.list();
-  categories.value = cats;
+  // 分类列表失败不阻塞编辑器打开（下拉可空，保存时服务端会校验）
+  categoryApi
+    .list()
+    .then((res) => (categories.value = res || []))
+    .catch(() => ElMessage.error('分类列表加载失败'));
   // 已有标签数据源：下拉可筛选选择（allow-create 仍支持输入新标签）
   tagApi.list().then((res) => (allTags.value = res || [])).catch(() => {});
 
   if (editingId.value) {
-    const article = await articleApi.adminDetail(editingId.value);
+    // 加载失败必须显式终止：否则表单保持全空，管理员可能误以为文章内容丢失
+    let article;
+    try {
+      article = await articleApi.adminDetail(editingId.value);
+    } catch (e) {
+      ElMessage.error('文章加载失败，请刷新重试');
+      return;
+    }
+    if (article.content_decrypt_failed) {
+      ElMessage.error('正文安全解密失败，请重新获取通行证或刷新');
+      return;
+    }
     articleStatus.value = article.status || '';
     await assignForm({
       title: article.title || '',
@@ -472,11 +517,14 @@ onUnmounted(() => {
   clearTimeout(autosaveTimer);
 });
 
-/** 编辑器快捷键：Ctrl+S 保存草稿（编辑中不触发浏览器默认保存） */
+/** 编辑器快捷键：Ctrl+S 保存草稿，Ctrl+Enter 发布 */
 function onEditorKeydown(e) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
     e.preventDefault();
-    saveDraft();
+    if (!savingDraft.value && !publishing.value) saveDraft();
+  } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    if (!savingDraft.value && !publishing.value) publish();
   }
 }
 
@@ -633,6 +681,18 @@ watch(form, scheduleAutosave, { deep: true });
 /* 编辑器 */
 .editor-card {
   padding: 0 24px 24px;
+}
+
+.summary-field {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.auto-summary-btn {
+  font-size: 12px;
 }
 
 /* Markdown 快捷工具栏 */

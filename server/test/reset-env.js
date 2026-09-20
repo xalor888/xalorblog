@@ -9,21 +9,41 @@ const path = require('path');
 const fs = require('fs');
 
 const serverDir = path.join(__dirname, '..');
-const MYSQL = 'C:/Program Files/MySQL/MySQL Server 8.4/bin/mysql.exe';
+function resolveMysql() {
+  if (process.env.MYSQL_BIN) return process.env.MYSQL_BIN;
+  try {
+    const which = process.platform === 'win32' ? 'where mysql' : 'command -v mysql';
+    return execSync(which, { timeout: 5000 }).toString().trim().split(/\r?\n/)[0];
+  } catch (e) {
+    return 'mysql';
+  }
+}
+
+const MYSQL = resolveMysql();
 
 try {
-  execSync(`"${MYSQL}" -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip = '::1';"`, { timeout: 15000 });
-  console.log('[reset] 已清空封禁/TOTP/测试评论');
+  execSync(`"${MYSQL}" -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip = '::1'; DELETE FROM links WHERE url = 'https://example.com';"`, { timeout: 15000 });
+  console.log('[reset] 已清空封禁/TOTP/测试评论/测试友链');
 } catch (e) {
   console.error('[reset] 清理失败:', e.message.split('\n')[0]);
 }
 
 try {
-  const pid = execSync('netstat -ano | findstr :3000 | findstr LISTENING', { timeout: 5000 })
-    .toString().trim().split(/\s+/).pop();
-  if (pid && /^\d+$/.test(pid)) {
-    execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 5000 });
-    console.log('[reset] 已停止旧服务 pid=' + pid);
+  if (process.platform === 'win32') {
+    const pid = execSync('netstat -ano | findstr :3000 | findstr LISTENING', { timeout: 5000 })
+      .toString().trim().split(/\s+/).pop();
+    if (pid && /^\d+$/.test(pid)) {
+      execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 5000 });
+      console.log('[reset] 已停止旧服务 pid=' + pid);
+    }
+  } else {
+    const pids = execSync('lsof -ti :3000', { timeout: 5000 }).toString().trim().split(/\s+/);
+    for (const pid of pids) {
+      if (pid && /^\d+$/.test(pid)) {
+        try { process.kill(parseInt(pid, 10), 'SIGKILL'); } catch (e) {}
+        console.log('[reset] 已停止旧服务 pid=' + pid);
+      }
+    }
   }
 } catch (e) { /* 无旧进程 */ }
 

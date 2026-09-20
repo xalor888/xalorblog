@@ -87,12 +87,19 @@
 
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import { articleApi } from '@/api';
 import { formatDate } from '@/utils/format';
+import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 
 const router = useRouter();
+const route = useRoute();
+
+// 路由变化时自动关闭搜索浮层
+watch(() => route.fullPath, () => {
+  if (open.value) close();
+});
 
 const open = ref(false);
 const keyword = ref('');
@@ -196,11 +203,13 @@ function openSearch() {
   // 记录触发元素，关闭后恢复焦点（可访问性）
   lastFocused = document.activeElement;
   open.value = true;
+  lockBodyScroll();
   activeIndex.value = 0;
   nextTick(() => inputRef.value?.focus());
 }
 
 function close() {
+  if (open.value) unlockBodyScroll();
   open.value = false;
   keyword.value = '';
   results.value = [];
@@ -288,9 +297,11 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (open.value) unlockBodyScroll();
   document.removeEventListener('keydown', onKeydown);
   document.removeEventListener('keydown', onTabTrap);
   window.removeEventListener('xalor-open-search', openSearch);
+  clearTimeout(debounceTimer); // 卸载后 300ms 内不再触发一次多余的搜索请求
 });
 </script>
 

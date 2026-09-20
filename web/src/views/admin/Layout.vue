@@ -82,6 +82,7 @@
           </transition>
         </router-view>
       </main>
+      <ShortcutHelp />
     </div>
   </div>
 </template>
@@ -95,6 +96,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useThemeStore, THEME_COLORS } from '@/stores/theme';
 import { useAdminStore } from '@/stores/admin';
 import { adminHref } from '@/utils/adminPath';
+import ShortcutHelp from '@/components/ui/ShortcutHelp.vue';
 
 const route = useRoute();
 const router = useRouter();

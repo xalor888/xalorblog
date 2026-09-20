@@ -1,19 +1,31 @@
 <template>
   <div class="category-manage">
-    <!-- 新建分类 -->
+    <!-- 新建分类与过滤 -->
     <div class="create-card card">
       <h3 class="card-title">新建分类</h3>
       <div class="create-row">
-        <el-input v-model="newCat.name" placeholder="分类名称 *" maxlength="50" />
-        <el-input v-model="newCat.description" placeholder="一句话描述" maxlength="255" />
+        <el-input v-model="newCat.name" placeholder="分类名称 *" maxlength="50" @keyup.enter="create" />
+        <el-input v-model="newCat.description" placeholder="一句话描述" maxlength="255" @keyup.enter="create" />
         <el-color-picker v-model="newCat.color" :predefine="PREDEFINED_COLORS" title="主题色" />
         <el-button type="primary" :loading="creating" @click="create">创建</el-button>
+      </div>
+      <div class="filter-row">
+        <el-input
+          v-model="searchKey"
+          placeholder="搜索分类名称/描述..."
+          size="small"
+          clearable
+          style="max-width: 260px"
+        />
+        <el-button size="small" plain :loading="exporting" style="margin-left: auto" @click="exportCsv">
+          <XIcon name="Download" :size="13" /> 导出 CSV
+        </el-button>
       </div>
     </div>
 
     <!-- 分类列表 -->
     <div class="table-card card">
-      <el-table :data="list" v-loading="loading && !list.length" stripe>
+      <el-table :data="filteredList" v-loading="loading && !list.length" stripe>
         <el-table-column label="名称" min-width="160">
           <template #default="{ row }">
             <div class="name-cell">
@@ -62,27 +74,37 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveEdit">保存</el-button>
+        <el-button type="primary" :loading="saveLoading" @click="saveEdit">保存</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import XIcon from '@/components/ui/XIcon.vue';
 import { categoryApi } from '@/api';
 
 const PREDEFINED_COLORS = ['#e4573d', '#c9900f', '#217a5e', '#2f6fb3', '#c24b5e', '#6d5bb8', '#0f8f8f', '#8b5fb0'];
 
 const list = ref([]);
+const searchKey = ref('');
 const loading = ref(false);
 const creating = ref(false);
+const exporting = ref(false);
 const dialogVisible = ref(false);
+const saveLoading = ref(false);
 
 const newCat = ref({ name: '', description: '', color: '#e4573d' });
 const editForm = ref({});
 let editingId = null;
+
+const filteredList = computed(() => {
+  const kw = searchKey.value.trim().toLowerCase();
+  if (!kw) return list.value;
+  return list.value.filter((c) => (c.name && c.name.toLowerCase().includes(kw)) || (c.description && c.description.toLowerCase().includes(kw)));
+});
 
 async function load() {
   loading.value = true;
@@ -126,6 +148,7 @@ async function updateSort(row, sort) {
 }
 
 async function saveEdit() {
+  saveLoading.value = true;
   try {
     await categoryApi.update(editingId, editForm.value);
     ElMessage.success('保存成功');
@@ -133,6 +156,8 @@ async function saveEdit() {
     load();
   } catch (e) {
     /* 拦截器已提示 */
+  } finally {
+    saveLoading.value = false;
   }
 }
 
@@ -148,6 +173,29 @@ async function remove(row) {
     load();
   } catch (e) {
     /* 取消 */
+  }
+}
+
+function exportCsv() {
+  if (!list.value.length) return ElMessage.info('暂无分类可导出');
+  exporting.value = true;
+  try {
+    const esc = (s) => `"${String(s ?? '').replace(/"/g, '""').replace(/^[=+\-@\t\r]/, "'$&")}"`;
+    const rows = [
+      ['ID', '分类名称', 'Slug', '主题色', '文章数', '描述'],
+      ...filteredList.value.map((c) => [c.id, c.name, c.slug, c.color, c.article_count || 0, c.description || ''])
+    ];
+    const csv = '\uFEFF' + rows.map((r) => r.map(esc).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `categories-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success('分类列表已导出');
+  } finally {
+    exporting.value = false;
   }
 }
 
@@ -175,6 +223,11 @@ onMounted(load);
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.filter-row {
+  margin-top: 12px;
+  display: flex;
 }
 
 .table-card {

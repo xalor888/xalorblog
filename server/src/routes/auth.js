@@ -41,10 +41,10 @@ function passwordPolicy(password, username = '') {
 }
 
 // 登录事件审计（成功/失败均入库，供安全中心追溯）
-async function logAuditEvent(username, action, detail, ip, fp) {
+async function logAuditEvent(username, action, detail, ip, fp, userId = 0) {
   try {
     await db('audit_logs').insert({
-      user_id: 0,
+      user_id: Number(userId || 0),
       username: String(username || 'unknown').slice(0, 50),
       action: `AUTH ${action}`.slice(0, 120),
       detail: String(detail || '').slice(0, 200),
@@ -218,7 +218,7 @@ router.post('/login', async (req, res) => {
     try {
       isDefaultPwd = await bcrypt.compare(DEFAULT_PASSWORD, user.password);
     } catch (e) { /* 忽略 */ }
-    logAuditEvent(cleanUser, 'LOGIN_OK', '登录成功', ip, req.headers['x-fp']);
+    logAuditEvent(cleanUser, 'LOGIN_OK', '登录成功', ip, req.headers['x-fp'], user.id);
     return ok(res, {
       token,
       is_default_pwd: isDefaultPwd,
@@ -281,7 +281,7 @@ router.post('/logout', authRequired, async (req, res) => {
 router.post('/logout-all', authRequired, async (req, res) => {
   try {
     const revoked = await revokeUserSessions(req.user.sub, { exceptJti: req.jti });
-    logAuditEvent(req.user.username, 'LOGOUT_ALL', `已撤销 ${revoked} 个其他会话`, req.ip, req.headers['x-fp']);
+    logAuditEvent(req.user.username, 'LOGOUT_ALL', `已撤销 ${revoked} 个其他会话`, req.ip, req.headers['x-fp'], req.user.sub);
     return ok(res, { revoked }, '已退出其他设备');
   } catch (e) {
     return fail(res, '操作失败', 500);
@@ -302,7 +302,7 @@ router.put('/password', authRequired, async (req, res) => {
     if (policyMsg) return fail(res, policyMsg, 400);
     const hash = await bcrypt.hash(newPassword, 12);
     await updateSecurityStateAndRevoke(user.id, { password: hash });
-    logAuditEvent(user.username, 'CHANGE_PASSWORD', '修改密码', req.ip, req.headers['x-fp']);
+    logAuditEvent(user.username, 'CHANGE_PASSWORD', '修改密码', req.ip, req.headers['x-fp'], user.id);
     return ok(res, { relogin_required: true }, '密码修改成功，请重新登录');
   } catch (e) {
     return fail(res, '修改密码失败', 500);
@@ -338,7 +338,7 @@ router.post('/2fa/setup', authRequired, async (req, res) => {
     // setup 只写入待验证密钥，尚未改变启用状态，因此保留当前会话，
     // 让客户端能紧接着调用 verify；verify 成功后才事务化撤销全部会话。
     await db('users').where('id', req.user.sub).update({ totp_secret: secret, totp_enabled: false });
-    logAuditEvent(req.user.username, '2FA_SETUP', '生成两步验证密钥', req.ip, req.headers['x-fp']);
+    logAuditEvent(req.user.username, '2FA_SETUP', '生成两步验证密钥', req.ip, req.headers['x-fp'], req.user.sub);
     return ok(res, {
       secret,
       uri: otpauthUri(secret, String(req.user.username || 'admin')),
@@ -360,7 +360,7 @@ router.post('/2fa/verify', authRequired, async (req, res) => {
       return fail(res, '验证码错误', 400);
     }
     await updateSecurityStateAndRevoke(user.id, { totp_enabled: true });
-    logAuditEvent(req.user.username, '2FA_ENABLE', '启用两步验证', req.ip, req.headers['x-fp']);
+    logAuditEvent(req.user.username, '2FA_ENABLE', '启用两步验证', req.ip, req.headers['x-fp'], user.id);
     return ok(res, { relogin_required: true }, '两步验证已启用，请重新登录');
   } catch (e) {
     return fail(res, '启用失败', 500);
@@ -379,7 +379,7 @@ router.post('/2fa/disable', authRequired, async (req, res) => {
       return fail(res, '验证码错误', 400);
     }
     await updateSecurityStateAndRevoke(user.id, { totp_secret: null, totp_enabled: false });
-    logAuditEvent(req.user.username, '2FA_DISABLE', '关闭两步验证', req.ip, req.headers['x-fp']);
+    logAuditEvent(req.user.username, '2FA_DISABLE', '关闭两步验证', req.ip, req.headers['x-fp'], user.id);
     return ok(res, { relogin_required: true }, '两步验证已关闭，请重新登录');
   } catch (e) {
     return fail(res, '关闭失败', 500);

@@ -92,4 +92,30 @@ function safeCover(input) {
   return safeUrl(v, 500);
 }
 
-module.exports = { cleanText, cleanLine, safeUrl, safeEmail, escapeLike, safeCover };
+/* 文章正文中永远不应落库的可执行/嵌入标签（连同内容一起丢弃） */
+const MARKDOWN_BAD_TAGS = ['script', 'iframe', 'object', 'embed', 'applet', 'style'];
+
+/**
+ * 清洗 Markdown 文章内容：
+ * 保留 Markdown 语法与一般 HTML 标签（展示层再由前端 DOMPurify 严格净化），
+ * 但剔除高危可执行标签（<script>, <iframe>, <object>, <embed>, <applet>, <style>）。
+ *
+ * 注意：sanitize-html 的 allowedTags:false 是「全部放行」，光靠 nonTextTags 并不
+ * 会删掉这些标签（它只对「未被允许」的标签生效）。必须叠加 exclusiveFilter 才能
+ * 真正丢弃整个标签帧——否则 <script> 会原样入库。
+ */
+function cleanMarkdown(input, maxLen = 100000) {
+  if (typeof input !== 'string') return '';
+  const cleaned = sanitizeHtml(input, {
+    allowedTags: false, // 允许一般 HTML 标签（如 <div>, <span>, <table>, <img>, <details> 等）
+    allowedAttributes: false, // 由前端 DOMPurify 负责展示层属性过滤
+    disallowedTagsMode: 'discard',
+    nonTextTags: MARKDOWN_BAD_TAGS,
+    // 正文里出现 <style> 之类的裸标签时，仍由 exclusiveFilter 统一丢弃
+    allowVulnerableTags: true,
+    exclusiveFilter: (frame) => MARKDOWN_BAD_TAGS.includes(frame.tag),
+  });
+  return cleaned.trim().slice(0, maxLen);
+}
+
+module.exports = { cleanText, cleanLine, cleanMarkdown, safeUrl, safeEmail, escapeLike, safeCover };

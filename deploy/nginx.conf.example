@@ -29,6 +29,15 @@ server {
         proxy_set_header Connection "";
     }
 
+    # 搜索引擎与通用订阅器标准根路径，直接反代给后端
+    location ~* ^/(robots\.txt|sitemap\.xml|rss\.xml|health)$ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     # 上传文件由后端执行访问控制与安全响应头。
     location ^~ /uploads/ {
         proxy_pass http://127.0.0.1:3000;

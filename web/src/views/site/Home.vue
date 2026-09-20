@@ -13,7 +13,7 @@
           <span>{{ typed }}</span><span class="type-caret"></span>
         </p>
         <div class="hero-actions">
-          <a class="hero-btn primary" :href="githubHref" target="_blank" rel="noopener">
+          <a class="hero-btn primary" :href="githubHref" target="_blank" rel="noopener noreferrer">
             <XIcon name="Github" :size="18" /> GitHub
           </a>
           <a class="hero-btn" :href="'mailto:' + mailHref">
@@ -146,7 +146,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, watchEffect, onMounted, onUnmounted } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import ArticleCard from '@/components/site/ArticleCard.vue';
 import SkeletonList from '@/components/ui/SkeletonList.vue';
@@ -155,6 +155,12 @@ import { useSiteStore } from '@/stores/site';
 import { formatNumber } from '@/utils/format';
 
 const site = useSiteStore();
+
+watchEffect(() => {
+  const name = site.settings.site_name || 'Xalor的小站';
+  const slogan = site.settings.site_slogan;
+  document.title = slogan ? `${name} · ${slogan}` : name;
+});
 const heroBg = ref(null);
 const articles = ref([]);
 const categories = ref([]);
@@ -348,7 +354,8 @@ function onHeroScroll() {
   hero.style.transform = `scale(1.08) translateY(${y * 0.18}px)`;
 }
 
-watch(() => site.stats.total_uv, () => runCountUps());
+// 数字动画只在 onMounted 的 runCountUps() 触发一次：stats 仅在 site.init() 里变化，
+// 再挂 watch 会与手动调用并发跑两遍动画（数字来回跳动）
 
 onMounted(async () => {
   await site.init();

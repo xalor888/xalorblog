@@ -166,6 +166,7 @@ app.use(
     },
     methods: ALLOWED_METHODS,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Pass', 'X-Fp', 'X-Sig', 'X-Timestamp', 'X-Nonce', 'X-Enc', 'X-Hp-Field'],
+    exposedHeaders: ['Content-Disposition'],
     maxAge: 86400,
   })
 );
@@ -308,6 +309,12 @@ app.get('/robots.txt', async (req, res) => {
   }
 });
 
+// sitemap.xml 与 rss.xml 根路径代理（搜索引擎与外部订阅器标准位置）
+app.get(['/sitemap.xml', '/rss.xml'], (req, res, next) => {
+  req.url = `${api}${req.path}`;
+  app._router.handle(req, res, next);
+});
+
 // security.txt（安全研究人员联系信息，行业标准位置）
 app.get('/.well-known/security.txt', async (req, res) => {
   const { getAllSettings } = require('./utils/settings');
@@ -330,6 +337,8 @@ app.get('/.well-known/security.txt', async (req, res) => {
   ].join('\n'));
 });
 
+// 根路径健康探针（供云厂商/反代直接探活 /health、/health/live、/health/ready）
+app.use('/health', healthRouter);
 app.use(`${api}/health`, healthRouter);
 app.use(`${api}/anti`, antiRouter);
 app.use(`${api}/auth`, strictLimiter, authRouter);

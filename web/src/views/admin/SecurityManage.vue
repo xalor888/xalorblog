@@ -275,9 +275,11 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { securityApi, authApi } from '@/api';
+import { formatDateTime } from '@/utils/format';
 
 const stats = ref({ banned: [], events: [], event_total: 0, type_counts: {} });
 const events = computed(() => stats.value.events || []);
@@ -285,8 +287,6 @@ const sessions = ref([]);
 const auditLogs = ref([]);
 const passValid = ref(false);
 const loadError = ref(false);
-
-let timer = null;
 
 const TYPE_LABELS = {
   waf: 'WAF 拦截',
@@ -395,9 +395,7 @@ function formatRemain(seconds) {
 }
 
 function formatTime(ts) {
-  if (!ts) return '—';
-  const d = new Date(String(ts).replace(' ', 'T'));
-  return d.toLocaleString('zh-CN', { hour12: false });
+  return formatDateTime(ts);
 }
 
 async function revoke(jti) {
@@ -530,14 +528,40 @@ async function runTest() {
   }
 }
 
+onBeforeRouteLeave(async () => {
+  if (!cfgDirty.value) return true;
+  try {
+    await ElMessageBox.confirm('WAF 防护配置有未保存的修改，离开将丢失本次更改，是否确定离开？', '未保存提示', {
+      confirmButtonText: '确定离开',
+      cancelButtonText: '继续编辑',
+      type: 'warning',
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+});
+
+let timer = null;
+
+function onVisibilityChange() {
+  if (!document.hidden) {
+    refresh();
+  }
+}
+
 onMounted(() => {
   refresh();
   loadConfig();
-  timer = setInterval(refresh, 5000);
+  timer = setInterval(() => {
+    if (!document.hidden) refresh();
+  }, 5000);
+  document.addEventListener('visibilitychange', onVisibilityChange);
 });
 
 onUnmounted(() => {
   clearInterval(timer);
+  document.removeEventListener('visibilitychange', onVisibilityChange);
 });
 </script>
 

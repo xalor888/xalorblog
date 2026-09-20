@@ -50,18 +50,19 @@ function escapeHtml(s) {
 }
 
 // 自定义渲染器：代码块高亮 + 语言标签 + 复制按钮
+// marked v13+ 渲染器改为接收 token 对象（{ text, lang, escaped }），不再用位置参数
 const renderer = new marked.Renderer();
-renderer.code = (code, infostring) => {
-  const lang = (infostring || '').split(/\s+/)[0] || 'text';
+renderer.code = ({ text, lang: langInfo }) => {
+  const lang = (langInfo || '').split(/\s+/)[0] || 'text';
   let body;
   if (lang !== 'text' && hljs.getLanguage(lang)) {
     try {
-      body = hljs.highlight(code, { language: lang }).value;
+      body = hljs.highlight(text, { language: lang }).value;
     } catch (e) {
-      body = escapeHtml(code);
+      body = escapeHtml(text);
     }
   } else {
-    body = escapeHtml(code);
+    body = escapeHtml(text);
   }
   return `<div class="code-block">
   <div class="code-head">
@@ -82,7 +83,7 @@ marked.use({ renderer });
  * @returns {string}
  */
 export function renderMarkdown(md = '') {
-  const raw = marked.parse(md);
+  const raw = marked.parse(md, { breaks: true, gfm: true });
   return DOMPurify.sanitize(raw);
 }
 

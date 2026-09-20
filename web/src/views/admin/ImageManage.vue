@@ -3,9 +3,16 @@
     <div class="page-head">
       <div>
         <h2>图片管理</h2>
-        <p class="sub">共 {{ files.length }} 个上传文件 · 被引用的图片禁止直接删除</p>
+        <p class="sub">共 {{ files.length }} 个上传文件<span v-if="searchKey"> · 筛选后 {{ filteredFiles.length }} 个</span> · 被引用的图片禁止直接删除</p>
       </div>
       <div class="head-actions">
+        <el-input
+          v-model="searchKey"
+          placeholder="搜索文件名..."
+          size="small"
+          clearable
+          style="width: 180px"
+        />
         <el-button type="primary" :loading="uploading" @click="$refs.uploadInput?.click()">
           <XIcon name="Upload" :size="14" /> 上传图片
         </el-button>
@@ -43,11 +50,11 @@
     </div>
 
     <!-- 本地分页：500 条上限下避免一次性渲染全部 DOM -->
-    <div v-if="files.length > PAGE_SIZE" class="img-pagination">
+    <div v-if="filteredFiles.length > PAGE_SIZE" class="img-pagination">
       <el-pagination
         v-model:current-page="imgPage"
         :page-size="PAGE_SIZE"
-        :total="files.length"
+        :total="filteredFiles.length"
         layout="prev, pager, next"
         background
         small
@@ -66,18 +73,27 @@ import { ref, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { imagesApi, uploadApi } from '@/api';
+import { formatDateTime } from '@/utils/format';
 
 const files = ref([]);
+const searchKey = ref('');
 const loading = ref(false);
 const cleaning = ref(false);
 const uploading = ref(false);
 const previewOpen = ref(false);
 const previewName = ref('');
 
+// 本地搜索过滤
+const filteredFiles = computed(() => {
+  const kw = searchKey.value.trim().toLowerCase();
+  if (!kw) return files.value;
+  return files.value.filter((f) => f.name.toLowerCase().includes(kw));
+});
+
 // 本地分页（每页 60，超出才显示分页器）
 const PAGE_SIZE = 60;
 const imgPage = ref(1);
-const visibleFiles = computed(() => files.value.slice((imgPage.value - 1) * PAGE_SIZE, imgPage.value * PAGE_SIZE));
+const visibleFiles = computed(() => filteredFiles.value.slice((imgPage.value - 1) * PAGE_SIZE, imgPage.value * PAGE_SIZE));
 
 /** 页面上传：上传成功后刷新列表（服务端随机重命名 + magic bytes/EXIF 校验） */
 async function uploadOne(e) {
@@ -103,7 +119,9 @@ function load() {
   imagesApi
     .list()
     .then((res) => {
-      files.value = (res.data || []).map((f) => ({ ...f, used: false }));
+      // 拦截器已解包：res 即数组（res.data 恒为 undefined，会得到空列表）
+      // used 保留后端引用标记（强制 false 会让"引用中"徽章与删除禁用全部失效）
+      files.value = (Array.isArray(res) ? res : []).map((f) => ({ ...f, used: !!f.used }));
     })
     .catch(() => ElMessage.error('加载图片列表失败'))
     .finally(() => (loading.value = false));
@@ -182,10 +200,7 @@ function formatSize(n) {
 }
 
 function formatTime(ms) {
-  if (!ms) return '';
-  const d = new Date(ms);
-  const p = (x) => String(x).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return formatDateTime(ms);
 }
 
 onMounted(load);

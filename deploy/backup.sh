@@ -29,6 +29,7 @@ DB_NAME="${DB_NAME:-xalor_blog}"
 MYSQLDUMP="${MYSQLDUMP:-}"
 if [ -z "$MYSQLDUMP" ]; then
   for cand in mysqldump \
+    "/opt/homebrew/bin/mysqldump" \
     "/c/Program Files/MySQL/MySQL Server 8.4/bin/mysqldump" \
     "/usr/bin/mysqldump" "/usr/local/bin/mysqldump"; do
     if command -v "$cand" >/dev/null 2>&1 || [ -x "$cand" ]; then

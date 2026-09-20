@@ -74,7 +74,8 @@ function buildCommentTree(rows, order = 'asc') {
   const sortByTime = (list) =>
     list.sort((a, b) => {
       const diff = new Date(a.created_at) - new Date(b.created_at);
-      return order === 'desc' ? -diff : diff;
+      if (diff !== 0) return order === 'desc' ? -diff : diff;
+      return order === 'desc' ? b.id - a.id : a.id - b.id;
     });
   const walk = (list) => {
     for (const item of list) {
@@ -93,7 +94,7 @@ router.get('/recent', readLimiter, async (req, res) => {
       .join('articles as a', 'cm.article_id', 'a.id')
       .where('cm.status', 'approved')
       .where('a.status', 'published')
-      .orderBy('cm.created_at', 'desc')
+      .orderBy([{ column: 'cm.created_at', order: 'desc' }, { column: 'cm.id', order: 'desc' }])
       .limit(6)
       .select('cm.id', 'cm.nickname', 'cm.content', 'cm.created_at', 'a.slug as article_slug', 'a.title as article_title');
     return ok(res, rows.map((r) => ({
@@ -155,14 +156,6 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForRe
       return fail(res, spam.reason, 400);
     }
 
-    // 重复内容检测：同一 IP 30 分钟内提交过完全相同的内容 → 拒绝
-    const dup = await db('comments')
-      .where('ip', req.ip || '')
-      .where('content', content.trim())
-      .where('created_at', '>', localDateTimeStr(new Date(Date.now() - 30 * 60 * 1000)))
-      .first('id');
-    if (dup) return fail(res, '内容重复，请勿重复提交', 429);
-
     const article = await db('articles').where('id', numericArticleId).where('status', 'published').select('id', 'allow_comment', 'title').first();
     if (!article) return notFound(res, '文章不存在');
     if (!article.allow_comment) return fail(res, '该文章已关闭评论');
@@ -196,6 +189,16 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForRe
     const cleanWebsite = safeUrl(website, 200);
     if (!cleanNickname) return fail(res, '昵称不能为空');
     if (!cleanContent) return fail(res, '评论内容不能为空');
+
+    // 重复内容检测：同一 IP 30 分钟内提交过完全相同的内容 → 拒绝
+    // 必须与入库值比较：库里存的是清洗后的 cleanContent（sanitizeHtml 会把
+    // & 转义、剥标签、截断 2000 字），拿原始输入查重对这些内容永远不命中
+    const dup = await db('comments')
+      .where('ip', req.ip || '')
+      .where('content', cleanContent)
+      .where('created_at', '>', localDateTimeStr(new Date(Date.now() - 30 * 60 * 1000)))
+      .first('id');
+    if (dup) return fail(res, '内容重复，请勿重复提交', 429);
 
     // 博主昵称保留：匿名访客不能冒充管理员昵称领取“博主”标识
     const admins = await getAdminNicknames();
@@ -245,7 +248,7 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForRe
 
     // 异步通知站长（不阻塞响应；未配置 SMTP 时静默跳过；正文截断防超长邮件）
     const notifyText = cleanContent.length > 300 ? `${cleanContent.slice(0, 300)}…` : cleanContent;
-    sendNotify(`新评论：${cleanNickname}`, `${cleanNickname} 留言：\n\n${notifyText}\n\n时间：${new Date().toLocaleString('zh-CN')}`).catch(() => {});
+    sendNotify(`新评论：${cleanNickname}`, `${cleanNickname} 在《${article.title}》发表评论：\n\n${notifyText}\n\n时间：${new Date().toLocaleString('zh-CN')}`).catch(() => {});
 
     // 回复通知：被回复者留过邮箱则异步通知其有人回复（邮箱仅服务端使用、从不下发前端；
     // 自我回复跳过；send 内部再做格式校验 + CRLF 清洗）

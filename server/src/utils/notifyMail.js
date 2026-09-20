@@ -70,8 +70,9 @@ function safeSubject(s) {
 function send(subject, text, to) {
   return new Promise((resolve) => {
     if (!smtpReady()) return resolve(false);
-    // 收件人：优先自定义（须通过格式校验），否则回退站长邮箱
-    const recipient = validRecipient(to) ? to : cfg.to;
+    // 收件人：优先自定义（须通过格式校验），其次站长邮箱，最后回退 SMTP 用户名
+    let recipient = validRecipient(to) ? to : cfg.to;
+    if (!validRecipient(recipient) && validRecipient(cfg.user)) recipient = cfg.user;
     if (!validRecipient(recipient)) return resolve(false);
 
     const transporter = nodemailer.createTransport({

@@ -124,8 +124,8 @@
             </div>
             <p class="footer-desc">{{ site.settings.site_desc }}</p>
             <div class="footer-social">
-              <a :href="githubHref" target="_blank" rel="noopener" class="social-link" title="GitHub"><XIcon name="Github" :size="16" /></a>
-              <a v-if="site.settings.social_weibo" :href="site.settings.social_weibo" target="_blank" rel="noopener" class="social-link" title="微博"><XIcon name="AtSign" :size="16" /></a>
+              <a :href="githubHref" target="_blank" rel="noopener noreferrer" class="social-link" title="GitHub"><XIcon name="Github" :size="16" /></a>
+              <a v-if="site.settings.social_weibo" :href="site.settings.social_weibo" target="_blank" rel="noopener noreferrer" class="social-link" title="微博"><XIcon name="AtSign" :size="16" /></a>
               <a :href="'mailto:' + mailHref" class="social-link" title="邮箱"><XIcon name="Mail" :size="16" /></a>
               <a href="/api/rss.xml" class="social-link rss-link" title="RSS 订阅"><XIcon name="Rss" :size="16" /></a>
             </div>
@@ -144,7 +144,7 @@
             <router-link to="/links" class="footer-link">友情链接</router-link>
             <router-link to="/about" class="footer-link">关于本站</router-link>
             <router-link to="/bookmarks" class="footer-link">我的收藏</router-link>
-            <a href="/api/rss.xml" class="footer-link" target="_blank" rel="noopener">RSS 订阅</a>
+            <a href="/api/rss.xml" class="footer-link" target="_blank" rel="noopener noreferrer">RSS 订阅</a>
           </div>
 
           <div class="footer-col stats-col">
@@ -164,7 +164,7 @@
               v-if="site.settings.icp"
               :href="'https://beian.miit.gov.cn/'"
               target="_blank"
-              rel="noopener nofollow"
+              rel="noopener noreferrer nofollow"
               class="footer-icp"
               title="工信部备案查询"
             >{{ site.settings.icp }}</a>
@@ -183,7 +183,7 @@
       <button class="tool-btn" title="搜索" @click="openSearch">
         <XIcon name="Search" :size="17" />
       </button>
-      <a class="tool-btn" href="/api/rss.xml" target="_blank" rel="noopener" title="RSS">
+      <a class="tool-btn" href="/api/rss.xml" target="_blank" rel="noopener noreferrer" title="RSS">
         <XIcon name="Rss" :size="17" />
       </a>
       <transition name="pop">
@@ -241,20 +241,26 @@ const announcementClosed = ref(false);
 const ANNOUNCEMENT_KEY = 'xalor_announcement_hidden';
 
 function checkAnnouncement() {
-  const saved = localStorage.getItem(ANNOUNCEMENT_KEY);
+  let saved = '';
+  try {
+    saved = localStorage.getItem(ANNOUNCEMENT_KEY);
+  } catch (e) { /* 隐私模式忽略 */ }
   announcementClosed.value = saved === (site.settings.announcement || '');
 }
 
 // 页脚年份自动跟随当前年份（© 2026 → © 2027）
 const footerText = computed(() => {
   const f = site.settings.footer || '';
-  if (!f) return `© ${new Date().getFullYear()} Xalor的小站`;
+  const name = site.settings.site_name || 'Xalor的小站';
+  if (!f) return `© ${new Date().getFullYear()} ${name}`;
   return f.replace(/©\s*\d{4}/, `© ${new Date().getFullYear()}`);
 });
 
 function closeAnnouncement() {
   announcementClosed.value = true;
-  localStorage.setItem(ANNOUNCEMENT_KEY, site.settings.announcement || '');
+  try {
+    localStorage.setItem(ANNOUNCEMENT_KEY, site.settings.announcement || '');
+  } catch (e) { /* 隐私模式忽略 */ }
 }
 
 // 进度环参数
@@ -288,6 +294,9 @@ const mailHref = computed(() => {
 
 function isActive(item) {
   if (item.exact) return route.path === '/';
+  if (item.to === '/articles') {
+    return route.path === '/articles' || route.path.startsWith('/article/');
+  }
   return route.path.startsWith(item.to);
 }
 

@@ -365,6 +365,12 @@ async function migrate() {
   await ensureIndex('sessions', 'idx_sessions_user_id', ['user_id']);
   // 每次认证按 jti 查会话（高频读路径）
   await ensureIndex('sessions', 'idx_sessions_jti', ['jti']);
+  // 留言板状态筛选与排序
+  await ensureIndex('messages', 'idx_messages_status_created', ['status', 'created_at']);
+  // 友链状态筛选
+  await ensureIndex('links', 'idx_links_status_sort', ['status', 'sort']);
+  // 审计日志按时间与用户筛选
+  await ensureIndex('audit_logs', 'idx_audit_logs_created', ['created_at']);
 
   console.log('[migrate] 所有表已就绪 ✓');
 }

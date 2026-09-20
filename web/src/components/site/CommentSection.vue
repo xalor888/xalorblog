@@ -148,11 +148,15 @@ const loadFailed = ref(false);
 const loading = ref(false);
 const INITIAL_COUNT = 5;
 // 评论排序：asc=最早在前（默认）/ desc=最新在前（记忆偏好）
-const sortOrder = ref(localStorage.getItem('xalor_csort') || 'asc');
+const sortOrder = ref((() => {
+  try { return localStorage.getItem('xalor_csort') || 'asc'; } catch (e) { return 'asc'; }
+})());
 function setSort(order) {
   if (sortOrder.value === order) return;
   sortOrder.value = order;
-  localStorage.setItem('xalor_csort', order);
+  try {
+    localStorage.setItem('xalor_csort', order);
+  } catch (e) { /* 隐私模式忽略 */ }
   load();
 }
 // 昵称可长期记忆；邮箱只保留在当前标签页，旧 localStorage 值会迁移并清理。
@@ -166,7 +170,9 @@ const form = ref({ nickname: savedName, email: savedEmail, website: '', content:
 const formTextarea = ref(null);
 const hpField = ref(getHpField('/comments'));
 // 表情面板折叠（默认收起，表单更紧凑；点开常用后常开）
-const showEmoji = ref(localStorage.getItem('xalor_emoji_open') === '1');
+const showEmoji = ref((() => {
+  try { return localStorage.getItem('xalor_emoji_open') === '1'; } catch (e) { return false; }
+})());
 function toggleEmoji() {
   showEmoji.value = !showEmoji.value;
   try {

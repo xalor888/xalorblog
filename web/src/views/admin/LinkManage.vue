@@ -8,8 +8,20 @@
         <el-radio-button value="approved">已通过</el-radio-button>
         <el-radio-button value="rejected">已拒绝</el-radio-button>
       </el-radio-group>
+      <el-input
+        v-model="keyword"
+        placeholder="搜索名称/网址/简介"
+        size="small"
+        clearable
+        style="width: 200px"
+        @keyup.enter="load"
+        @clear="load"
+      />
       <el-button size="small" type="success" plain :loading="approving" @click="approveAll">
         <XIcon name="Check" :size="13" /> 全部通过
+      </el-button>
+      <el-button size="small" plain :loading="exporting" @click="exportCsv">
+        <XIcon name="Download" :size="13" /> 导出 CSV
       </el-button>
     </div>
 
@@ -25,7 +37,7 @@
                 <span v-else>{{ (row.name || '?').charAt(0).toUpperCase() }}</span>
               </div>
               <div class="site-info">
-                <a :href="row.url" target="_blank" rel="noopener" class="site-name">{{ row.name }}</a>
+                <a :href="row.url" target="_blank" rel="noopener noreferrer" class="site-name">{{ row.name }}</a>
                 <span class="site-url">{{ row.url }}</span>
               </div>
             </div>
@@ -68,6 +80,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import XIcon from '@/components/ui/XIcon.vue';
 import { linkApi } from '@/api';
 import { useAdminStore } from '@/stores/admin';
 
@@ -76,6 +89,7 @@ const adminStore = useAdminStore();
 const list = ref([]);
 const loading = ref(false);
 const status = ref('all');
+const keyword = ref('');
 
 function statusText(s) {
   return { pending: '待审核', approved: '已通过', rejected: '已拒绝' }[s] || s;
@@ -88,7 +102,10 @@ function statusType(s) {
 async function load() {
   loading.value = true;
   try {
-    list.value = await linkApi.adminList({ status: status.value });
+    list.value = await linkApi.adminList({
+      status: status.value,
+      keyword: keyword.value.trim() || undefined,
+    });
   } finally {
     loading.value = false;
   }
@@ -131,6 +148,7 @@ async function remove(row) {
 
 /** 一键全部通过：全部待审友链直接通过（上限 1000），确认后执行 */
 const approving = ref(false);
+const exporting = ref(false);
 async function approveAll() {
   if (approving.value) return;
   try {
@@ -156,6 +174,36 @@ async function approveAll() {
   }
 }
 
+function exportCsv() {
+  if (!list.value.length) return ElMessage.info('当前列表没有可导出的友链');
+  exporting.value = true;
+  try {
+    const esc = (s) => {
+      const str = String(s ?? '');
+      const safe = /^[=+\-@\t\r]/.test(str.trimStart()) ? `'${str}` : str;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
+    const rows = [
+      ['ID', '网站名称', '网站地址', '头像地址', '网站简介', '状态', '排序', '创建时间'].map(esc).join(','),
+      ...list.value.map((l) =>
+        [l.id, l.name, l.url, l.avatar || '', l.description || '', l.status, l.sort, l.created_at].map(esc).join(',')
+      ),
+    ];
+    const blob = new Blob(['\ufeff' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `links-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success(`已导出 ${list.value.length} 条友链`);
+  } catch (e) {
+    ElMessage.error('导出失败');
+  } finally {
+    exporting.value = false;
+  }
+}
+
 // ---------- 批量操作 ----------
 const selection = ref([]);
 const batchLoading = ref(false);
@@ -167,7 +215,7 @@ function onSelectionChange(rows) {
 async function batchSetStatus(s) {
   batchLoading.value = true;
   try {
-    await Promise.all(selection.value.map((row) => linkApi.updateStatus(row.id, { status: s })));
+    await linkApi.batchStatus(selection.value.map((r) => r.id), s);
     ElMessage.success(`已${s === 'approved' ? '通过' : '拒绝'} ${selection.value.length} 条友链`);
     selection.value = [];
     load();
@@ -179,19 +227,23 @@ async function batchSetStatus(s) {
 }
 
 async function batchRemove() {
-  batchLoading.value = true;
   try {
     await ElMessageBox.confirm(`确定删除选中的 ${selection.value.length} 条友链吗？`, '批量删除', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     });
+  } catch (e) {
+    return;
+  }
+  batchLoading.value = true;
+  try {
     await linkApi.batchDelete(selection.value.map((r) => r.id));
     ElMessage.success(`已删除 ${selection.value.length} 条友链`);
     selection.value = [];
     load();
   } catch (e) {
-    /* 取消 */
+    /* 失败提示 */
   } finally {
     batchLoading.value = false;
   }

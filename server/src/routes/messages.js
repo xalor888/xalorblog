@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
     const [total, rows, admins] = await Promise.all([
       base.clone().count('id as cnt').first(),
       base.clone().select('id', 'nickname', 'content', 'reply', 'replied_at', 'created_at')
-        .orderBy('created_at', 'desc')
+        .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
         .limit(pageSize).offset((page - 1) * pageSize),
       getAdminNicknames(),
     ]);
@@ -78,9 +78,10 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForRe
     }
 
     // 重复内容检测：同一 IP 30 分钟内提交过完全相同的内容 → 拒绝
+    // 与入库值（清洗后的 cleanContent）比较，原始输入含 &/< 等时永远查不中
     const dup = await db('messages')
       .where('ip', req.ip || '')
-      .where('content', content.trim())
+      .where('content', cleanContent)
       .where('created_at', '>', localDateTimeStr(new Date(Date.now() - 30 * 60 * 1000)))
       .first('id');
     if (dup) return fail(res, '内容重复，请勿重复提交', 429);

@@ -70,6 +70,7 @@
 import { ref, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Search } from '@element-plus/icons-vue';
+import XIcon from '@/components/ui/XIcon.vue';
 import { auditApi } from '@/api';
 import { formatDateTime } from '@/utils/format';
 import { getCachedAdminPath } from '@/utils/adminPath';
@@ -102,13 +103,14 @@ async function load(p = page.value) {
 
 /** 方法着色：GET=绿 / POST=蓝 / PUT=橙 / DELETE=红 */
 function methodClass(action) {
-  const m = String(action || '').split(' ')[0];
+  const m = String(action || '').split(' ')[0].toLowerCase();
   return {
-    get: m === 'GET',
-    post: m === 'POST',
-    put: m === 'PUT',
-    del: m === 'DELETE',
-  }[m.toLowerCase()] || '';
+    get: m === 'get',
+    post: m === 'post',
+    put: m === 'put',
+    del: m === 'delete',
+    auth: m === 'auth' || m === 'audit_clear',
+  }[m] || '';
 }
 
 async function clearLogs() {
@@ -238,6 +240,11 @@ onMounted(() => load());
 .op-method.del {
   background: color-mix(in srgb, #c24b5e 14%, transparent);
   color: #c24b5e;
+}
+
+.op-method.auth {
+  background: color-mix(in srgb, #7a5fbf 14%, transparent);
+  color: #7a5fbf;
 }
 
 .op-path {

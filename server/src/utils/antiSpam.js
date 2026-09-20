@@ -27,6 +27,12 @@ const SENSITIVE_WORDS = [
 /** 拉丁词表：词边界匹配，避免子串误伤（method 不命中 eth） */
 const LATIN_WORD_RE = /^[a-z0-9+]+$/i;
 
+/** 转义正则元字符：自定义敏感词（如 "+xx"、"c++"）未转义会使 new RegExp 抛错，
+ * 异常沿 antiSpam 上抛 → 评论/留言接口整体 500 */
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** 检测内容是否含敏感词，返回命中的词列表 */
 function checkSensitive(text) {
   if (typeof text !== 'string' || !text.length) return [];
@@ -37,7 +43,7 @@ function checkSensitive(text) {
     const word = String(w || '').toLowerCase();
     if (!word) continue;
     const matched = LATIN_WORD_RE.test(word)
-      ? new RegExp(`(?<![a-z0-9])${word}(?![a-z0-9])`, 'i').test(lower)
+      ? new RegExp(`(?<![a-z0-9])${escapeRegExp(word)}(?![a-z0-9])`, 'i').test(lower)
       : lower.includes(word);
     // 豁免词：文本同时包含豁免词时跳过该敏感词判定（如「回收」豁免「垃圾回收」）
     if (matched && !securitySettings.isAllowedText(text, word)) hits.push(w);

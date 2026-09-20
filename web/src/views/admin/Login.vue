@@ -72,7 +72,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue';
+import { ref, watch, watchEffect, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
@@ -88,6 +88,10 @@ const auth = useAuthStore();
 const safeGet = (k) => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
 const safeSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式忽略 */ } };
 const safeRemove = (k) => { try { localStorage.removeItem(k); } catch (e) { /* 隐私模式忽略 */ } };
+
+watchEffect(() => {
+  document.title = '后台登录 · Xalor的小站';
+});
 if (getAuthToken()) {
   getAdminPath().then((key) => {
     if (key) router.replace(`/${key}/dashboard`);

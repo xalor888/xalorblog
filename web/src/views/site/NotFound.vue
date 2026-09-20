@@ -39,10 +39,14 @@ import { ref, onMounted, onUnmounted, watchEffect } from 'vue';
 import { useRouter } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import { articleApi } from '@/api';
+import { useSiteStore } from '@/stores/site';
+
+const site = useSiteStore();
 
 // 浏览器标签页标题
 watchEffect(() => {
-  document.title = '页面不存在';
+  const siteName = site.settings.site_name || 'Xalor的小站';
+  document.title = `页面不存在 · ${siteName}`;
 });
 
 const router = useRouter();
@@ -77,10 +81,12 @@ async function randomArticle() {
 }
 
 onMounted(() => {
-  // 404 页声明 noindex：防搜索引擎收录错误页
+  // 404 页声明 noindex：防搜索引擎收录错误页（卸载时必须移除，
+  // 否则访客再浏览正常页面时 head 里残留 noindex 会导致全站不被收录）
   const noindex = document.createElement('meta');
   noindex.setAttribute('name', 'robots');
   noindex.setAttribute('content', 'noindex,nofollow');
+  noindex.setAttribute('id', 'nf-robots-noindex');
   document.head.appendChild(noindex);
   timer = setInterval(() => {
     countdown.value -= 1;
@@ -93,6 +99,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearInterval(timer);
+  document.getElementById('nf-robots-noindex')?.remove();
 });
 </script>
 

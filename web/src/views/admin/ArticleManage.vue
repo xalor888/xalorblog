@@ -108,13 +108,13 @@
       <!-- 批量操作 -->
       <div v-if="selection.length" class="batch-bar">
         <span class="batch-count">已选 {{ selection.length }} 篇</span>
-        <el-button size="small" type="success" @click="batchPublish">批量发布</el-button>
-        <el-button size="small" type="warning" plain @click="batchAddTag">添加标签</el-button>
-        <el-button size="small" plain @click="batchSetCategory">设置分类</el-button>
-        <el-button size="small" plain @click="batchRemoveCategory">移出分类</el-button>
-        <el-button size="small" plain @click="batchTop">批量置顶</el-button>
-        <el-button size="small" plain @click="batchUntop">取消置顶</el-button>
-        <el-button size="small" type="danger" plain @click="batchRemove">批量删除</el-button>
+        <el-button size="small" type="success" :loading="batchActionLoading" @click="batchPublish">批量发布</el-button>
+        <el-button size="small" type="warning" plain :loading="batchActionLoading" @click="batchAddTag">添加标签</el-button>
+        <el-button size="small" plain :loading="batchActionLoading" @click="batchSetCategory">设置分类</el-button>
+        <el-button size="small" plain :loading="batchActionLoading" @click="batchRemoveCategory">移出分类</el-button>
+        <el-button size="small" plain :loading="batchActionLoading" @click="batchTop">批量置顶</el-button>
+        <el-button size="small" plain :loading="batchActionLoading" @click="batchUntop">取消置顶</el-button>
+        <el-button size="small" type="danger" plain :loading="batchActionLoading" @click="batchRemove">批量删除</el-button>
         <el-button size="small" link @click="selection = []">取消选择</el-button>
       </div>
 
@@ -310,7 +310,7 @@ async function duplicate(row) {
   duplicatingId.value = row.id;
   try {
     const res = await articleApi.duplicate(row.id);
-    ElMessage.success(res?.message || '已复制为新草稿');
+    ElMessage.success('已复制为新草稿');
     router.push(adminHref(`articles/${res.id}/edit`));
   } catch (e) {
     /* 拦截器已提示 */
@@ -343,15 +343,18 @@ function onSelectionChange(rows) {
 }
 
 async function batchPublish() {
+  const drafts = selection.value.filter((r) => r.status === 'draft');
+  if (!drafts.length) return ElMessage.warning('所选文章均已发布');
+  batchActionLoading.value = true;
   try {
-    const drafts = selection.value.filter((r) => r.status === 'draft');
-    if (!drafts.length) return ElMessage.warning('所选文章均已发布');
     await articleApi.batchUpdate(drafts.map((r) => r.id), 'publish');
     ElMessage.success(`已发布 ${drafts.length} 篇文章`);
     selection.value = [];
     load();
   } catch (e) {
     /* 拦截器已提示 */
+  } finally {
+    batchActionLoading.value = false;
   }
 }
 
@@ -359,6 +362,7 @@ async function batchPublish() {
 async function batchTop() {
   const count = selection.value.length;
   if (!count) return ElMessage.warning('请先选择文章');
+  batchActionLoading.value = true;
   try {
     await articleApi.batchUpdate(selection.value.map((r) => r.id), 'top');
     ElMessage.success(`已置顶 ${count} 篇文章`);
@@ -366,6 +370,8 @@ async function batchTop() {
     load();
   } catch (e) {
     /* 拦截器已提示 */
+  } finally {
+    batchActionLoading.value = false;
   }
 }
 
@@ -373,6 +379,7 @@ async function batchTop() {
 async function batchUntop() {
   const count = selection.value.length;
   if (!count) return ElMessage.warning('请先选择文章');
+  batchActionLoading.value = true;
   try {
     await articleApi.batchUpdate(selection.value.map((r) => r.id), 'untop');
     ElMessage.success(`已取消置顶 ${count} 篇文章`);
@@ -380,6 +387,8 @@ async function batchUntop() {
     load();
   } catch (e) {
     /* 拦截器已提示 */
+  } finally {
+    batchActionLoading.value = false;
   }
 }
 
@@ -395,8 +404,10 @@ async function batchSetCategory() {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
     });
-    const cat = categories.value.find((c) => c.name === value.trim());
+    const targetName = value.trim().toLowerCase();
+    const cat = categories.value.find((c) => c.name.toLowerCase() === targetName);
     if (!cat) return ElMessage.warning('分类不存在，请从现有分类中选择');
+    batchActionLoading.value = true;
     await articleApi.batchUpdate(
       selection.value.map((r) => r.id),
       'set-category',
@@ -407,6 +418,8 @@ async function batchSetCategory() {
     load();
   } catch (e) {
     /* 取消 */
+  } finally {
+    batchActionLoading.value = false;
   }
 }
 
@@ -420,6 +433,7 @@ async function batchRemoveCategory() {
       confirmButtonText: '移出',
       cancelButtonText: '取消',
     });
+    batchActionLoading.value = true;
     await articleApi.batchUpdate(
       selection.value.map((r) => r.id),
       'set-category',
@@ -430,6 +444,8 @@ async function batchRemoveCategory() {
     load();
   } catch (e) {
     /* 取消 */
+  } finally {
+    batchActionLoading.value = false;
   }
 }
 
@@ -445,6 +461,7 @@ async function batchAddTag() {
       cancelButtonText: '取消',
     });
     const name = value.trim();
+    batchActionLoading.value = true;
     await articleApi.batchUpdate(
       selection.value.map((r) => r.id),
       'add-tag',
@@ -455,8 +472,12 @@ async function batchAddTag() {
     load();
   } catch (e) {
     if (e !== 'cancel' && e !== 'close') ElMessage.error(e?.message || '操作失败');
+  } finally {
+    batchActionLoading.value = false;
   }
 }
+
+const batchActionLoading = ref(false);
 
 async function batchRemove() {
   const count = selection.value.length;
@@ -467,6 +488,11 @@ async function batchRemove() {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     });
+  } catch (e) {
+    return;
+  }
+  batchActionLoading.value = true;
+  try {
     await articleApi.batchDelete(selection.value.map((r) => r.id));
     ElMessage.success(`已删除 ${count} 篇文章`);
     selection.value = [];
@@ -474,7 +500,9 @@ async function batchRemove() {
     if (list.value.length === count && page.value > 1) page.value -= 1;
     load();
   } catch (e) {
-    /* 取消 */
+    /* 拦截器已提示 */
+  } finally {
+    batchActionLoading.value = false;
   }
 }
 

@@ -26,18 +26,24 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
+import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 
 const route = useRoute();
 const open = ref(false);
+
+// 路由变化时自动关闭帮助弹窗
+watch(() => route.path, () => {
+  if (open.value) close();
+});
 
 const groups = [
   {
     label: '全局',
     items: [
-      { keys: 'Ctrl K', desc: '打开全局搜索' },
+      { keys: 'Ctrl/Cmd K', desc: '打开全局搜索' },
       { keys: '/', desc: '快速唤起搜索' },
       { keys: '?', desc: '打开此帮助' },
       { keys: 'ESC', desc: '关闭弹窗' },
@@ -51,13 +57,26 @@ const groups = [
       { keys: '双击', desc: '灯箱图片 1x / 2x' },
     ],
   },
+  {
+    label: '后台编辑',
+    items: [
+      { keys: 'Ctrl/Cmd S', desc: '保存草稿' },
+      { keys: 'Ctrl/Cmd Enter', desc: '快速发布文章' },
+    ],
+  },
 ];
 
 function toggle() {
-  open.value = !open.value;
+  if (open.value) {
+    close();
+  } else {
+    open.value = true;
+    lockBodyScroll();
+  }
 }
 
 function close() {
+  if (open.value) unlockBodyScroll();
   open.value = false;
 }
 
@@ -78,6 +97,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (open.value) unlockBodyScroll();
   document.removeEventListener('keydown', onKeydown);
 });
 </script>

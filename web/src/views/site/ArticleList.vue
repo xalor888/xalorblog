@@ -149,7 +149,7 @@
                 </div>
                 <h3 class="row-title" v-html="highlight(a.title)"></h3>
                 <p v-if="a.summary" class="row-summary" v-html="highlight(a.summary)"></p>
-                <div class="row-tags" v-if="a.tags.length">
+                <div class="row-tags" v-if="a.tags && a.tags.length">
                   <span v-for="t in a.tags.slice(0, 3)" :key="t.id" class="row-tag"># {{ t.name }}</span>
                 </div>
               </div>
@@ -185,7 +185,7 @@
                 <h3 class="grid-title" v-html="highlight(a.title)"></h3>
                 <p v-if="a.summary" class="grid-summary" v-html="highlight(a.summary)"></p>
                 <div class="grid-foot">
-                  <div class="grid-tags" v-if="a.tags.length">
+                  <div class="grid-tags" v-if="a.tags && a.tags.length">
                     <span v-for="t in a.tags.slice(0, 3)" :key="t.id" class="grid-tag"># {{ t.name }}</span>
                   </div>
                   <div class="grid-stats">
@@ -261,7 +261,9 @@ const page = ref(Number(route.query.page) || 1); // 页码随 URL 持久化（�
 const hasFilter = computed(() => !!(route.query.keyword || route.query.category || route.query.tag));
 // 每页条数：URL 参数优先（分享保持），其次本地记忆（8/16/32）
 const urlSize = Number(route.query.pageSize);
-const pageSize = ref([8, 16, 32].includes(urlSize) ? urlSize : Number(localStorage.getItem('xalor_page_size')) || 8);
+const pageSize = ref([8, 16, 32].includes(urlSize) ? urlSize : (() => {
+  try { return Number(localStorage.getItem('xalor_page_size')) || 8; } catch (e) { return 8; }
+})());
 if (![8, 16, 32].includes(pageSize.value)) pageSize.value = 8;
 function onPageSizeChange() {
   try {
@@ -291,10 +293,14 @@ const activeCategoryDesc = computed(() => {
 });
 
 // 视图模式：列表 / 卡片（localStorage 记忆偏好，刷新与下次访问保持）
-const viewMode = ref(localStorage.getItem('xl_view_mode') || 'grid');
+const viewMode = ref((() => {
+  try { return localStorage.getItem('xl_view_mode') || 'grid'; } catch (e) { return 'grid'; }
+})());
 function setViewMode(m) {
   viewMode.value = m;
-  localStorage.setItem('xl_view_mode', m);
+  try {
+    localStorage.setItem('xl_view_mode', m);
+  } catch (e) { /* 隐私模式忽略 */ }
 }
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)));
@@ -388,6 +394,9 @@ async function load(p = 1) {
     const q = { ...route.query, page: p > 1 ? String(p) : undefined };
     if (!q.page) delete q.page;
     router.replace({ path: '/articles', query: q });
+    if (p > 1) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   } catch (e) {
     loadFailed.value = true;
   } finally {
@@ -428,6 +437,7 @@ watch(
   () => [route.query.category, route.query.tag, route.query.keyword, route.query.sort],
   () => {
     page.value = 1;
+    keyword.value = kw.value; // 前进/后退改变 ?keyword= 时搜索框同步（否则显示旧关键词）
     load(1);
     window.scrollTo({ top: 0 });
   }
@@ -435,7 +445,8 @@ watch(
 
 // 浏览器标签页标题与当前筛选联动
 watchEffect(() => {
-  document.title = pageTitle.value;
+  const siteName = site.settings.site_name || 'Xalor的小站';
+  document.title = `${pageTitle.value} · ${siteName}`;
   // meta description 同步（浏览器/分享预览语义化）
   const desc = `浏览${pageTitle.value}——按分类、标签或关键词筛选的博客文章列表`;
   let el = document.querySelector('meta[name="description"]');
@@ -448,9 +459,11 @@ watchEffect(() => {
 });
 
 onMounted(async () => {
-  const [cats, tg] = await Promise.all([categoryApi.list(), tagApi.list()]);
-  categories.value = cats;
-  tags.value = tg;
+  // allSettled：分类/标签侧栏接口任一失败都不能拖死文章列表本体
+  //（Promise.all 一处 reject 则 load(1) 永不执行，页面停在骨架屏且无提示）
+  const [cats, tg] = await Promise.allSettled([categoryApi.list(), tagApi.list()]);
+  categories.value = cats.status === 'fulfilled' && Array.isArray(cats.value) ? cats.value : [];
+  tags.value = tg.status === 'fulfilled' && Array.isArray(tg.value) ? tg.value : [];
   keyword.value = kw.value;
   await load(1);
 });

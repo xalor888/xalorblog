@@ -1,6 +1,6 @@
 <template>
   <div class="tag-manage">
-    <!-- 新建标签 -->
+    <!-- 新建标签与搜索 -->
     <div class="create-card card">
       <div class="create-row">
         <input
@@ -14,11 +14,23 @@
           创建标签
         </button>
       </div>
+      <div class="filter-row">
+        <el-input
+          v-model="searchKey"
+          placeholder="搜索标签..."
+          size="small"
+          clearable
+          style="max-width: 260px"
+        />
+        <el-button size="small" plain :loading="exporting" style="margin-left: auto" @click="exportCsv">
+          <XIcon name="Download" :size="13" /> 导出 CSV
+        </el-button>
+      </div>
     </div>
 
     <!-- 标签列表 -->
     <div class="table-card card">
-      <el-table :data="list" v-loading="loading && !list.length" stripe>
+      <el-table :data="filteredList" v-loading="loading && !list.length" stripe>
         <el-table-column label="标签" min-width="200">
           <template #default="{ row }">
             <span class="tag-name"># {{ row.name }}</span>
@@ -41,14 +53,23 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import XIcon from '@/components/ui/XIcon.vue';
 import { tagApi } from '@/api';
 
 const list = ref([]);
+const searchKey = ref('');
 const loading = ref(false);
 const creating = ref(false);
+const exporting = ref(false);
 const newName = ref('');
+
+const filteredList = computed(() => {
+  const kw = searchKey.value.trim().toLowerCase();
+  if (!kw) return list.value;
+  return list.value.filter((t) => t.name.toLowerCase().includes(kw));
+});
 
 async function load() {
   loading.value = true;
@@ -104,8 +125,8 @@ async function mergeTag(row) {
         cancelButtonText: '取消',
       }
     );
-    const targetName = value.trim();
-    const target = list.value.find((t) => t.id !== row.id && t.name === targetName);
+    const targetName = value.trim().toLowerCase();
+    const target = list.value.find((t) => t.id !== row.id && t.name.toLowerCase() === targetName);
     if (!target) {
       return ElMessage.warning('目标标签不存在，请从现有标签中选择');
     }
@@ -114,6 +135,29 @@ async function mergeTag(row) {
     load();
   } catch (e) {
     /* 取消 */
+  }
+}
+
+function exportCsv() {
+  if (!list.value.length) return ElMessage.info('暂无标签可导出');
+  exporting.value = true;
+  try {
+    const esc = (s) => `"${String(s ?? '').replace(/"/g, '""').replace(/^[=+\-@\t\r]/, "'$&")}"`;
+    const rows = [
+      ['ID', '标签名称', 'Slug', '关联文章数'],
+      ...filteredList.value.map((t) => [t.id, t.name, t.slug, t.article_count || 0])
+    ];
+    const csv = '\uFEFF' + rows.map((r) => r.map(esc).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tags-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success('标签列表已导出');
+  } finally {
+    exporting.value = false;
   }
 }
 
@@ -170,6 +214,11 @@ onMounted(load);
 .create-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.filter-row {
+  margin-top: 12px;
+  display: flex;
 }
 
 .table-card {

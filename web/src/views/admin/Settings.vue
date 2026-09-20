@@ -102,6 +102,8 @@
         v-model="form.about_content"
         type="textarea"
         :rows="12"
+        maxlength="50000"
+        show-word-limit
         class="about-editor"
         placeholder="支持 Markdown 语法…"
       />
@@ -181,7 +183,7 @@
                 <li>将上方密钥手动输入，或直接使用下方链接</li>
                 <li>输入应用生成的 6 位动态码完成启用</li>
               </ol>
-              <a :href="twoFaSetupUri" target="_blank" rel="noopener" class="otpauth-link">
+              <a :href="twoFaSetupUri" target="_blank" rel="noopener noreferrer" class="otpauth-link">
                 <XIcon name="ExternalLink" :size="13" /> 点击添加到验证器
               </a>
             </div>
@@ -280,10 +282,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { settingsApi, uploadApi, authApi } from '@/api';
 import { renderMarkdown } from '@/utils/markdown';
+import { formatDateTime } from '@/utils/format';
 import { getCachedAdminPath, getAdminPath } from '@/utils/adminPath';
 import { ensurePass } from '@/utils/pass';
 import { signedFetch } from '@/utils/signedFetch';
@@ -334,11 +337,7 @@ function uaSummary(ua) {
 }
 
 function formatTime(t) {
-  if (!t) return '—';
-  const d = new Date(String(t).includes('T') ? t : String(t).replace(' ', 'T'));
-  if (Number.isNaN(d.getTime())) return String(t);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return formatDateTime(t);
 }
 
 async function loadSessions() {
@@ -402,33 +401,52 @@ async function copyAdminUrl() {
   }
   const url = fullAdminUrl.value;
   if (!url) return ElMessage.warning('后台路径尚未加载，请稍后重试');
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(url);
-  } else {
-    const ta = document.createElement('textarea');
-    ta.value = url;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+    } else {
+      fallbackCopy(url);
+    }
+    ElMessage.success('后台地址已复制');
+  } catch (e) {
+    try {
+      fallbackCopy(url);
+      ElMessage.success('后台地址已复制');
+    } catch (err) {
+      ElMessage.warning('复制失败，请手动选中复制');
+    }
   }
-  ElMessage.success('后台地址已复制');
 }
 
 /** 复制两步验证密钥到剪贴板 */
 async function copyTwoFaSecret() {
   if (!twoFaSecret.value) return;
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(twoFaSecret.value);
-  } else {
-    const ta = document.createElement('textarea');
-    ta.value = twoFaSecret.value;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(twoFaSecret.value);
+    } else {
+      fallbackCopy(twoFaSecret.value);
+    }
+    ElMessage.success('密钥已复制');
+  } catch (e) {
+    try {
+      fallbackCopy(twoFaSecret.value);
+      ElMessage.success('密钥已复制');
+    } catch (err) {
+      ElMessage.warning('复制失败，请手动选中复制');
+    }
   }
-  ElMessage.success('密钥已复制');
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
 }
 
 /** 生成两步验证密钥 */

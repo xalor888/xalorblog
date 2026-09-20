@@ -3,8 +3,8 @@
     <!-- 页头：标题 + 刷新 -->
     <div class="dash-head">
       <h2 class="dash-title">数据总览</h2>
-      <button class="dash-refresh" title="刷新数据" @click="loadAll">
-        <XIcon name="RefreshCw" :size="14" /> 刷新
+      <button class="dash-refresh" :disabled="refreshing" title="刷新数据" @click="loadAll">
+        <XIcon name="RefreshCw" :size="14" :class="{ 'spin-icon': refreshing }" /> 刷新
       </button>
     </div>
 
@@ -169,7 +169,7 @@
         <div v-for="(it, i) in recentItems" :key="i" class="feed-item">
           <span class="feed-tag" :class="it.kind">{{ it.tag }}</span>
           <span class="feed-text">
-            <router-link v-if="it.link" :to="it.link" class="feed-link" target="_blank">{{ it.title }}</router-link>
+            <router-link v-if="it.link" :to="it.link" class="feed-link" :target="it.kind === 'article' ? '_blank' : undefined">{{ it.title }}</router-link>
             <span v-else class="feed-title">{{ it.title }}</span>
             <span class="feed-meta">{{ it.nickname }} · {{ timeAgo(it.created_at) }}</span>
           </span>
@@ -212,8 +212,9 @@ const interactTrend = computed(() => dashboard.value.interact_trend || []);
 const interactEmpty = computed(() => interactTrend.value.every((d) => Number(d.comments) === 0 && Number(d.messages) === 0));
 const maxInteract = computed(() => Math.max(...interactTrend.value.map((d) => Math.max(Number(d.comments), Number(d.messages))), 1));
 function intBarHeight(v, kind) {
+  if (Number(v) === 0) return '0%';
   const pct = Math.max(4, (Number(v) / maxInteract.value) * 100);
-  return `${kind === 'msg' ? pct * 0.7 : pct}%`;
+  return `${pct}%`;
 }
 
 const maxPv = computed(() => Math.max(...trend.value.map((t) => Math.max(Number(t.pv) || 0, Number(t.uv) || 0)), 1));
@@ -294,13 +295,23 @@ function catWidth(count) {
   return `${(count / maxCount.value) * 100}%`;
 }
 
+const refreshing = ref(false);
+
 async function loadAll() {
+  if (refreshing.value) return;
+  refreshing.value = true;
   try {
     await getAdminPath();
     dashboard.value = await statsApi.dashboard(rangeDays.value);
     security.value = await securityApi.overview();
+    try {
+      const { useAdminStore } = await import('@/stores/admin');
+      useAdminStore().fetchPending();
+    } catch (e) {}
   } catch (e) {
     /* 拦截器已提示 */
+  } finally {
+    refreshing.value = false;
   }
 }
 
@@ -353,13 +364,27 @@ onMounted(loadAll);
   transition: all var(--dur) var(--ease);
 }
 
-.dash-refresh:hover {
+.dash-refresh:hover:not(:disabled) {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.dash-refresh:active :deep(svg) {
+.dash-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dash-refresh :deep(.spin-icon) {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.dash-refresh:active:not(:disabled) :deep(svg:not(.spin-icon)) {
   transform: rotate(180deg);
 }
 

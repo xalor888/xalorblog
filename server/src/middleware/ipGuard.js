@@ -338,10 +338,10 @@ function isBannedNow(ip) {
 }
 
 /** 手动解封（后台安全中心） */
-function unban(ip) {
+async function unban(ip) {
   const key = reputationKey(ip);
   records.delete(key);
-  deletePersistedBan(key);
+  await deletePersistedBan(key);
   logEvent('unban', key, '后台手动解封');
 }
 

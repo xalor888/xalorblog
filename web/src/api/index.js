@@ -82,7 +82,7 @@ request.interceptors.response.use(
       return Promise.reject(new Error(res.message || '请求失败'));
     }
     // 解密加密正文（用请求时的票据，防在途续期导致密钥不匹配）
-    const data = res.data;
+    let data = res.data;
     if (data && data.content_enc && typeof data.content === 'string') {
       try {
         const plain = await decryptContent(
@@ -98,6 +98,10 @@ request.interceptors.response.use(
         data.content_enc = false;
         data.content_decrypt_failed = true;
       }
+    }
+    // 若 data 为纯对象且服务端附带了 message，挂载 _message 便于调用方展示服务端反馈
+    if (data && typeof data === 'object' && !Array.isArray(data) && res.message && !('message' in data)) {
+      data.message = res.message;
     }
     return data;
   },
@@ -276,6 +280,7 @@ export const linkApi = {
   apply: (data, config) => request.post('/links', data, config),
   adminList: (params) => adminGet('/links/admin/list', params),
   updateStatus: (id, data) => adminPut(`/links/${id}/status`, data),
+  batchStatus: (ids, status) => adminPost('/links/batch-status', { ids, status }),
   remove: (id) => adminDelete(`/links/${id}`),
   batchDelete: (ids) => adminPost('/links/batch-delete', { ids }),
   approveAll: () => adminPost('/links/approve-all'),
@@ -287,6 +292,7 @@ export const messageApi = {
   reAi: (id) => adminPost(`/messages/${id}/re-ai`),
   adminList: (params) => adminGet('/messages/admin/list', params),
   updateStatus: (id, status) => adminPut(`/messages/${id}/status`, { status }),
+  batchStatus: (ids, status) => adminPost('/messages/batch-status', { ids, status }),
   remove: (id) => adminDelete(`/messages/${id}`),
   batchDelete: (ids) => adminPost('/messages/batch-delete', { ids }),
   reply: (id, reply) => adminPut(`/messages/${id}/reply`, { reply }),

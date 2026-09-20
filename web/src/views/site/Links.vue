@@ -9,7 +9,7 @@
 
       <!-- 友链列表 -->
       <div v-if="links.length" class="link-grid" v-reveal="'stagger'">
-        <a v-for="l in links" :key="l.id" :href="l.url" target="_blank" rel="noopener nofollow" class="link-card card fade-up">
+        <a v-for="l in links" :key="l.id" :href="l.url" target="_blank" rel="noopener noreferrer nofollow" class="link-card card fade-up">
           <div class="link-avatar" :style="{ background: avatarColor(l.name) }">
             <img v-if="l.avatar && !failedAvatars.has(l.id)" :src="l.avatar" :alt="l.name" @error="failedAvatars.add(l.id)" />
             <span v-if="!l.avatar || failedAvatars.has(l.id)">{{ (l.name || '?').charAt(0).toUpperCase() }}</span>
@@ -81,7 +81,8 @@ import { useSiteStore } from '@/stores/site';
 
 // 浏览器标签页标题
 watchEffect(() => {
-  document.title = '友情链接';
+  const siteName = site.settings.site_name || 'Xalor的小站';
+  document.title = `友情链接 · ${siteName}`;
 });
 
 const site = useSiteStore();

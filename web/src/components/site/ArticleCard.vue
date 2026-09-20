@@ -28,7 +28,7 @@
       <h3 class="title">{{ article.title }}</h3>
       <p class="summary">{{ article.summary }}</p>
 
-      <div class="tags" v-if="article.tags.length">
+      <div class="tags" v-if="article.tags && article.tags.length">
         <span v-for="t in article.tags.slice(0, 2)" :key="t.id" class="tag"># {{ t.name }}</span>
       </div>
 

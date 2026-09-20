@@ -6,7 +6,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
@@ -30,6 +30,11 @@ router.afterEach(() => {
 
 router.onError(() => {
   visible.value = false;
+});
+
+onUnmounted(() => {
+  clearTimeout(timer);
+  clearTimeout(doneTimer);
 });
 </script>
 

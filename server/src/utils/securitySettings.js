@@ -139,11 +139,13 @@ function matchesCidr(entry, ip) {
   if (parsed.v4 !== (target.length === 4)) {
     if (parsed.v4) {
       if (target.length !== 16) return false;
-      if (target.slice(0, 12).some((b) => b !== 0)) return false;
+      // 检查是否为标准 IPv4-mapped 格式（前 10 字节为 0，第 11-12 字节为 0xff）
+      const isMapped = target.slice(0, 10).every((b) => b === 0) && target[10] === 0xff && target[11] === 0xff;
+      if (!isMapped) return false;
       target = target.slice(12);
     } else {
       if (target.length !== 4) return false;
-      target = Buffer.concat([Buffer.alloc(12), target]);
+      target = Buffer.concat([Buffer.alloc(10), Buffer.from([0xff, 0xff]), target]);
     }
   }
   if (target.length !== parsed.bytes.length) return false;
@@ -293,6 +295,7 @@ module.exports = {
   isAllowedText,
   getCustomWords,
   isValidIpOrCidr,
+  matchesCidr,
   DEFAULT_CONFIG,
   NUMERIC_RANGES,
   LIST_LIMITS,

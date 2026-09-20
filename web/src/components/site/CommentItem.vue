@@ -10,7 +10,7 @@
           <span v-if="floor && depth === 0" class="floor-num">#{{ floor }}</span>
           <span class="nickname" :class="{ admin: comment.is_admin }">{{ comment.nickname }}</span>
           <span v-if="comment.is_admin" class="admin-badge" title="博主"><XIcon name="Crown" :size="12" /></span>
-          <a v-if="comment.website" :href="comment.website" target="_blank" rel="noopener nofollow" class="web" :title="comment.website">
+          <a v-if="comment.website" :href="comment.website" target="_blank" rel="noopener noreferrer nofollow" class="web" :title="comment.website">
             <XIcon name="Globe" :size="13" />
           </a>
           <span class="time" :title="'复制评论链接'" @click="copyCommentLink">{{ timeAgo(comment.created_at) }}</span>
@@ -109,7 +109,9 @@ const liking = ref(false);
 
 // 初始化点赞状态：本地记忆或同页面已点赞过的评论
 try {
-  liked.value = localStorage.getItem(`xalor_clike_${props.comment.id}`) === '1';
+  liked.value = (() => {
+    try { return localStorage.getItem(`xalor_clike_${props.comment.id}`) === '1'; } catch (e) { return false; }
+  })();
 } catch (e) { /* 隐私模式忽略 */ }
 
 async function likeComment() {
@@ -122,7 +124,9 @@ async function likeComment() {
     const res = await commentApi.like(props.comment.id);
     if (res && typeof res.likes === 'number') props.comment.likes = res.likes;
     try {
+    try {
       localStorage.setItem(`xalor_clike_${props.comment.id}`, '1');
+    } catch (e) { /* 隐私模式忽略 */ }
     } catch (e) { /* 隐私模式忽略 */ }
   } catch (e) {
     // 失败回滚
@@ -142,19 +146,28 @@ async function copyCommentLink() {
       await navigator.clipboard.writeText(url);
       done();
     } else {
-      const ta = document.createElement('textarea');
-      ta.value = url;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
+      fallbackCopy(url);
       done();
     }
   } catch (e) {
-    ElMessage.error('复制失败，请手动复制地址栏链接');
+    try {
+      fallbackCopy(url);
+      done();
+    } catch (err) {
+      ElMessage.error('复制失败，请手动复制地址栏链接');
+    }
   }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
 }
 
 // 昵称哈希 → 渐变配色（无头像时）

@@ -85,7 +85,8 @@ async function saveSettings(entries) {
     if (BOOL_KEYS.has(key)) {
       safeValue = value === true || value === 'true' || value === 1 || value === '1';
     } else if (typeof value === 'string') {
-      safeValue = value.slice(0, 5000);
+      const maxLen = key === 'about_content' ? 50000 : 5000;
+      safeValue = value.slice(0, maxLen);
     } else {
       continue;
     }

@@ -33,10 +33,14 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import ArticleCard from '@/components/site/ArticleCard.vue';
 import { getBookmarks, removeBookmark, clearBookmarks } from '@/utils/bookmark';
+import { useSiteStore } from '@/stores/site';
+
+const site = useSiteStore();
 
 // 浏览器标签页标题
 watchEffect(() => {
-  document.title = '我的收藏';
+  const siteName = site.settings.site_name || 'Xalor的小站';
+  document.title = `我的收藏 · ${siteName}`;
 });
 
 const bookmarks = ref(getBookmarks());

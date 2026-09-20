@@ -57,7 +57,7 @@
                 <span v-if="row.parent_nickname" class="reply-at">回复 @{{ row.parent_nickname }}：</span>
                 {{ row.content }}
               </p>
-              <router-link :to="`/article/${row.article_slug}`" class="content-article">
+              <router-link :to="`/article/${row.article_slug}`" target="_blank" class="content-article">
                 文章：{{ row.article_title }}
               </router-link>
             </div>
@@ -308,7 +308,7 @@ function onSelectionChange(rows) {
 async function batchSetStatus(s) {
   batchLoading.value = true;
   try {
-    await Promise.all(selection.value.map((row) => commentApi.updateStatus(row.id, s)));
+    await commentApi.batchStatus(selection.value.map((r) => r.id), s);
     ElMessage.success(`已${s === 'approved' ? '通过' : '拒绝'} ${selection.value.length} 条评论`);
     selection.value = [];
     load();
@@ -336,13 +336,17 @@ async function batchReAi() {
 }
 
 async function batchRemove() {
-  batchLoading.value = true;
   try {
     await ElMessageBox.confirm(`确定删除选中的 ${selection.value.length} 条评论吗？`, '批量删除', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     });
+  } catch (e) {
+    return;
+  }
+  batchLoading.value = true;
+  try {
     await commentApi.batchDelete(selection.value.map((r) => r.id));
     ElMessage.success(`已删除 ${selection.value.length} 条评论`);
     // 当前页被删空后回退一页
@@ -350,7 +354,7 @@ async function batchRemove() {
     selection.value = [];
     load();
   } catch (e) {
-    /* 取消 */
+    /* 拦截器已提示 */
   } finally {
     batchLoading.value = false;
   }

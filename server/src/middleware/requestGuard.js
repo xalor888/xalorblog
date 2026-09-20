@@ -82,4 +82,4 @@ function timestampRequired(req, res, next) {
   next();
 }
 
-module.exports = { refererRequired, timestampRequired };
+module.exports = { refererRequired, timestampRequired, isAllowedOriginHost, safeHost };

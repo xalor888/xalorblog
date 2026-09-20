@@ -21,7 +21,7 @@ import {
   Star, Sun, Tags, Twitter, Upload, User, Users, X, ImageOff, ZoomIn, ZoomOut,
   Bookmark, Trash2, RefreshCw, Bold, Italic, Code, Heading2, Quote, List, Image, Minus,
   Rss, Sparkles, MessageSquareOff, EyeOff, ListOrdered, ListChecks, Shuffle, Printer, Send,
-  CornerUpRight,
+  CornerUpRight, SlidersHorizontal,
 } from 'lucide-vue-next';
 
 // 显式图标映射：避免全量引入导致 chunk 过大，且可 tree-shake
@@ -36,7 +36,7 @@ const ICONS = {
   Star, Sun, Tags, Twitter, Upload, User, Users, X, ImageOff, ZoomIn, ZoomOut,
   Bookmark, Trash2, RefreshCw, Bold, Italic, Code, Heading2, Quote, List, Image, Minus,
   Rss, Sparkles, MessageSquareOff, EyeOff, ListOrdered, ListChecks, Shuffle, Printer, Send,
-  CornerUpRight,
+  CornerUpRight, SlidersHorizontal,
 };
 
 const props = defineProps({

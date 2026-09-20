@@ -55,10 +55,14 @@
 import { ref, computed, onMounted, watchEffect } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import { articleApi } from '@/api';
+import { useSiteStore } from '@/stores/site';
+
+const site = useSiteStore();
 
 // 浏览器标签页标题
 watchEffect(() => {
-  document.title = '归档';
+  const siteName = site.settings.site_name || 'Xalor的小站';
+  document.title = `归档 · ${siteName}`;
 });
 
 /** 年份快捷导航：平滑滚动到对应分组 */

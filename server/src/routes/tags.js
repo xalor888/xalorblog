@@ -12,7 +12,7 @@ router.get('/', async (req, res) => {
       .leftJoin('articles as a', function () {
         this.on('a.id', 'at.article_id').andOn('a.status', '=', db.raw('?', ['published']));
       })
-      .groupBy('t.id')
+      .groupBy('t.id', 't.name', 't.slug')
       .select('t.id', 't.name', 't.slug')
       .count('a.id as article_count')
       .orderBy('article_count', 'desc');

@@ -69,7 +69,7 @@
               <button class="share-btn" title="导出 Markdown" aria-label="导出 Markdown" @click="exportMarkdown">
                 <XIcon name="Download" :size="15" />
               </button>
-              <button class="share-btn" title="打印本文" aria-label="打印本文" @click="window.print()">
+              <button class="share-btn" title="打印本文" aria-label="打印本文" @click="printPage">
                 <XIcon name="Printer" :size="15" />
               </button>
               <button class="share-btn" title="分享" aria-label="分享" @click="openShare">
@@ -77,19 +77,19 @@
               </button>
               <transition name="share-pop">
                 <div v-if="shareMenu" class="share-menu">
-                  <a :href="`https://service.weibo.com/share/share.php?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(article.title)}`" target="_blank" rel="noopener" class="share-item">
+                  <a :href="`https://service.weibo.com/share/share.php?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(article.title)}`" target="_blank" rel="noopener noreferrer" class="share-item">
                     <XIcon name="AtSign" :size="15" /> 微博
                   </a>
-                  <a :href="`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(article.title)}`" target="_blank" rel="noopener" class="share-item">
+                  <a :href="`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(article.title)}`" target="_blank" rel="noopener noreferrer" class="share-item">
                     <XIcon name="Twitter" :size="15" /> Twitter
                   </a>
-                  <a :href="`https://sns.qzone.qq.com/cgi-bin/qzshare/cgi_qzshare_onekey?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(article.title)}`" target="_blank" rel="noopener" class="share-item">
+                  <a :href="`https://sns.qzone.qq.com/cgi-bin/qzshare/cgi_qzshare_onekey?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(article.title)}`" target="_blank" rel="noopener noreferrer" class="share-item">
                     <XIcon name="Share2" :size="15" /> QQ 空间
                   </a>
-                  <a :href="`https://www.zhihu.com/share?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(article.title)}`" target="_blank" rel="noopener" class="share-item">
+                  <a :href="`https://www.zhihu.com/share?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(article.title)}`" target="_blank" rel="noopener noreferrer" class="share-item">
                     <XIcon name="MessageCircleHeart" :size="15" /> 知乎
                   </a>
-                  <a :href="`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(article.title)}`" target="_blank" rel="noopener" class="share-item">
+                  <a :href="`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(article.title)}`" target="_blank" rel="noopener noreferrer" class="share-item">
                     <XIcon name="Send" :size="15" /> Telegram
                   </a>
                   <button class="share-item" @click="copyLink">
@@ -115,7 +115,7 @@
             </span>
           </div>
 
-          <div v-if="article.tags.length" class="detail-tags">
+          <div v-if="article.tags && article.tags.length" class="detail-tags">
             <router-link v-for="t in article.tags" :key="t.id" :to="{ path: '/articles', query: { tag: t.slug } }" class="d-tag">
               # {{ t.name }}
             </router-link>
@@ -153,17 +153,17 @@
         </div>
         <div v-else class="markdown-body" :class="{ serif: fontStyle === 'serif' }" v-html="renderedContent" :style="{ fontSize: fontSize + 'px' }" @click="onContentClick"></div>
 
-          <!-- 点赞 -->
-          <div class="like-zone">
-            <button class="like-btn" :class="{ liked }" @click="doLike" :disabled="liked">
-              <span class="heart">
-                <XIcon :name="liked ? 'Heart' : 'Heart'" :size="20" :fill="liked" :stroke-width="liked ? 0 : 1.8" />
-              </span>
-              <span>{{ article.likes }}</span>
-            </button>
-            <p class="like-hint">{{ liked ? '已感谢你的喜欢' : '觉得不错就点个赞吧' }}</p>
-          </div>
+        <!-- 点赞 -->
+        <div class="like-zone">
+          <button class="like-btn" :class="{ liked }" @click="doLike" :disabled="liked">
+            <span class="heart">
+              <XIcon :name="liked ? 'Heart' : 'Heart'" :size="20" :fill="liked" :stroke-width="liked ? 0 : 1.8" />
+            </span>
+            <span>{{ article.likes }}</span>
+          </button>
+          <p class="like-hint">{{ liked ? '已感谢你的喜欢' : '觉得不错就点个赞吧' }}</p>
         </div>
+      </div>
 
         <!-- 版权声明 -->
         <div class="copyright-card card">
@@ -174,7 +174,7 @@
           <p v-if="copyrightText" class="cc-text">{{ copyrightText }}</p>
           <p v-else class="cc-text">
             本文由 <b>{{ site.settings.site_name || 'Xalor' }}</b> 原创，采用
-            <a :href="ccLicenseUrl" target="_blank" rel="noopener">署名-非商业性使用 4.0 国际 (CC BY-NC 4.0)</a>
+            <a :href="ccLicenseUrl" target="_blank" rel="noopener noreferrer">署名-非商业性使用 4.0 国际 (CC BY-NC 4.0)</a>
             协议。转载请注明出处及原文链接。
           </p>
           <div class="cc-actions">
@@ -232,8 +232,8 @@
       <!-- 图片灯箱 -->
       <ImageLightbox ref="lightboxRef" />
 
-      <!-- 移动端：悬浮按钮（点赞 / 评论 / 目录 / 回顶） -->
-      <div class="float-actions">
+      <!-- 移动端：悬浮按钮（点赞 / 评论 / 目录 / 回顶）——文章不存在时不渲染，防空引用 -->
+      <div v-if="article" class="float-actions">
         <button class="fab" :class="{ liked }" :title="liked ? '已点赞' : '点赞'" @click="doLike">
           <XIcon name="Heart" :size="18" :fill="liked" />
           <span v-if="article?.likes" class="fab-num">{{ article.likes }}</span>
@@ -340,15 +340,21 @@ const activeHeading = ref('');
 const progress = ref(0);
 const shareMenu = ref(false);
 // 目录折叠偏好记忆（多数读者习惯固定展开/收起）
-const tocCollapsed = ref(localStorage.getItem('xalor_toc_collapsed') === '1');
+const tocCollapsed = ref((() => {
+  try { return localStorage.getItem('xalor_toc_collapsed') === '1'; } catch (e) { return false; }
+})());
 function toggleToc() {
   tocCollapsed.value = !tocCollapsed.value;
   try {
     localStorage.setItem('xalor_toc_collapsed', tocCollapsed.value ? '1' : '0');
   } catch (e) { /* 隐私模式忽略 */ }
 }
-const fontSize = ref(Number(localStorage.getItem('xalor_font_size')) || 16);
-const fontStyle = ref(localStorage.getItem('xalor_font_style') || 'sans');
+const fontSize = ref((() => {
+  try { return Number(localStorage.getItem('xalor_font_size')) || 16; } catch (e) { return 16; }
+})());
+const fontStyle = ref((() => {
+  try { return localStorage.getItem('xalor_font_style') || 'sans'; } catch (e) { return 'sans'; }
+})());
 const mobileTocOpen = ref(false);
 const lightboxRef = ref(null);
 const bookmarked = ref(false);
@@ -376,13 +382,17 @@ function onContentClick(e) {
 function changeFontSize(delta) {
   const next = Math.min(20, Math.max(14, fontSize.value + delta));
   fontSize.value = next;
-  localStorage.setItem('xalor_font_size', String(next));
+  try {
+    localStorage.setItem('xalor_font_size', String(next));
+  } catch (e) { /* 隐私模式忽略 */ }
 }
 
 /** 正文字体风格切换（无衬线/衬线，localStorage 记忆） */
 function toggleFontStyle() {
   fontStyle.value = fontStyle.value === 'serif' ? 'sans' : 'serif';
-  localStorage.setItem('xalor_font_style', fontStyle.value);
+  try {
+    localStorage.setItem('xalor_font_style', fontStyle.value);
+  } catch (e) { /* 隐私模式忽略 */ }
 }
 
 function scrollTop() {
@@ -412,7 +422,7 @@ function toggleBookmark() {
 }
 
 const wordCount = computed(() => {
-  if (!article.value) return 0;
+  if (!article.value || !article.value.content) return 0;
   const cn = (article.value.content.match(/[\u4e00-\u9fa5]/g) || []).length;
   const en = (article.value.content.match(/[a-zA-Z0-9]+/g) || []).length;
   return cn + en;
@@ -482,18 +492,35 @@ function onShareDocClick(e) {
 function copyLink() {
   const url = window.location.href;
   if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(url).then(() => ElMessage.success('链接已复制'));
+    navigator.clipboard.writeText(url)
+      .then(() => ElMessage.success('链接已复制'))
+      .catch(() => fallbackCopy(url));
   } else {
+    fallbackCopy(url);
+  }
+  shareMenu.value = false;
+  document.removeEventListener('click', onShareDocClick);
+}
+
+function fallbackCopy(text) {
+  try {
     const ta = document.createElement('textarea');
-    ta.value = url;
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
     document.body.appendChild(ta);
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
     ElMessage.success('链接已复制');
+  } catch (e) {
+    ElMessage.warning('复制失败，请手动长按或选中地址栏复制');
   }
-  shareMenu.value = false;
-  document.removeEventListener('click', onShareDocClick);
+}
+
+/** 打印：模板作用域拿不到 window 全局，必须经函数转发（window.print() 直接写在模板里会抛错） */
+function printPage() {
+  window.print();
 }
 
 /** 导出文章为 Markdown 文件（YAML front matter 标准格式，兼容 Obsidian/Hugo 等） */
@@ -534,7 +561,7 @@ function exportMarkdown() {
 }
 
 const renderedContent = computed(() => {
-  if (!article.value) return '';
+  if (!article.value || !article.value.content) return '';
   const html = renderMarkdown(article.value.content);
   return addImgAttrs(addHeadingIds(html));
 });
@@ -550,7 +577,9 @@ async function load() {
     article.value = a;
     applyPageMeta();
     toc.value = extractToc(a.content);
-    liked.value = !!localStorage.getItem(`xalor_liked_${a.id}`);
+    liked.value = (() => {
+      try { return !!localStorage.getItem(`xalor_liked_${a.id}`); } catch (e) { return false; }
+    })();
     bookmarked.value = isBookmarked(a.id);
     // 次要数据（上一篇/下一篇/相关文章）：独立容错，失败降级为空，不影响正文展示
     try {
@@ -681,7 +710,9 @@ async function doLike() {
     const res = await articleApi.like(article.value.id);
     article.value.likes = res.likes;
     liked.value = true;
-    localStorage.setItem(`xalor_liked_${article.value.id}`, '1');
+    try {
+      localStorage.setItem(`xalor_liked_${article.value.id}`, '1');
+    } catch (e) { /* 隐私模式忽略 */ }
     ElMessage.success('感谢点赞 ❤️');
   } catch (e) {
     /* 拦截器已提示 */

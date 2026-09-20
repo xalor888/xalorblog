@@ -47,11 +47,16 @@ function totpAt(secret, offset = 0) {
   return hotp(base32Decode(secret), currentStep() + offset);
 }
 
-/** 等待 31~61 秒（跨过 ≥1 个 TOTP 步长），返回新步的验证码 */
+/** 等待跨过当前 TOTP 30s 步长，确保进入全新的时间步（避开已消费的 step-1, step, step+1） */
 async function waitForNewStep(secret) {
-  const remain = 30000 - (Date.now() % 30000) + 31000;
-  await new Promise((r) => setTimeout(r, remain));
-  return totpAt(secret, 1); // 新步 +1 容差覆盖
+  // 我们需要确保 targetStep > max(所有之前使用过的 step) + 1
+  // 在当前用例中，最大使用过的 step 是 S+1
+  // 因此等待直到进入当前时间步之后的第 2 个时间步，确保 currentStep 至少比之前使用的 step 大 2
+  const now = Date.now();
+  const current = Math.floor(now / 30000);
+  const targetTime = (current + 2) * 30000 + 1000;
+  await new Promise((r) => setTimeout(r, targetTime - now));
+  return totpAt(secret, 0);
 }
 
 let passed = 0, failed = 0;
@@ -103,8 +108,8 @@ async function suite() {
   // 无验证码登录被拒（计入一次认证失败积分）
   r = await c.req('POST', '/api/auth/login', { body: { username: 'admin', password: 'admin123' }, ticket, headers: loginHdr });
   assert('无验证码登录被拒', r.status === 401, `status=${r.status} ${r.body && r.body.message}`);
-  // 正确验证码（上一步 S-1，避开 S 与 S+1 的重放记录）登录成功
-  const okCode = totpAt(secret, -1);
+  // 等待跨过当前时间步，获取全新时间步验证码，避免与前面步骤重叠
+  const okCode = await waitForNewStep(secret);
   r = await c.req('POST', '/api/auth/login', { body: { username: 'admin', password: 'admin123', totp_code: okCode }, ticket, headers: loginHdr });
   assert('正确验证码登录成功', r.status === 200 && r.body.data.token, `status=${r.status} ${r.body && r.body.message}`);
   token = r.body.data.token;

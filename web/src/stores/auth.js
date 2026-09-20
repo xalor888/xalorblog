@@ -35,6 +35,10 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       clearAdminDrafts();
       clearSession();
+      try {
+        const { useAdminStore } = await import('@/stores/admin');
+        useAdminStore().$reset?.();
+      } catch (e) {}
     }
     return { revoked };
   }

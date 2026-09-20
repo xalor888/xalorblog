@@ -437,10 +437,12 @@ function hostnameInOfficialDomain(hostname, officialDomain) {
 const CRAWLER_RULES = [
   { family: 'googlebot', keyword: 'googlebot', domains: ['googlebot.com', 'google.com'] },
   { family: 'bingbot', keyword: 'bingbot', domains: ['search.msn.com'] },
-  { family: 'baiduspider', keyword: 'baiduspider', domains: ['baidu.com'] },
+  { family: 'baiduspider', keyword: 'baiduspider', domains: ['baidu.com', 'baidu.jp'] },
   { family: 'sogou', keyword: 'sogou', domains: ['sogou.com'] },
   { family: 'yandex', keyword: 'yandex', domains: ['yandex.ru', 'yandex.net', 'yandex.com'] },
   { family: 'duckduckbot', keyword: 'duckduckbot', domains: ['duckduckgo.com'] },
+  { family: 'bytespider', keyword: 'bytespider', domains: ['bytedance.com', 'toutiao.com'] },
+  { family: 'petalbot', keyword: 'petalbot', domains: ['aspiegel.com', 'petalbot.com', 'huawei.com'] },
 ];
 
 function cacheCrawlerResult(key, ok) {

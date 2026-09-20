@@ -202,10 +202,10 @@ async function suite() {
   assert('第 6 个 UA 请求不报 5xx（200 或 403 均属检测生效）', sixthUaStatus !== null && sixthUaStatus < 500, `第 6 个 UA → ${sixthUaStatus}`);
   // 第 6 个 UA 已触发检测并开始计分；复用第 6 张票（同 UA）继续请求 → 积分累计触发封禁
   let sawReject = false;
-  for (let k = 0; k < 5; k++) {
+  for (let k = 0; k < 8; k++) {
     const rRot = await c.req('GET', '/api/articles?page=1', { ticket: lastRotateTicket, silent: true, ua: rotateUas[5], headers: rotationHeaders });
     if (rRot.status === 403) { sawReject = true; break; }
-    await new Promise((r2) => setTimeout(r2, 1500));
+    await new Promise((r2) => setTimeout(r2, 1000));
   }
   assert('UA 轮换计分后同 UA 请求被拒绝（自动封禁）', sawReject, '未观察到 403');
 

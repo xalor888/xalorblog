@@ -34,6 +34,12 @@ export const revealDirective = {
     }
     observer.observe(el);
   },
+  updated(el, binding) {
+    // 数据更新时若尚未进入视口且被移除过，确保仍处于观察中
+    if (observer && !el.classList.contains('in-view')) {
+      observer.observe(el);
+    }
+  },
   unmounted(el) {
     observer?.unobserve(el);
   },
