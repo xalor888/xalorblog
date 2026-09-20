@@ -45,7 +45,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   height: 3px;
-  z-index: 999;
+  z-index: var(--z-toast);
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s var(--ease);

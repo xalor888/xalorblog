@@ -548,7 +548,7 @@ watch(form, scheduleAutosave, { deep: true });
   padding: 14px 20px;
   position: sticky;
   top: 64px;
-  z-index: 30;
+  z-index: calc(var(--z-nav) - 20);
 }
 
 .edit-mode-tag {

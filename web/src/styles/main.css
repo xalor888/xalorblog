@@ -74,6 +74,56 @@
   --content-w: 1180px;
   --reading-w: 760px;
   --side-w: 260px;
+
+  /* ---------- 层级（z-index）----------
+     全站唯一的层级来源，组件里不要再写裸数字。
+     顺序：导航 < 悬浮控件 < 遮罩 < 弹窗 < 查看器 < Element Plus 弹层 < 路由进度条
+     Element Plus 从 2000 起自增（el-overlay / popper / message），不要覆盖它。 */
+  --z-nav: 100;        /* 顶栏、后台侧边栏、后台顶栏 */
+  --z-float: 300;      /* 悬浮按钮、侧边工具、进度条、气泡菜单 */
+  --z-scrim: 1000;     /* 自研弹层的遮罩 */
+  --z-modal: 1010;     /* 自研弹层主体 */
+  --z-modal-2: 1030;   /* 二级自研弹层（帮助 / 搜索等可叠加弹层） */
+  --z-viewer: 1200;    /* 全屏查看器（图片灯箱） */
+  --z-toast: 5000;     /* 路由进度条等必须始终可见的提示 */
+
+  /* ---------- 液态玻璃（Liquid Glass）弹层材质 ----------
+     思路：半透明渐变的「面」+ 高饱和强模糊的「背」+ 顶部镜面高光 + 亮边内折射。
+     定义成 token 便于所有弹层（含 Element Plus）共用同一套材质。 */
+  --lg-blur: blur(30px) saturate(185%);
+  --lg-blur-pop: blur(22px) saturate(170%);
+  /* 大弹窗：偏透，让底下的页面在玻璃里"化开" */
+  --lg-surface: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.82) 0%,
+    rgba(255, 255, 255, 0.58) 44%,
+    rgba(255, 255, 255, 0.72) 100%
+  );
+  /* 下拉/气泡：偏实，保证列表文字对比度 */
+  --lg-surface-pop: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.94) 0%,
+    rgba(253, 252, 250, 0.86) 55%,
+    rgba(255, 255, 255, 0.92) 100%
+  );
+  --lg-edge: rgba(255, 255, 255, 0.75);
+  --lg-sheen: radial-gradient(
+    130% 90% at 12% -14%,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(255, 255, 255, 0) 58%
+  );
+  --lg-inner: inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.4),
+    inset 0 0 44px rgba(255, 255, 255, 0.3);
+  --lg-shadow: 0 1px 2px rgba(26, 24, 20, 0.05),
+    0 14px 36px rgba(26, 24, 20, 0.14),
+    0 40px 90px rgba(26, 24, 20, 0.18);
+  --lg-shadow-pop: 0 2px 6px rgba(26, 24, 20, 0.07),
+    0 14px 34px rgba(26, 24, 20, 0.14);
+  --lg-scrim: rgba(20, 18, 14, 0.3);
+  --lg-scrim-blur: blur(3px);
+  --lg-radius: 24px;
+  --lg-radius-sm: 16px;
 }
 
 /* 暗色主题覆盖 */
@@ -92,6 +142,36 @@
   --accent: var(--accent-deep);
   --accent-soft: var(--accent-soft-dark);
   --accent-deep: var(--accent-deep-dark);
+
+  /* ---------- 液态玻璃：暗色材质 ----------
+     暗色下玻璃的"折射"靠极淡的白光边缘 + 更深的底，而不是继续堆白。 */
+  --lg-surface: linear-gradient(
+    145deg,
+    rgba(62, 57, 49, 0.86) 0%,
+    rgba(34, 31, 27, 0.74) 46%,
+    rgba(52, 48, 42, 0.82) 100%
+  );
+  --lg-surface-pop: linear-gradient(
+    150deg,
+    rgba(46, 42, 36, 0.96) 0%,
+    rgba(34, 31, 27, 0.92) 55%,
+    rgba(44, 40, 35, 0.95) 100%
+  );
+  --lg-edge: rgba(255, 255, 255, 0.14);
+  --lg-sheen: radial-gradient(
+    130% 90% at 12% -14%,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(255, 255, 255, 0) 58%
+  );
+  --lg-inner: inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.35),
+    inset 0 0 44px rgba(255, 255, 255, 0.05);
+  --lg-shadow: 0 1px 2px rgba(0, 0, 0, 0.35),
+    0 16px 40px rgba(0, 0, 0, 0.5),
+    0 44px 96px rgba(0, 0, 0, 0.55);
+  --lg-shadow-pop: 0 2px 8px rgba(0, 0, 0, 0.4),
+    0 16px 36px rgba(0, 0, 0, 0.5);
+  --lg-scrim: rgba(6, 5, 4, 0.5);
 }
 
 /* ============================================================
@@ -425,31 +505,51 @@ input:-webkit-autofill:focus {
   --el-mask-color: rgba(0, 0, 0, 0.5);
 }
 
-/* Element Plus 弹窗/下拉在暗色下的容器修正 */
-[data-theme='dark'] .el-popper,
-[data-theme='dark'] .el-select__popper,
-[data-theme='dark'] .el-dropdown__popper {
+/* ============================================================
+   液态玻璃弹层系统（Liquid Glass）
+   ------------------------------------------------------------
+   一套材质，供所有浮层复用：半透明渐变「面」+ 高饱和强模糊的「背」+
+   顶部镜面高光 + 亮边内折射 + 多层投影。浅色 / 暗色各有 token（见 :root）。
+   Element Plus 的 MessageBox / Dialog / Message / 各类 Popper 与自研弹窗
+   都吃同一套 --lg-*，所以整站浮层质感一致。
+   ============================================================ */
+
+/* ---------- 遮罩 ----------
+   注意：这里只上颜色，绝不加 backdrop-filter。
+   `.el-message-box` / `.el-dialog` 是 `.el-overlay` 的后代，而带 backdrop-filter 的
+   元素会成为「backdrop root」，导致后代的模糊只能采样到这个 root 内部的内容——
+   弹窗就再也糊不到真正的页面背景了。模糊全部交给玻璃面板自己。
+   自研弹窗里遮罩与面板是兄弟节点，不受此限制。 */
+.el-overlay {
+  background: var(--lg-scrim) !important;
+}
+
+/* 修正 el-popper 在暗色下的容器变量（玻璃面之下仍需要正确的文字/边框底色） */
+[data-theme='dark'] .el-popper {
   --el-bg-color-overlay: #2a2620 !important;
   --el-border-color-light: #332e26 !important;
 }
 
-/* ============ ElMessage 品牌化 ============
-   圆角大、左侧品牌色条、柔和阴影，替代生硬默认样式 */
+/* ============ ElMessage：玻璃胶囊 ============
+   保留左侧品牌色条做状态语义，其余交给玻璃材质。
+   高光作为 background 的第一层（而非伪元素）——伪元素会落在"定位后代"这一
+   绘画层级里，反倒盖在文字上。 */
 .el-message {
-  position: fixed !important;
-  top: 72px !important;
-  right: 16px !important;
-  left: auto !important;
-  transform: none !important;
-  border-radius: 14px !important;
-  border: 1px solid var(--border) !important;
-  box-shadow: 0 8px 28px rgba(29, 27, 22, 0.12) !important;
-  padding: 12px 20px !important;
+  border-radius: 16px !important;
+  border: 1px solid var(--lg-edge) !important;
+  background: var(--lg-sheen), var(--lg-surface-pop) !important;
+  -webkit-backdrop-filter: var(--lg-blur-pop);
+  backdrop-filter: var(--lg-blur-pop);
+  box-shadow: var(--lg-inner), var(--lg-shadow-pop) !important;
+  padding: 12px 20px 12px 24px !important;
   min-width: 240px !important;
   overflow: hidden;
+  /* 命中 EP 变量，保证残留规则不会把玻璃面盖成实色 */
+  --el-message-bg-color: transparent;
+  --el-message-border-color: transparent;
 }
 
-/* 左侧色条 */
+/* 左侧色条（状态语义） */
 .el-message::before {
   content: '';
   position: absolute;
@@ -476,49 +576,67 @@ input:-webkit-autofill:focus {
   color: var(--text) !important;
 }
 
-/* ============ ElMessageBox：站点卡片风格 ============ */
-.el-overlay.is-message-box {
-  background: rgba(18, 17, 15, 0.42) !important;
-  backdrop-filter: blur(10px);
+/* 关闭按钮：玻璃上的小圆片 */
+.el-message .el-message__closeBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
+.el-message .el-message__closeBtn:hover {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+}
+
+/* ============ ElMessageBox：液态玻璃确认框 ============ */
 .el-message-box {
-  --el-messagebox-width: 420px;
-  width: min(420px, calc(100vw - 32px)) !important;
-  max-width: 420px !important;
+  --el-messagebox-width: 440px;
+  position: relative;
+  width: min(440px, calc(100vw - 32px)) !important;
+  max-width: 440px !important;
   padding: 0 !important;
-  border-radius: 18px !important;
-  border: 1px solid var(--border) !important;
-  background: var(--card) !important;
-  box-shadow: var(--shadow-3) !important;
+  border-radius: var(--lg-radius) !important;
+  border: 1px solid var(--lg-edge) !important;
+  background: var(--lg-sheen), var(--lg-surface) !important;
+  -webkit-backdrop-filter: var(--lg-blur);
+  backdrop-filter: var(--lg-blur);
+  box-shadow: var(--lg-inner), var(--lg-shadow) !important;
   overflow: hidden;
 }
 
 .el-message-box__header {
-  padding: 22px 22px 0 !important;
+  padding: 24px 24px 0 !important;
 }
 
 .el-message-box__title {
-  font-size: 1.05rem !important;
+  font-size: 1.06rem !important;
   font-weight: 750 !important;
   color: var(--text) !important;
   letter-spacing: 0.01em;
 }
 
 .el-message-box__headerbtn {
-  top: 16px !important;
-  right: 16px !important;
+  top: 18px !important;
+  right: 18px !important;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--dur) var(--ease);
 }
 
 .el-message-box__headerbtn:hover {
-  background: var(--bg-soft);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
 }
 
 .el-message-box__content {
-  padding: 14px 22px 8px !important;
+  padding: 14px 24px 8px !important;
   color: var(--text-2) !important;
 }
 
@@ -540,7 +658,7 @@ input:-webkit-autofill:focus {
 }
 
 .el-message-box__input {
-  padding-top: 10px;
+  padding-top: 12px;
 }
 
 .el-message-box__errormsg {
@@ -548,25 +666,137 @@ input:-webkit-autofill:focus {
 }
 
 .el-message-box__btns {
-  padding: 8px 22px 20px !important;
+  padding: 10px 24px 22px !important;
   gap: 10px;
 }
 
+/* 按钮：副按钮做成玻璃上的半透明片，主按钮保留品牌实色 */
 .el-message-box__btns .el-button {
   min-width: 88px;
-  height: 36px;
-  border-radius: 10px !important;
+  height: 38px;
+  border-radius: 12px !important;
   font-weight: 650;
+  border-color: var(--lg-edge) !important;
+  background: transparent;
+  transition: all var(--dur) var(--ease);
+}
+
+.el-message-box__btns .el-button:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  border-color: var(--lg-edge) !important;
+  color: var(--text);
 }
 
 .el-message-box__btns .el-button--primary {
   background: var(--accent) !important;
-  border-color: var(--accent) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 38%, transparent);
 }
 
 .el-message-box__btns .el-button--primary:hover {
   background: var(--accent-deep) !important;
-  border-color: var(--accent-deep) !important;
+  color: #fff !important;
+}
+
+/* 校验错误提示不要被玻璃吃掉对比度 */
+.el-message-box__errormsg {
+  color: #c24b5e;
+}
+
+/* ============ ElDialog：液态玻璃对话框 ============ */
+.el-dialog {
+  position: relative;
+  border-radius: var(--lg-radius) !important;
+  border: 1px solid var(--lg-edge) !important;
+  background: var(--lg-sheen), var(--lg-surface) !important;
+  -webkit-backdrop-filter: var(--lg-blur);
+  backdrop-filter: var(--lg-blur);
+  box-shadow: var(--lg-inner), var(--lg-shadow) !important;
+  overflow: hidden;
+  padding: 0 !important;
+}
+
+.el-dialog__header {
+  padding: 22px 24px 6px !important;
+  margin-right: 0 !important;
+}
+
+.el-dialog__title {
+  font-size: 1.04rem !important;
+  font-weight: 750 !important;
+  color: var(--text) !important;
+}
+
+.el-dialog__headerbtn {
+  width: 34px !important;
+  height: 34px !important;
+  top: 16px !important;
+  right: 16px !important;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--dur) var(--ease);
+}
+
+.el-dialog__headerbtn:hover {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.el-dialog__body {
+  padding: 14px 24px 20px !important;
+  color: var(--text-2) !important;
+}
+
+.el-dialog__footer {
+  padding: 4px 24px 22px !important;
+}
+
+/* ============ 各类气泡 / 下拉：偏实的玻璃，保证列表可读性 ============ */
+.el-popper.is-light,
+.el-popper.is-dark,
+.el-popover.el-popper {
+  border-radius: var(--lg-radius-sm) !important;
+  border: 1px solid var(--lg-edge) !important;
+  background: var(--lg-surface-pop) !important;
+  -webkit-backdrop-filter: var(--lg-blur-pop);
+  backdrop-filter: var(--lg-blur-pop);
+  box-shadow: var(--lg-inner), var(--lg-shadow-pop) !important;
+  /** 暗色 Tooltip 原本是白字，换成玻璃面后必须改回正文色，否则看不清 */
+  color: var(--text) !important;
+  padding: 10px 12px !important;
+}
+
+.el-popper.is-light .el-popper__arrow::before,
+.el-popper.is-dark .el-popper__arrow::before {
+  background: var(--lg-surface-pop) !important;
+  border-color: var(--lg-edge) !important;
+}
+
+/* 气泡内文案统一 */
+.el-popper.is-dark .el-popper__content,
+.el-tooltip__popper {
+  color: var(--text) !important;
+}
+
+/* 下拉列表项：选中/悬停仍用品牌色，避免玻璃面把状态吞掉 */
+.el-select-dropdown__item.is-selected,
+.el-dropdown-menu__item:not(.is-disabled):focus {
+  color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+  font-weight: 600;
+}
+
+.el-dropdown-menu__item:not(.is-disabled):hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent) !important;
+  color: var(--text) !important;
+}
+
+.el-popconfirm__main {
+  padding: 2px 2px 10px;
+  color: var(--text);
+  font-size: 0.9rem;
 }
 
 /* ============ Element Plus 组件圆角统一 ============ */
@@ -578,11 +808,6 @@ input:-webkit-autofill:focus {
 .el-textarea__inner,
 .el-select__wrapper {
   border-radius: 10px !important;
-}
-
-.el-dialog {
-  border-radius: 16px !important;
-  border: 1px solid var(--border) !important;
 }
 
 .el-table {
@@ -600,13 +825,11 @@ input:-webkit-autofill:focus {
   border-radius: 8px;
 }
 
-.el-message-box {
-  border-radius: 18px;
-}
-
-.el-popover.el-popper {
-  border-radius: 12px !important;
-  border-color: var(--border) !important;
+/* 表格内嵌的玻璃弹层容器（v-loading 遮罩）跟随主题 */
+.el-loading-mask {
+  background-color: color-mix(in srgb, var(--card) 62%, transparent) !important;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 /* 数字用衬线等宽，阅读更舒服 */

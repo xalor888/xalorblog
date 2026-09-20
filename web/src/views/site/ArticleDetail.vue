@@ -897,7 +897,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   height: 3px;
-  z-index: 200;
+  z-index: var(--z-float);
   background: transparent;
   pointer-events: none;
 }
@@ -1016,10 +1016,13 @@ onUnmounted(() => {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-2);
+  /* 玻璃气泡：偏实，保证条目可读 */
+  background: var(--lg-surface-pop);
+  border: 1px solid var(--lg-edge);
+  border-radius: var(--lg-radius-sm);
+  box-shadow: var(--lg-inner), var(--lg-shadow-pop);
+  backdrop-filter: var(--lg-blur-pop);
+  -webkit-backdrop-filter: var(--lg-blur-pop);
   padding: 6px;
   z-index: 30;
   min-width: 130px;
@@ -1268,7 +1271,7 @@ onUnmounted(() => {
   position: fixed;
   right: 18px;
   bottom: calc(24px + env(safe-area-inset-bottom, 0px)); /* iOS 全面屏底部指示条避让 */
-  z-index: 60;
+  z-index: var(--z-float);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1325,7 +1328,7 @@ onUnmounted(() => {
 .toc-mask {
   position: fixed;
   inset: 0;
-  z-index: 350;
+  z-index: var(--z-scrim);
   background: rgba(15, 12, 9, 0.5);
   backdrop-filter: blur(3px);
   display: flex;
@@ -1335,12 +1338,15 @@ onUnmounted(() => {
 .toc-drawer {
   width: min(300px, 84vw);
   height: 100%;
-  background: var(--card);
-  border-left: 1px solid var(--border);
+  /* 液态玻璃抽屉：从右侧滑入的玻璃板 */
+  background: var(--lg-sheen), var(--lg-surface);
+  border-left: 1px solid var(--lg-edge);
   display: flex;
   flex-direction: column;
   padding: 20px 18px;
-  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--lg-inner), var(--lg-shadow);
+  backdrop-filter: var(--lg-blur);
+  -webkit-backdrop-filter: var(--lg-blur);
 }
 
 .td-head {

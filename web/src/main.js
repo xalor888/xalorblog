@@ -10,6 +10,23 @@ import { ensurePass } from './utils/pass';
 import { migrateLegacyKeys, migrateLegacyPrefix } from './utils/secureStorage';
 import { getAuthToken, getCachedAuthUser } from './utils/authSession';
 
+// ---------------------------------------------------------------------------
+// 命令式组件（ElMessage / ElMessageBox）的主题样式必须显式引入。
+//
+// 它们不写在任何模板里，而是以 API 形式在脚本中调用；而本项目源码一律用
+// `import { ElMessage, ElMessageBox } from 'element-plus'` 显式引入，标识符
+// 已存在 → unplugin-auto-import 不会介入 → 按需样式（style/css）也不会被注入。
+// 缺失的正是 element-plus/theme-chalk 的这几个基座文件：
+//   el-overlay.css     → .el-overlay{position:fixed;inset:0;z-index:2000}（遮罩定位）
+//   el-message.css     → .el-message{position:fixed;display:flex;background-color:…}
+//   el-message-box.css → MessageBox 的 flex 容器与图标绝对定位
+// 一旦缺失，遮罩退化为文档流元素：弹窗被追加到 <body> 末尾、堆在页面最底部，
+// 既没有层级也点不动；Toast 则丢背景色与 flex，文字互相叠在一起。
+//
+// 必须放在 ./styles/main.css 之前，保证下面的主题覆盖能生效。
+import 'element-plus/es/components/message/style/css';
+import 'element-plus/es/components/message-box/style/css';
+
 import './styles/main.css';
 import './styles/markdown.css';
 

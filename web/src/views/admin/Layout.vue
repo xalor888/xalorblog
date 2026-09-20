@@ -180,8 +180,8 @@ async function logout() {
   top: 0;
   bottom: 0;
   left: 0;
-  z-index: 60;
-  backdrop-filter: blur(18px);
+  z-index: var(--z-nav);
+  backdrop-filter: var(--lg-blur-pop);
   transition: width 0.25s var(--ease);
 }
 
@@ -295,8 +295,8 @@ async function logout() {
 
 .admin-header {
   height: 64px;
-  background: color-mix(in srgb, var(--card) 78%, transparent);
-  backdrop-filter: blur(18px);
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+  backdrop-filter: var(--lg-blur-pop);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -304,7 +304,7 @@ async function logout() {
   padding: 0 24px;
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: calc(var(--z-nav) - 10);
 }
 
 .collapse-btn {
@@ -392,15 +392,18 @@ async function logout() {
   position: absolute;
   right: 0;
   top: calc(100% + 8px);
-  z-index: 50;
+  z-index: var(--z-float);
   display: grid;
   grid-template-columns: repeat(4, 26px);
   gap: 8px;
   padding: 10px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-1);
+  /* 液态玻璃气泡 */
+  background: var(--lg-sheen), var(--lg-surface-pop);
+  border: 1px solid var(--lg-edge);
+  border-radius: var(--lg-radius-sm);
+  box-shadow: var(--lg-inner), var(--lg-shadow-pop);
+  backdrop-filter: var(--lg-blur-pop);
+  -webkit-backdrop-filter: var(--lg-blur-pop);
 }
 
 .accent-opt {

@@ -106,9 +106,10 @@ onUnmounted(() => {
 .help-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(20, 18, 14, 0.45);
-  backdrop-filter: blur(3px);
-  z-index: 300;
+  background: var(--lg-scrim);
+  backdrop-filter: var(--lg-scrim-blur);
+  -webkit-backdrop-filter: var(--lg-scrim-blur);
+  z-index: var(--z-scrim);
   animation: fadeIn 0.18s ease;
 }
 
@@ -117,13 +118,16 @@ onUnmounted(() => {
   top: 14vh;
   left: 50%;
   transform: translateX(-50%);
-  width: min(420px, calc(100vw - 32px));
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-3);
-  z-index: 301;
+  width: min(440px, calc(100vw - 32px));
+  /* 液态玻璃材质 */
+  background: var(--lg-sheen), var(--lg-surface);
+  border: 1px solid var(--lg-edge);
+  border-radius: var(--lg-radius);
+  box-shadow: var(--lg-inner), var(--lg-shadow);
+  z-index: calc(var(--z-modal-2) + 10);
   overflow: hidden;
+  backdrop-filter: var(--lg-blur);
+  -webkit-backdrop-filter: var(--lg-blur);
   animation: slideDown 0.22s var(--ease-out);
 }
 
@@ -142,7 +146,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
 }
 
 .help-title {
@@ -153,7 +157,7 @@ onUnmounted(() => {
 .help-close {
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -202,8 +206,8 @@ onUnmounted(() => {
 .help-keys kbd {
   font-family: var(--font-sans);
   font-size: 0.74rem;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
   border-bottom-width: 2px;
   border-radius: 6px;
   padding: 3px 8px;
@@ -217,7 +221,7 @@ onUnmounted(() => {
 
 .help-foot {
   padding: 10px 20px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
   font-size: 0.76rem;
   color: var(--text-3);
   text-align: center;

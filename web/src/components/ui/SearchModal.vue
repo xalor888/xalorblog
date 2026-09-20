@@ -309,9 +309,10 @@ onUnmounted(() => {
 .search-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(20, 18, 14, 0.45);
-  backdrop-filter: blur(3px);
-  z-index: 300;
+  background: var(--lg-scrim);
+  backdrop-filter: var(--lg-scrim-blur);
+  -webkit-backdrop-filter: var(--lg-scrim-blur);
+  z-index: var(--z-scrim);
   animation: fadeIn 0.18s ease;
 }
 
@@ -320,14 +321,16 @@ onUnmounted(() => {
   top: 12vh;
   left: 50%;
   transform: translateX(-50%);
-  width: min(620px, calc(100vw - 32px));
-  background: color-mix(in srgb, var(--card) 88%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 22px;
-  box-shadow: var(--shadow-3);
-  z-index: 301;
+  width: min(640px, calc(100vw - 32px));
+  /* 液态玻璃：底色渐变 + 左上角镜面高光（高光必须作为背景层，不能做成伪元素） */
+  background: var(--lg-sheen), var(--lg-surface);
+  border: 1px solid var(--lg-edge);
+  border-radius: var(--lg-radius);
+  box-shadow: var(--lg-inner), var(--lg-shadow);
+  z-index: var(--z-modal-2);
   overflow: hidden;
-  backdrop-filter: blur(22px);
+  backdrop-filter: var(--lg-blur);
+  -webkit-backdrop-filter: var(--lg-blur);
   animation: slideDown 0.22s var(--ease-out);
 }
 
@@ -347,7 +350,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 16px 18px;
-  border-bottom: 1px solid var(--border);
+  /* 玻璃面上的分隔线要用极淡的半透明边，实色边框会把玻璃切成硬块 */
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
 }
 
 .search-icon {
@@ -370,9 +374,9 @@ onUnmounted(() => {
   font-family: var(--font-sans);
   font-size: 0.72rem;
   color: var(--text-3);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: 5px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  border-radius: 6px;
   padding: 2px 8px;
 }
 
@@ -404,7 +408,7 @@ onUnmounted(() => {
 
 .result-item:hover,
 .result-item.active {
-  background: var(--bg-soft);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 
 .ri-dot {
@@ -528,7 +532,7 @@ onUnmounted(() => {
 
 .history-item:hover {
   color: var(--accent);
-  background: var(--bg-soft);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 
 .spinner {
@@ -549,7 +553,7 @@ onUnmounted(() => {
   display: flex;
   gap: 16px;
   padding: 10px 18px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
   color: var(--text-3);
   font-size: 0.76rem;
 }
@@ -557,8 +561,8 @@ onUnmounted(() => {
 .search-foot kbd {
   font-family: var(--font-sans);
   font-size: 0.7rem;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
   border-radius: 4px;
   padding: 1px 5px;
   margin-right: 4px;

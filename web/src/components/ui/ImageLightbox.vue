@@ -190,9 +190,10 @@ defineExpose({ open });
 .lightbox {
   position: fixed;
   inset: 0;
-  z-index: 400;
-  background: rgba(12, 10, 8, 0.88);
-  backdrop-filter: blur(6px);
+  z-index: var(--z-viewer);
+  background: rgba(10, 9, 7, 0.8);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -207,13 +208,17 @@ defineExpose({ open });
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
+  /* 暗场景下的玻璃：靠亮边与内高光立起来 */
+  background: rgba(255, 255, 255, 0.14);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s var(--ease);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 10px 28px rgba(0, 0, 0, 0.42);
   z-index: 2;
 }
 
@@ -274,11 +279,13 @@ defineExpose({ open });
   transform: translateX(-50%);
   display: flex;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.26);
   border-radius: 999px;
   padding: 6px;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 10px 28px rgba(0, 0, 0, 0.42);
 }
 
 .lb-ctrl {

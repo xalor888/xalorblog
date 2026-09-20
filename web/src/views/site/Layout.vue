@@ -416,7 +416,7 @@ onUnmounted(() => {
   position: fixed;
   top: -60px;
   left: 16px;
-  z-index: 1000;
+  z-index: calc(var(--z-nav) + 1);
   padding: 10px 18px;
   border-radius: 0 0 10px 10px;
   background: var(--accent);
@@ -445,7 +445,7 @@ onUnmounted(() => {
 .site-nav {
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: var(--z-nav);
   background: var(--card-trans);
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);
@@ -675,7 +675,7 @@ onUnmounted(() => {
   top: var(--nav-h);
   left: 0;
   right: 0;
-  z-index: 90;
+  z-index: calc(var(--z-nav) - 10);
   background: rgba(8, 7, 6, 0.28);
   color: rgba(255, 255, 255, 0.88);
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
@@ -941,7 +941,7 @@ onUnmounted(() => {
   position: fixed;
   right: 22px;
   bottom: 28px;
-  z-index: 80;
+  z-index: var(--z-float);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1058,25 +1058,28 @@ onUnmounted(() => {
   display: none;
   flex-direction: column;
   padding: 18px 22px 22px;
-  background: color-mix(in srgb, var(--card) 92%, transparent);
-  border-bottom: 1px solid var(--border);
+  /* 液态玻璃下拉抽屉 */
+  background: var(--lg-sheen), var(--lg-surface);
+  border-bottom: 1px solid var(--lg-edge);
   position: fixed;
   top: var(--nav-h);
   left: 0;
   right: 0;
-  z-index: 95;
+  z-index: calc(var(--z-nav) - 5);
   max-height: calc(100dvh - var(--nav-h));
   overflow: auto;
-  backdrop-filter: blur(22px);
+  backdrop-filter: var(--lg-blur);
+  -webkit-backdrop-filter: var(--lg-blur);
 }
 
 /* 抽屉遮罩：点击菜单外区域关闭（移动端导航完整性） */
 .drawer-scrim {
   position: fixed;
   inset: 0;
-  z-index: 94;
-  background: rgba(20, 18, 14, 0.42);
-  backdrop-filter: blur(6px);
+  z-index: calc(var(--z-nav) - 6);
+  background: var(--lg-scrim);
+  backdrop-filter: var(--lg-scrim-blur);
+  -webkit-backdrop-filter: var(--lg-scrim-blur);
 }
 
 .mobile-link {
@@ -1089,7 +1092,7 @@ onUnmounted(() => {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
   transition: all var(--dur) var(--ease);
 }
 
