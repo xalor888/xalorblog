@@ -37,9 +37,11 @@
         </div>
 
         <div v-if="comment.children && comment.children.length" class="children">
-          <!-- 深层（≥3 层）默认折叠，防长楼撑爆页面；信息不丢，可展开 -->
+          <!-- 深层（≥3 层）默认折叠，防长楼撑爆页面；信息不丢，可展开。
+               注意：<transition> 的直接子级必须是单个元素——包 <template v-for> 是
+               片段（多子级），编译期直接报错，文章详情页整条懒加载链路随之失败 -->
           <transition name="children-fade">
-            <template v-if="depth < 2 || expanded">
+            <div v-if="depth < 2 || expanded" class="children-list">
               <CommentItem
                 v-for="child in comment.children"
                 :key="child.id"
@@ -49,7 +51,7 @@
                 :highlight-id="highlightId"
                 @reply="$emit('reply', $event)"
               />
-            </template>
+            </div>
           </transition>
           <button v-if="depth >= 2 && !expanded" class="expand-btn" :aria-expanded="expanded" @click="expanded = true">
             <XIcon name="MessageSquare" :size="12" /> 展开 {{ comment.children.length }} 条回复

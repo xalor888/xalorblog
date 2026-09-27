@@ -148,6 +148,16 @@ async function runTests() {
       // 测试失败退出码 1：保留输出继续下一套件
     }
   }
+
+  // 收尾清理：security 套件（通常最后一个）会把 127.0.0.1 持久化封禁进 ip_bans，
+  // 不清会导致测试结束后本地站整站 403，且封禁在 DB、重启服务也无法恢复。
+  // 顺带清掉 2FA 残留与本机测试留言，把环境还原到可直接 npm run dev 的状态。
+  console.log(`\n[run] 收尾：清库 + 重启服务（清掉末尾套件遗留的持久化封禁）…`);
+  run(`"${MYSQL}" -u root xalor_blog -e "${RESET_SQL}"`);
+  if (!process.env.TEST_NO_RESTART) {
+    restartServer();
+    await waitServer();
+  }
 }
 
 main().catch((e) => { console.error('[run] 运行器异常:', e); process.exit(1); });

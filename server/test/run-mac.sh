@@ -3,7 +3,11 @@
 MYSQL=${MYSQL_BIN:-$(command -v mysql || echo /opt/homebrew/opt/mysql/bin/mysql)}
 cd "$(dirname "$0")/.." || exit 1
 reset_db() {
-  $MYSQL -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1'); DELETE FROM messages WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1');" 2>/dev/null
+  # 与 run.js 的 RESET_SQL 保持一致：
+  # - links：journey 套件每次申请同一个 https://example.com，links.js 的
+  #   「防重复申请」会拦下上一次遗留的 pending 记录（400），必须一并清掉
+  # - ip_bans / totp / 本机留言：防跨套件污染（详见 run.js 注释）
+  $MYSQL -u root xalor_blog -e "DELETE FROM ip_bans; UPDATE users SET totp_secret = NULL, totp_enabled = false; DELETE FROM comments WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1'); DELETE FROM messages WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1'); DELETE FROM links WHERE url = 'https://example.com';" 2>/dev/null
 }
 port_free() {
   ! lsof -nP -iTCP:3000 -sTCP:LISTEN >/dev/null 2>&1
@@ -30,6 +34,12 @@ for s in $SUITES; do
 done
 echo ""
 echo "===== 总计: $PASS 通过, $FAIL 失败 ====="
+# 收尾清理：security 套件会把 127.0.0.1 持久化封禁进 ip_bans（15 分钟），
+# 不清会导致测试结束后本地站整站 403，且封禁在 DB、重启服务也无法恢复。
+# 顺带清掉 2FA 残留与本机测试留言，把环境还原到可直接 npm run dev 的状态。
+reset_db
+restart_server || echo "[cleanup] 服务重启失败，请手动启动: npm run dev"
+echo "[cleanup] 已清空 ip_bans / 2FA 残留 / 测试留言并重启服务"
 if [ -n "$FAILED" ]; then
   echo "失败套件:$FAILED"
   exit 1

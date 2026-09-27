@@ -58,6 +58,21 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    // vite preview 不继承 server.proxy：不补的话 npm run preview 下 /api 会落进
+    // SPA fallback 返回 index.html，本地验证生产构建时所有接口静默失败
+    preview: {
+      port: 4173,
+      proxy: {
+        [API_PREFIX]: {
+          target: 'http://127.0.0.1:3000',
+          changeOrigin: true,
+        },
+        '/uploads': {
+          target: 'http://127.0.0.1:3000',
+          changeOrigin: true,
+        },
+      },
+    },
     build: {
       target: 'es2020',
       // terser 混淆：生产代码压缩 + 剥离注释与 console（构建期剥离比运行时 anti-debug

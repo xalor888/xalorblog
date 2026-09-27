@@ -2,7 +2,10 @@
   <el-config-provider :locale="zhCn" :message="messageConfig">
     <RouteProgress />
     <router-view v-slot="{ Component }">
-      <transition name="page-fade" mode="out-in">
+      <!-- 显式 duration：结束时机走固定 setTimeout，不依赖 transitionend/帧回调。
+           后台标签页/被遮挡窗口渲染帧冻结时，帧检测过渡会无限搁浅，
+           表现为路由已就位但页面停留在旧视图（冷加载详情路由显示首页）。 -->
+      <transition name="page-fade" mode="out-in" :duration="{ enter: 220, leave: 200 }">
         <component :is="Component" />
       </transition>
     </router-view>

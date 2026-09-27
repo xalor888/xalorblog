@@ -125,8 +125,17 @@ function flushPersist() {
   });
 }
 
+/** loopback 地址（127.x / ::1 / ::ffff:127.x）：只可能来自本机（测试、探活、本地开发）。
+ * 封 loopback 有内存内生效即可（如测试断言 403），持久化只有副作用——
+ * 测试套件触发后封禁落库，测试结束/重启服务都救不回来，本地站整站 403。 */
+function isLoopbackIp(ip) {
+  const s = String(ip || '').toLowerCase();
+  return s === '::1' || s.startsWith('127.') || s.startsWith('::ffff:127.');
+}
+
 /** 封禁持久化（异步，失败静默 —— 内存仍是权威） */
 function persistBan(ip, until, count, reason = '') {
+  if (isLoopbackIp(ip)) return Promise.resolve();
   return db('ip_bans')
     .insert({
       ip,
@@ -168,9 +177,11 @@ async function loadPersistedBans() {
     for (const r of rows) {
       const until = new Date(r.banned_until).getTime();
       if (until > now) {
-        const rawIp = String(r.ip || '').trim();
-        const key = reputationKey(rawIp);
-        if (!key) continue;
+      const rawIp = String(r.ip || '').trim();
+      const key = reputationKey(rawIp);
+      if (!key) continue;
+      // 历史遗留的 loopback 持久化封禁不再恢复（新封禁已不再落库，见 persistBan）
+      if (isLoopbackIp(key)) continue;
         const existing = aggregated.get(key);
         if (!existing) {
           aggregated.set(key, {

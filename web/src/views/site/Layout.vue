@@ -107,7 +107,10 @@
     <!-- 主体 -->
     <main id="main-content" class="site-main" :class="{ 'home-main': isHome }" tabindex="-1">
       <router-view v-slot="{ Component }">
-        <transition name="page" mode="out-in">
+        <!-- 显式 duration：结束时机走固定 setTimeout，不依赖 transitionend/帧回调。
+             后台标签页/被遮挡窗口里渲染帧会冻结，纯帧检测的过渡可能永远不收尾，
+             页面表现为切换后内容区空白（需再点一次才恢复）。 -->
+        <transition name="page" mode="out-in" :duration="{ enter: 260, leave: 240 }">
           <component :is="Component" :key="route.path" />
         </transition>
       </router-view>
@@ -774,6 +777,18 @@ onUnmounted(() => {
 .page-leave-to {
   opacity: 0;
   transform: translateY(-6px);
+}
+
+/* 晕动症用户：不做位移，只保留极短淡入淡出（与 main.css 的 page-fade 降级策略一致） */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter-active,
+  .page-leave-active {
+    transition: opacity 0.12s ease !important;
+  }
+  .page-enter-from,
+  .page-leave-to {
+    transform: none;
+  }
 }
 
 /* ============ 页脚 ============ */
