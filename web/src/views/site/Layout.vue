@@ -239,17 +239,46 @@ watch(mobileOpen, (open) => {
 watch(() => route.path, () => {
   if (mobileOpen.value) mobileOpen.value = false;
 });
-// 公告关闭记忆：用公告内容 hash 作 key，内容变了重新显示
+// 公告关闭记忆：点过 × 的按内容记住「不再显示」，但只记一段有效期——
+// 过期、或你在后台改了文案，都会重新显示。避免「关一次就再也看不到」的困惑。
 const announcementClosed = ref(false);
 const ANNOUNCEMENT_KEY = 'xalor_announcement_hidden';
+const ANNOUNCEMENT_HIDE_DAYS = 3;
 
-function checkAnnouncement() {
-  let saved = '';
+/** 读取关闭记录（兼容旧格式：旧版存的是纯文本，没有关闭时间——解析失败即视为未关闭，公告重新显示） */
+function readAnnouncementDismissal() {
   try {
-    saved = localStorage.getItem(ANNOUNCEMENT_KEY);
-  } catch (e) { /* 隐私模式忽略 */ }
-  announcementClosed.value = saved === (site.settings.announcement || '');
+    const raw = localStorage.getItem(ANNOUNCEMENT_KEY);
+    if (!raw) return null;
+    const rec = JSON.parse(raw);
+    if (!rec || typeof rec.text !== 'string') return null;
+    return rec;
+  } catch (e) {
+    return null; // 旧格式纯文本 / 损坏 → 当作未关闭
+  }
 }
+
+// 关键：在公告文本就绪的那一刻就同步判定关闭态（watch immediate + pre-flush），
+// 已关闭的公告从第一帧起就不渲染——而不是先闪一帧、再由 checkAnnouncement 把它藏掉。
+// 「弹一下就消失」的观感正是这个「先渲染后判定」的竞态造成的。
+watch(
+  () => site.settings.announcement,
+  () => {
+    const text = site.settings.announcement || '';
+    if (!text) {
+      announcementClosed.value = false;
+      return;
+    }
+    const rec = readAnnouncementDismissal();
+    if (!rec || rec.text !== text) {
+      announcementClosed.value = false; // 没关过、或文案已更新 → 显示
+      return;
+    }
+    const expired = Date.now() - (Number(rec.at) || 0) > ANNOUNCEMENT_HIDE_DAYS * 864e5;
+    announcementClosed.value = !expired; // 关闭已超过有效期 → 重新显示
+  },
+  { immediate: true }
+);
 
 // 页脚年份自动跟随当前年份（© 2026 → © 2027）
 const footerText = computed(() => {
@@ -262,7 +291,10 @@ const footerText = computed(() => {
 function closeAnnouncement() {
   announcementClosed.value = true;
   try {
-    localStorage.setItem(ANNOUNCEMENT_KEY, site.settings.announcement || '');
+    localStorage.setItem(
+      ANNOUNCEMENT_KEY,
+      JSON.stringify({ text: site.settings.announcement || '', at: Date.now() })
+    );
   } catch (e) { /* 隐私模式忽略 */ }
 }
 
@@ -344,7 +376,6 @@ onMounted(async () => {
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('keydown', onGlobalKeydown);
   await site.init();
-  checkAnnouncement();
   // 预热评论表单令牌（减少首次提交等待）
   warmFormToken();
   // 空闲时预取常用页面 chunk（浏览器空闲期提前加载，导航即点即开）

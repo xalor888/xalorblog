@@ -242,15 +242,17 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, watchEffect, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import SkeletonList from '@/components/ui/SkeletonList.vue';
 import { articleApi, categoryApi, tagApi } from '@/api';
 import { formatDate, formatNumber } from '@/utils/format';
+import { useSiteStore } from '@/stores/site';
 
 const route = useRoute();
 const router = useRouter();
+const site = useSiteStore();
 
 const articles = ref([]);
 const categories = ref([]);
