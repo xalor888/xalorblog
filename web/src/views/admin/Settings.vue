@@ -95,6 +95,19 @@
       </el-form>
     </div>
 
+    <!-- 阅读与复制 -->
+    <div class="setting-card card">
+      <h3 class="card-title">阅读与复制</h3>
+      <el-form label-width="130px" class="setting-form">
+        <el-form-item label="允许复制">
+          <el-switch v-model="form.allow_copy" />
+          <span class="switch-tip">
+            默认允许。关闭后全站禁止选中/复制正文与右键菜单；个别文章可在「文章编辑」页单独放开
+          </span>
+        </el-form-item>
+      </el-form>
+    </div>
+
     <!-- 关于页 -->
     <div class="setting-card card">
       <h3 class="card-title">关于页内容（Markdown）</h3>

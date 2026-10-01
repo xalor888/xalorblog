@@ -323,6 +323,7 @@ import { formatDate, formatNumber, readingTime } from '@/utils/format';
 import { isBookmarked, addBookmark, removeBookmark } from '@/utils/bookmark';
 import { useSiteStore } from '@/stores/site';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
+import { setArticleCopyAllowed, clearArticleCopyScope } from '@/utils/copyGuard';
 
 const route = useRoute();
 const router = useRouter();
@@ -575,6 +576,8 @@ async function load() {
     const a = await articleApi.detail(route.params.slug);
     if (my !== loadSeq) return; // 已有更新的请求，丢弃本次响应
     article.value = a;
+    // 本篇的复制开关（后台文章编辑页可改）；全站开关由 Layout 统一控制
+    setArticleCopyAllowed(a.allow_copy);
     applyPageMeta();
     toc.value = extractToc(a.content);
     liked.value = (() => {
@@ -808,6 +811,7 @@ onUnmounted(() => {
   tocObserver?.disconnect();
   removeJsonLd(); // 移除本文 JSON-LD，防与后续页面结构化数据叠加
   if (mobileTocOpen.value) unlockBodyScroll();
+  clearArticleCopyScope(); // 离开文章页：复制限制回到只受全站开关控制
 });
 </script>
 

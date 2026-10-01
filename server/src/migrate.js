@@ -61,6 +61,8 @@ async function migrate() {
         t.integer('views').defaultTo(0);
         t.integer('likes').defaultTo(0);
         t.boolean('allow_comment').defaultTo(true);
+        // 允许复制（正文可被选中/复制）。与 allow_comment 同构：单篇覆盖全局 settings.allow_copy
+        t.boolean('allow_copy').defaultTo(true);
         t.timestamp('published_at').nullable();
         t.timestamp('created_at').defaultTo(db.fn.now());
         t.timestamp('updated_at').defaultTo(db.fn.now());
@@ -73,6 +75,11 @@ async function migrate() {
           t.mediumtext('content').notNullable().alter();
         });
         console.log('[migrate] articles.content 已升级为 mediumtext');
+      }
+      // allow_copy：老库补列，已有文章默认「允许复制」（与站点默认一致）
+      if (!cols.allow_copy) {
+        await db.schema.alterTable('articles', (t) => t.boolean('allow_copy').defaultTo(true));
+        console.log('[migrate] articles.allow_copy 列已补齐');
       }
     }
   });

@@ -222,6 +222,7 @@ import { formatNumber } from '@/utils/format';
 
 import { warmFormToken } from '@/utils/formToken';
 import { lockBodyScroll, unlockBodyScroll, resetBodyScroll } from '@/utils/scrollLock';
+import { setGlobalCopyAllowed } from '@/utils/copyGuard';
 
 const route = useRoute();
 const theme = useThemeStore();
@@ -277,6 +278,14 @@ watch(
     const expired = Date.now() - (Number(rec.at) || 0) > ANNOUNCEMENT_HIDE_DAYS * 864e5;
     announcementClosed.value = !expired; // 关闭已超过有效期 → 重新显示
   },
+  { immediate: true }
+);
+
+// 复制守卫：全站开关跟随设置（`allow_copy` 默认 true —— 默认允许复制）。
+// 文章页还会叠加单篇开关，由 ArticleDetail 声明。见 utils/copyGuard.js
+watch(
+  () => site.settings.allow_copy,
+  (v) => setGlobalCopyAllowed(v),
   { immediate: true }
 );
 

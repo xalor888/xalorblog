@@ -3,10 +3,12 @@
  * - DevTools 检测：元素宽高差 / debugger 断点耗时 / console 劫持探测
  * - 检测到后：无限 debugger + 全屏遮蔽层
  * - 键盘拦截：F12 / Ctrl+Shift+I/J/C / Ctrl+U / Ctrl+P / Ctrl+S
- * - 右键菜单禁用（输入区保留）
- * - 文本选择与图片拖拽禁用（输入区保留）
  * - console 全面静默：仅显示一条定制提示
  * - 开发模式可通过 localStorage['xalor_dev_mode']='1' 关闭
+ *
+ * 复制 / 文本选中 / 右键菜单「不在此脚本内处理」——默认允许复制，
+ * 是否拦截由站点设置（settings.allow_copy + 单篇 articles.allow_copy）
+ * 在前端应用层决定，见 web/src/utils/copyGuard.js。本脚本只做防调试。
  */
 (function () {
   'use strict';
@@ -129,27 +131,11 @@
     return true;
   }, true);
 
-  /* ---------- 右键菜单禁用（保留输入区） ---------- */
-  document.addEventListener('contextmenu', function (e) {
-    var tag = (e.target && e.target.tagName) || '';
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
-    e.preventDefault();
-  }, true);
-
-  /* ---------- 文本选择禁用（保留输入区） ---------- */
-  document.addEventListener('selectstart', function (e) {
-    var tag = (e.target && e.target.tagName) || '';
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
-    e.preventDefault();
-  }, true);
-
-  /* ---------- 图片拖拽禁用 ---------- */
-  document.addEventListener('dragstart', function (e) {
-    if (e.target && e.target.tagName === 'IMG') {
-      e.preventDefault();
-      return false;
-    }
-  }, true);
+  /* ---------- 复制/选中/右键：不再无条件拦截 ----------
+     复制默认是允许的。是否需要拦截由站点设置决定：
+       settings.allow_copy（全站） × 文章自身 allow_copy（单篇）
+     前端在 web/src/utils/copyGuard.js 按这两个开关动态挂载/卸载监听，
+     本脚本只负责与「调试行为」相关的防护。 */
 
   /* ---------- console 全面静默 ---------- */
   var warnedOnce = false;

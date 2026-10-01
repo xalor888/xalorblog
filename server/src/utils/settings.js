@@ -18,6 +18,8 @@ const DEFAULT_SETTINGS = {
   // 内容审核开关：开启后新评论/留言进入待审，需后台手动通过
   comment_moderation: false,
   message_moderation: false,
+  // 全站是否允许复制正文/选中文字。默认允许（单篇可用 articles.allow_copy 覆盖）
+  allow_copy: true,
   // RSS 默认仅摘要。全文会绕过文章详情的传输加密，须站长显式打开。
   rss_full_content: false,
   // 自定义版权声明（文章页版权卡片；留空则使用默认 CC BY-NC 4.0 声明）
@@ -28,7 +30,7 @@ const DEFAULT_SETTINGS = {
 
 /** 允许保存的键白名单（防止任意键注入） */
 const ALLOWED_KEYS = new Set(Object.keys(DEFAULT_SETTINGS));
-const BOOL_KEYS = new Set(['comment_moderation', 'message_moderation', 'rss_full_content']);
+const BOOL_KEYS = new Set(['comment_moderation', 'message_moderation', 'rss_full_content', 'allow_copy']);
 
 // 设置缓存：读多写少，保存时失效
 let settingsCache = null;

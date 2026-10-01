@@ -402,6 +402,7 @@ async function seed() {
         status: a.status,
         is_top: !!a.is_top,
         allow_comment: true,
+        allow_copy: true,
         published_at: localDateTimeStr(new Date(Date.now() - Math.floor(Math.random() * 20) * 24 * 3600 * 1000)),
         views: Math.floor(Math.random() * 500) + 50,
         likes: Math.floor(Math.random() * 60),

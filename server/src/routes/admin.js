@@ -170,7 +170,7 @@ router.get('/articles/admin/:id', async (req, res) => {
 /** 创建文章 */
 router.post('/articles', async (req, res) => {
   try {
-    const { title, content, summary, cover, category_id, tags = [], status = 'draft', is_top = false, allow_comment = true } = req.body;
+    const { title, content, summary, cover, category_id, tags = [], status = 'draft', is_top = false, allow_comment = true, allow_copy = true } = req.body;
     const cleanTitle = cleanLine(title, 200);
     const cleanContent = cleanMarkdown(content, 100000);
     if (!cleanTitle) return fail(res, '标题不能为空');
@@ -178,6 +178,7 @@ router.post('/articles', async (req, res) => {
     const cleanStatus = status === 'published' ? 'published' : 'draft';
     const cleanIsTop = toBool(is_top, false);
     const cleanAllowComment = toBool(allow_comment, true);
+    const cleanAllowCopy = toBool(allow_copy, true);
 
     // 边界场景：引用的分类已被删除（如另一管理员同时操作）→ 明确拒绝而非写入孤儿 ID
     // 非数值（如 "abc"）显式 400：Number() 得 NaN 直接进查询会变成 500
@@ -200,7 +201,7 @@ router.post('/articles', async (req, res) => {
         title: cleanTitle, slug, content: cleanContent,
         summary: cleanText(summary || plainText(cleanContent).slice(0, 150), 500),
         cover: safeCover(cover), category_id: cleanCategoryId,
-        status: cleanStatus, is_top: cleanIsTop, allow_comment: cleanAllowComment,
+        status: cleanStatus, is_top: cleanIsTop, allow_comment: cleanAllowComment, allow_copy: cleanAllowCopy,
         published_at,
       });
 
@@ -239,7 +240,7 @@ router.put('/articles/:id', async (req, res) => {
     const row = await db('articles').where('id', id).first();
     if (!row) return notFound(res, '文章不存在');
 
-    const { title, content, summary, cover, category_id, tags, status, is_top, allow_comment, slug, published_at } = req.body;
+    const { title, content, summary, cover, category_id, tags, status, is_top, allow_comment, allow_copy, slug, published_at } = req.body;
     const patch = { updated_at: db.fn.now() };
     if (title !== undefined) {
       // 空标题显式 400：cleanLine('') 得空串，直接落库触发 notNullable → 500
@@ -264,6 +265,7 @@ router.put('/articles/:id', async (req, res) => {
     }
     if (is_top !== undefined) patch.is_top = toBool(is_top, row.is_top);
     if (allow_comment !== undefined) patch.allow_comment = toBool(allow_comment, row.allow_comment);
+    if (allow_copy !== undefined) patch.allow_copy = toBool(allow_copy, row.allow_copy);
     if (slug) {
       patch.slug = slugify(slug, (await db('articles').whereNot('id', id).pluck('slug')));
     }
@@ -338,6 +340,7 @@ router.post('/articles/:id/duplicate', async (req, res) => {
         status: 'draft',
         is_top: false,
         allow_comment: row.allow_comment,
+        allow_copy: row.allow_copy,
         views: 0,
         likes: 0,
         published_at: null,

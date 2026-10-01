@@ -76,7 +76,9 @@
           <div class="option-row">
             <el-switch v-model="form.is_top" active-text="置顶" />
             <el-switch v-model="form.allow_comment" active-text="允许评论" />
+            <el-switch v-model="form.allow_copy" active-text="允许复制" />
           </div>
+          <span class="switch-tip">「允许复制」需站点设置里的全站开关也开着，本篇才可复制</span>
         </el-form-item>
         <el-form-item v-if="articleStatus === 'published' || form.published_at" label="发布时间">
           <el-date-picker
@@ -264,6 +266,7 @@ const form = ref({
   content: '',
   is_top: false,
   allow_comment: true,
+  allow_copy: true,
   status: 'draft',
   published_at: '',
 });
@@ -417,6 +420,7 @@ async function save(data) {
     content: form.value.content,
     is_top: form.value.is_top,
     allow_comment: form.value.allow_comment,
+    allow_copy: form.value.allow_copy,
     published_at: form.value.published_at || undefined,
   };
   try {
@@ -497,6 +501,7 @@ onMounted(async () => {
       content: article.content || '',
       is_top: !!article.is_top,
       allow_comment: article.allow_comment !== false,
+      allow_copy: article.allow_copy !== false,
       published_at: article.published_at || '',
     });
     clearDraft();
@@ -676,6 +681,13 @@ watch(form, scheduleAutosave, { deep: true });
 .option-row {
   display: flex;
   gap: 24px;
+}
+
+.switch-tip {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 0.8rem;
 }
 
 /* 编辑器 */
