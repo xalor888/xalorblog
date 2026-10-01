@@ -26,6 +26,12 @@ const DEFAULT_SETTINGS = {
   // LLM 深度二判：仅对本地判为中风险的评论调用大模型复核。
   // 需要同时配置 AI_API_KEY / AI_BASE_URL / AI_MODEL 才会真正生效（有 API 成本）。
   ai_llm_moderation: true,
+  // AI 模型配置（可选）：留空则回落到服务器 .env 的 AI_BASE_URL / AI_MODEL / AI_API_KEY，
+  // 填了就以后台为准（与 WAF 那套「env 作默认值、表配置覆盖」一致）。
+  // ai_api_key 是敏感字段：公开接口不下发、设置导出会剔除，后台只显示「是否已配置」。
+  ai_base_url: '',
+  ai_model: '',
+  ai_api_key: '',
   // 全站是否允许复制正文/选中文字。默认允许（单篇可用 articles.allow_copy 覆盖）
   allow_copy: true,
   // RSS 默认仅摘要。全文会绕过文章详情的传输加密，须站长显式打开。
@@ -98,6 +104,20 @@ async function saveSettings(entries) {
     if ((key === 'social_github' || key === 'social_weibo') && value && !/^https?:\/\/[^\s]+$/i.test(raw)) continue;
     // 联系邮箱用于 security.txt / mailto 链接，拒绝空格/换行/角括号等异常值
     if (key === 'social_email' && value && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(raw)) continue;
+    // AI 接口地址：必须是 https（内容与密钥不能走明文，也不允许指向内网成为 SSRF 链）
+    if (key === 'ai_base_url' && raw) {
+      if (!/^https:\/\/[^\s]+$/i.test(raw)) continue;
+    }
+    // AI 密钥：后台不回显明文，所以「空值」表示"不修改"而不是"清空"。
+    // 要清除请提交单独的删除标记。
+    if (key === 'ai_api_key') {
+      if (!raw || /^\*+$/.test(raw)) continue;
+      if (raw === '__CLEAR__') {
+        await db('settings').where('key', 'ai_api_key').del();
+        continue;
+      }
+      if (raw.length < 8 || raw.length > 300) continue;
+    }
     let safeValue;
     if (BOOL_KEYS.has(key)) {
       safeValue = value === true || value === 'true' || value === 1 || value === '1';

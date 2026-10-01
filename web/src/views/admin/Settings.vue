@@ -89,6 +89,22 @@
             </template>
           </span>
         </el-form-item>
+        <el-form-item label="AI 模型配置">
+          <div class="ai-config">
+            <el-input v-model="form.ai_base_url" placeholder="接口地址，如 https://api.openai.com/v1" />
+            <el-input v-model="form.ai_model" placeholder="模型名，如 gpt-4o-mini" />
+            <el-input
+              v-model="form.ai_api_key"
+              type="password"
+              show-password
+              :placeholder="form.ai_llm_ready ? 'API Key 已配置 · 留空则不修改' : 'API Key'"
+            />
+            <span class="switch-tip ai-config-tip">
+              留空即用服务器 <code>.env</code> 的值。密钥只写入不回显，导出的设置备份里也会剔除；
+              接口地址必须是 <code>https://</code>（拒绝明文与内网地址）。
+            </span>
+          </div>
+        </el-form-item>
         <el-form-item label="友链审核">
           <el-switch :model-value="true" disabled />
           <span class="switch-tip">友链申请固定进入待审，在「友链管理」中通过</span>
@@ -566,6 +582,8 @@ async function save() {
   saving.value = true;
   try {
     await settingsApi.save(form.value);
+    // 密钥不回显：保存后立刻清掉表单里的明文，避免残留在内存里被再次提交
+    if (form.value.ai_api_key) form.value.ai_api_key = '';
     // 前台站点数据有 60s 缓存：保存后主动失效并刷新，前台立即生效
     const site = useSiteStore();
     site.loaded = false;
@@ -918,6 +936,27 @@ onMounted(async () => {
   margin-left: 10px;
   color: var(--text-3);
   font-size: 0.8rem;
+}
+
+/* AI 模型配置：三个输入纵排，提示贴左（覆盖 .switch-tip 的 margin-left） */
+.ai-config {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+}
+
+.ai-config .ai-config-tip {
+  margin-left: 0;
+  line-height: 1.65;
+}
+
+.ai-config code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 0.9em;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 /* 后台访问信息 */

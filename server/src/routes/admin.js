@@ -1373,11 +1373,14 @@ router.put('/settings', async (req, res) => {
   }
 });
 
-/** 设置导出（备份/迁移）：全量 JSON 下载 */router.get('/settings/export', async (req, res) => {
+/** 设置导出（备份/迁移）：全量 JSON 下载
+ *  剔除 ai_api_key：备份文件常被随手放进网盘/仓库，密钥不该跟着走 */
+router.get('/settings/export', async (req, res) => {
   try {
     const settings = await getAllSettings();
+    const { ai_api_key: _key, ...safe } = settings;
     res.set('Content-Disposition', 'attachment; filename="settings-backup.json"');
-    return res.send(JSON.stringify(settings, null, 2));
+    return res.send(JSON.stringify(safe, null, 2));
   } catch (e) {
     return fail(res, '导出失败', 500);
   }

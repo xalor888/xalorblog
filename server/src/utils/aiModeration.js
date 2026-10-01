@@ -162,9 +162,9 @@ function llmRelease(token) {
   if (idx >= 0) llmCalls.splice(idx, 1);
 }
 
-/** LLM 二判（可选）：本地判为中风险时调用，返回 'APPROVED' | 'PENDING' | 'REJECTED' 或 null（失败/未配置/超限） */
-async function llmModeration(text) {
-  const ai = config.ai;
+/** LLM 二判（可选）：本地判为中风险时调用，返回 'APPROVED' | 'PENDING' | 'REJECTED' 或 null（失败/未配置/超限）
+ *  ai 由调用方传入（后台设置优先、回落服务器 env），本函数只负责调用与解析 */
+async function llmModeration(text, ai) {
   if (!ai || !ai.apiKey) return null;
   // baseUrl 协议校验：仅 https（防内容经 http 明文传输、防误配内网地址成为 SSRF 链）
   if (!/^https:\/\//i.test(String(ai.baseUrl || ''))) return null;
@@ -273,7 +273,13 @@ async function moderateComment(content, nickname = '', website = '') {
     return { action: 'rejected', reason: `AI 拦截：${reasons.join('、')}`, score };
   }
   // 中分：LLM 二判（未配置 LLM 时降级为待审）
-  const llm = settings.ai_llm_moderation === false ? null : await llmModeration(content);
+  // 模型配置优先级：后台设置 > 服务器 .env（后台留空即回落）
+  const aiCfg = {
+    apiKey: settings.ai_api_key || config.ai?.apiKey || '',
+    baseUrl: settings.ai_base_url || config.ai?.baseUrl || '',
+    model: settings.ai_model || config.ai?.model || '',
+  };
+  const llm = settings.ai_llm_moderation === false ? null : await llmModeration(content, aiCfg);
   if (llm === 'APPROVED') return { action: 'approved', reason: 'LLM 判定正常', score };
   if (llm === 'REJECTED') return { action: 'rejected', reason: 'LLM 判定违规', score };
   return { action: 'pending', reason: `AI 标记可疑：${reasons.join('、')}`, score };
