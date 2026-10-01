@@ -1,56 +1,134 @@
 <template>
   <div class="article-edit">
-    <!-- 顶部操作栏 -->
-    <div class="editor-topbar card">
-      <el-button @click="goBack">
-        <template #icon><XIcon name="ArrowLeft" :size="15" /></template>
-        返回
-      </el-button>
-      <span v-if="editingId" class="edit-mode-tag">编辑模式</span>
-      <div class="topbar-right">
-        <span class="save-hint">Ctrl+S 保存 · Ctrl+Enter 发布</span>
+    <!-- 顶栏：吸顶玻璃条 -->
+    <header class="ed-topbar">
+      <div class="ed-topbar-left">
+        <button class="ed-icon-btn" title="返回文章列表" @click="goBack">
+          <XIcon name="ArrowLeft" :size="16" />
+        </button>
+        <span class="ed-mode-tag">{{ editingId ? '编辑文章' : '写文章' }}</span>
+      </div>
+      <div class="ed-topbar-right">
+        <span v-if="autosavedAt" class="ed-autosave">
+          <XIcon name="Check" :size="12" /> 已自动保存 {{ autosavedAt }}
+        </span>
+        <span class="ed-kbd">Ctrl+S 保存 · Ctrl+Enter 发布</span>
         <el-button :loading="savingDraft" @click="saveDraft">保存草稿</el-button>
         <el-button type="primary" :loading="publishing" @click="publish">发布</el-button>
       </div>
-    </div>
+    </header>
 
-    <!-- 基本信息 -->
-    <div class="meta-card card">
-      <el-form :model="form" label-position="top" class="meta-form" @submit.prevent>
-      <div class="meta-grid">
-        <el-form-item label="文章标题 *" class="span-2">
-          <el-input v-model="form.title" placeholder="输入文章标题" maxlength="200" show-word-limit size="large" />
-        </el-form-item>
-        <el-form-item label="访问链接 (slug)">
-          <el-input v-model="form.slug" placeholder="留空自动生成" maxlength="220" />
-          <span class="slug-preview">/#/article/<b>{{ form.slug || '自动生成' }}</b></span>
-        </el-form-item>
-        <el-form-item label="所属分类">
-          <el-select v-model="form.category_id" placeholder="选择分类" clearable style="width: 100%">
-            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="标签（回车创建）" class="span-2">
-          <el-select
-            v-model="form.tags"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="输入标签后回车"
-            style="width: 100%"
-          >
-            <el-option v-for="t in allTags" :key="t.id" :label="t.name" :value="t.name" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="封面图片">
-          <div class="cover-field">
-            <el-input v-model="form.cover" placeholder="封面图片 URL，或点击右侧上传" />
-            <el-upload
-              :show-file-list="false"
-              :http-request="doUpload"
-              accept="image/*"
+    <div class="ed-body">
+      <!-- 左栏：标题 + 正文 -->
+      <main class="ed-main">
+        <input
+          v-model="form.title"
+          class="ed-title"
+          type="text"
+          maxlength="200"
+          placeholder="输入文章标题…"
+        />
+        <div class="ed-slug">
+          <span class="ed-slug-prefix">/#/article/</span>
+          <input
+            v-model="form.slug"
+            class="ed-slug-input"
+            type="text"
+            maxlength="220"
+            placeholder="留空自动生成"
+          />
+        </div>
+
+        <section class="ed-editor">
+          <div class="ed-toolbar">
+            <button class="ed-tab" :class="{ active: mode === 'write' }" @click="mode = 'write'">编辑</button>
+            <button class="ed-tab" :class="{ active: mode === 'preview' }" @click="mode = 'preview'">预览</button>
+            <span class="ed-toolbar-gap"></span>
+            <div class="md-toolbar">
+              <button
+                v-for="t in mdTools"
+                :key="t.label"
+                class="md-tool"
+                :title="t.label"
+                @click="insertMd(t)"
+              >
+                <XIcon :name="t.icon" :size="15" />
+              </button>
+              <span class="md-sep"></span>
+              <button class="md-tool" title="上传图片并插入" :disabled="uploading" @click="$refs.imgInput?.click()">
+                <XIcon name="Upload" :size="15" />
+              </button>
+              <input ref="imgInput" type="file" accept="image/*" class="hidden-file" @change="uploadAndInsert" />
+            </div>
+            <span class="ed-stats num">{{ wordCount }} 字 · 约 {{ readingMinutes }} 分钟</span>
+          </div>
+
+          <div v-show="mode === 'write'" class="ed-editor-body">
+            <el-input
+              v-model="form.content"
+              type="textarea"
+              :rows="22"
+              resize="none"
+              class="md-editor"
+              placeholder="在这里用 Markdown 写作…（可直接 Ctrl/Cmd+V 粘贴截图，自动上传插入）"
+              @paste="onEditorPaste"
+            />
+          </div>
+
+          <div v-show="mode === 'preview'" class="ed-preview">
+            <div v-if="form.content" class="markdown-body" v-html="previewHtml"></div>
+            <div v-else class="preview-empty">暂无内容</div>
+          </div>
+        </section>
+      </main>
+
+      <!-- 右栏：设置面板 -->
+      <aside class="ed-side">
+        <section class="ed-panel">
+          <h4 class="ed-panel-title">发布</h4>
+          <div class="ed-field">
+            <label class="ed-label">发布时间</label>
+            <el-date-picker
+              v-if="articleStatus === 'published' || form.published_at"
+              v-model="form.published_at"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="默认当前时间"
+              style="width: 100%"
+            />
+            <p v-else class="ed-hint">首次发布时自动记录当前时间</p>
+          </div>
+        </section>
+
+        <section class="ed-panel">
+          <h4 class="ed-panel-title">归类</h4>
+          <div class="ed-field">
+            <label class="ed-label">分类</label>
+            <el-select v-model="form.category_id" placeholder="选择分类" clearable style="width: 100%">
+              <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+            </el-select>
+          </div>
+          <div class="ed-field">
+            <label class="ed-label">标签</label>
+            <el-select
+              v-model="form.tags"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              placeholder="输入后回车创建"
+              style="width: 100%"
             >
+              <el-option v-for="t in allTags" :key="t.id" :label="t.name" :value="t.name" />
+            </el-select>
+          </div>
+        </section>
+
+        <section class="ed-panel">
+          <h4 class="ed-panel-title">封面</h4>
+          <div class="cover-field">
+            <el-input v-model="form.cover" placeholder="图片 URL，或点右侧上传" />
+            <el-upload :show-file-list="false" :http-request="doUpload" accept="image/*">
               <el-button :loading="uploading">
                 <template #icon><XIcon name="Upload" :size="15" /></template>
                 上传
@@ -64,74 +142,42 @@
               </button>
             </div>
           </div>
-        </el-form-item>
-        <el-form-item label="文章摘要">
+        </section>
+
+        <section class="ed-panel">
+          <h4 class="ed-panel-title">摘要</h4>
           <div class="summary-field">
-            <el-input v-model="form.summary" type="textarea" :rows="2" maxlength="500" show-word-limit
-              placeholder="留空则自动截取正文前 150 字" />
-            <el-button size="small" plain class="auto-summary-btn" :disabled="!form.content" @click="autoSummary" title="从正文提取前 150 字">自动生成</el-button>
+            <el-input
+              v-model="form.summary"
+              type="textarea"
+              :rows="3"
+              maxlength="500"
+              show-word-limit
+              placeholder="留空则自动截取正文前 150 字"
+            />
+            <el-button
+              size="small"
+              plain
+              class="auto-summary-btn"
+              :disabled="!form.content"
+              title="从正文提取前 150 字"
+              @click="autoSummary"
+            >
+              自动生成
+            </el-button>
           </div>
-        </el-form-item>
-        <el-form-item label="其他选项">
-          <div class="option-row">
+        </section>
+
+        <section class="ed-panel">
+          <h4 class="ed-panel-title">选项</h4>
+          <div class="ed-switches">
             <el-switch v-model="form.is_top" active-text="置顶" />
             <el-switch v-model="form.allow_comment" active-text="允许评论" />
             <el-switch v-model="form.allow_copy" active-text="允许复制" />
           </div>
-          <span class="switch-tip">「允许复制」需站点设置里的全站开关也开着，本篇才可复制</span>
-        </el-form-item>
-        <el-form-item v-if="articleStatus === 'published' || form.published_at" label="发布时间">
-          <el-date-picker
-            v-model="form.published_at"
-            type="datetime"
-            value-format="YYYY-MM-DD HH:mm:ss"
-            placeholder="默认当前时间，可调整（补发旧文/归档）"
-            style="width: 100%"
-          />
-        </el-form-item>
-      </div>
-      </el-form>
-    </div>
-
-    <!-- 编辑器 -->
-    <div class="editor-card card">
-      <div class="editor-head">
-        <button class="mode-btn" :class="{ active: mode === 'write' }" @click="mode = 'write'">编辑</button>
-        <button class="mode-btn" :class="{ active: mode === 'preview' }" @click="mode = 'preview'">预览</button>
-        <span class="editor-hint">支持 Markdown 语法</span>
-        <span v-if="autosavedAt" class="editor-autosave" title="草稿已自动保存到本地浏览器，关闭页面不丢失">
-          <XIcon name="Check" :size="13" /> 已自动保存 {{ autosavedAt }}
-        </span>
-        <span class="editor-stats num">{{ wordCount }} 字 · 约 {{ readingMinutes }} 分钟阅读</span>
-      </div>
-
-      <div v-show="mode === 'write'" class="editor-wrap">
-        <!-- Markdown 快捷工具栏 -->
-        <div class="md-toolbar">
-          <button v-for="t in mdTools" :key="t.label" class="md-tool" :title="t.label" @click="insertMd(t)">
-            <XIcon :name="t.icon" :size="15" />
-          </button>
-          <span class="md-sep"></span>
-          <button class="md-tool" title="上传图片并插入" :disabled="uploading" @click="$refs.imgInput?.click()">
-            <XIcon name="Upload" :size="15" />
-          </button>
-          <input ref="imgInput" type="file" accept="image/*" class="hidden-file" @change="uploadAndInsert" />
-        </div>
-        <el-input
-          v-model="form.content"
-          type="textarea"
-          :rows="20"
-          resize="none"
-          class="md-editor"
-          placeholder="在这里用 Markdown 写作…（可直接 Ctrl/Cmd+V 粘贴截图，自动上传插入）"
-          @paste="onEditorPaste"
-        />
-      </div>
-
-      <div v-show="mode === 'preview'" class="preview-wrap">
-        <div v-if="form.content" class="markdown-body" v-html="previewHtml"></div>
-        <div v-else class="preview-empty">暂无内容</div>
-      </div>
+          <p class="ed-hint">「允许复制」需站点设置里的全站开关也开着，本篇才可复制</p>
+        </section>
+      </aside>
     </div>
   </div>
 </template>
@@ -538,199 +584,212 @@ watch(form, scheduleAutosave, { deep: true });
 </script>
 
 <style scoped>
+/* ============================================================
+   写作台
+   —— 与前台同一套液态玻璃（--sg-*），两栏布局：左边写，右边设置
+   ============================================================ */
 .article-edit {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding-bottom: 48px;
 }
 
-/* 顶栏 */
-.editor-topbar {
+/* ---------------- 顶栏（吸顶玻璃条） ---------------- */
+.ed-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px 20px;
-  position: sticky;
-  top: 64px;
-  z-index: calc(var(--z-nav) - 20);
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
 }
 
-.edit-mode-tag {
-  font-size: 0.85rem;
-  color: var(--accent);
-  background: var(--accent-soft);
-  padding: 3px 12px;
-  border-radius: 999px;
-}
-
-.topbar-right {
-  margin-left: auto;
+.ed-topbar-left,
+.ed-topbar-right {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.save-hint {
-  font-size: 0.78rem;
-  color: var(--text-3);
-  margin-right: 4px;
-  display: inline-flex;
+.ed-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--text-2);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
-.save-hint::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
+.ed-icon-btn:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.ed-mode-tag {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ed-kbd,
+.ed-autosave {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.74rem;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* ---------------- 两栏骨架 ---------------- */
+.ed-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 16px;
+  align-items: start;
+}
+
+.ed-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* ---------------- 标题与 slug ---------------- */
+.ed-title {
+  width: 100%;
+  padding: 8px 4px;
+  font-family: inherit;
+  font-size: clamp(1.5rem, 3.2vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  outline: none;
+  transition: border-color var(--dur) var(--ease);
+}
+
+.ed-title::placeholder {
+  color: var(--text-3);
+  opacity: 0.55;
+}
+
+.ed-title:focus {
+  border-bottom-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.ed-slug {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  font-size: 0.8rem;
+  color: var(--text-3);
+}
+
+.ed-slug-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  font: inherit;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  outline: none;
+  transition: color var(--dur) var(--ease);
+}
+
+.ed-slug-input:focus {
+  color: var(--text);
+}
+
+.ed-slug-input::placeholder {
+  color: var(--text-3);
   opacity: 0.7;
 }
 
-/* 元信息 */
-.meta-card {
-  padding: 24px;
-}
-
-.meta-form {
-  margin: 0;
-}
-
-.meta-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 20px;
-}
-
-.span-2 {
-  grid-column: span 2;
-}
-
-/* slug 实时预览 */
-.slug-preview {
-  display: block;
-  margin-top: 6px;
-  font-size: 0.78rem;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-  word-break: break-all;
-}
-
-.slug-preview b {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.cover-field {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  flex-wrap: wrap;
-}
-
-/* 封面实时预览 */
-.cover-preview {
-  width: 120px;
-  height: 68px;
-  border-radius: 8px;
+/* ---------------- 编辑器 ---------------- */
+.ed-editor {
+  border-radius: 18px;
   overflow: hidden;
-  flex-shrink: 0;
-  border: 1px solid var(--border);
-  background: var(--bg-soft);
-  position: relative;
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
+}
+
+.ed-toolbar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--sg-edge);
 }
 
-.cover-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.ed-tab {
+  padding: 5px 15px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-2);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 
-.cover-broken {
-  font-size: 0.72rem;
-  color: var(--text-3);
+.ed-tab:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 
-/* 封面移除按钮（右上角） */
-.cover-remove {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
+.ed-tab.active {
   color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background var(--dur) var(--ease);
+  background: var(--accent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 38%, transparent);
 }
 
-.cover-remove:hover {
-  background: #c24b5e;
+.ed-toolbar-gap {
+  flex: 1;
+  min-width: 8px;
 }
 
-.option-row {
-  display: flex;
-  gap: 24px;
-}
-
-.switch-tip {
-  display: block;
-  margin-top: 6px;
-  color: var(--text-3);
-  font-size: 0.8rem;
-}
-
-/* 编辑器 */
-.editor-card {
-  padding: 0 24px 24px;
-}
-
-.summary-field {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-end;
-}
-
-.auto-summary-btn {
-  font-size: 12px;
-}
-
-/* Markdown 快捷工具栏 */
 .md-toolbar {
   display: flex;
+  align-items: center;
   gap: 2px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 10px;
   flex-wrap: wrap;
 }
 
 .md-tool {
-  width: 32px;
-  height: 32px;
-  border-radius: 7px;
-  color: var(--text-2);
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--dur) var(--ease);
+  border-radius: 8px;
+  color: var(--text-2);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
-.md-tool:hover {
+.md-tool:hover:not(:disabled) {
   color: var(--accent);
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
 }
 
 .md-tool:disabled {
@@ -741,104 +800,217 @@ watch(form, scheduleAutosave, { deep: true });
 .md-sep {
   width: 1px;
   height: 18px;
-  background: var(--border);
   margin: 0 6px;
+  background: var(--sg-edge);
+}
+
+.ed-stats {
+  font-size: 0.74rem;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 正文输入：去掉 EP 的边框与白底，直接"长"在玻璃上 */
+.ed-editor :deep(.md-editor .el-textarea__inner) {
+  min-height: 52vh !important;
+  padding: 18px 20px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.94rem;
+  line-height: 1.85;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.ed-editor :deep(.md-editor .el-textarea__inner::placeholder) {
+  color: var(--text-3);
+  opacity: 0.65;
+}
+
+.ed-preview {
+  min-height: 52vh;
+  padding: 22px 24px;
+}
+
+.preview-empty {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--text-3);
 }
 
 .hidden-file {
   display: none;
 }
 
-.editor-head {
+/* ---------------- 右栏面板 ---------------- */
+.ed-side {
+  position: sticky;
+  top: 82px; /* 顶栏高度 + 间距 */
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 16px;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
-.mode-btn {
-  padding: 7px 20px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-2);
+.ed-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
+}
+
+.ed-panel-title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.ed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ed-label {
+  font-size: 0.82rem;
   font-weight: 600;
-  transition: all 0.2s;
-}
-
-.mode-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.editor-hint {
-  margin-left: auto;
-  font-size: 0.8rem;
-  color: var(--text-3);
-}
-
-/* 自动保存指示 */
-.editor-autosave {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.76rem;
-  color: #217a5e;
-  background: color-mix(in srgb, #217a5e 10%, transparent);
-  padding: 3px 10px;
-  border-radius: 999px;
-}
-
-.editor-stats {
-  font-size: 0.8rem;
   color: var(--text-2);
-  background: var(--bg-soft);
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-variant-numeric: tabular-nums;
 }
 
-.editor-wrap {
-  display: flex;
-  gap: 16px;
-}
-
-.md-editor :deep(textarea) {
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-  font-size: 0.95rem;
-  line-height: 1.8;
-}
-
-.preview-wrap {
-  min-height: 400px;
-  padding: 8px 4px;
-}
-
-.preview-empty {
+.ed-hint {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.6;
   color: var(--text-3);
-  text-align: center;
-  padding: 80px 0;
 }
 
-@media (max-width: 800px) {
-  .meta-grid {
-    grid-template-columns: 1fr;
+.ed-switches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* EP 输入类控件在玻璃上的适配：去掉白底与描边 */
+.ed-side :deep(.el-input__wrapper),
+.ed-side :deep(.el-select__wrapper),
+.ed-side :deep(.el-textarea__inner) {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  box-shadow: none;
+  border-radius: 10px;
+}
+
+.ed-side :deep(.el-input__wrapper.is-focus),
+.ed-side :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* ---------------- 封面上传 ---------------- */
+.cover-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cover-preview {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--sg-edge);
+}
+
+.cover-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.cover-broken {
+  display: block;
+  padding: 8px;
+  font-size: 0.76rem;
+  text-align: center;
+  color: var(--text-3);
+}
+
+.cover-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  transition: background var(--dur) var(--ease);
+}
+
+.cover-remove:hover {
+  background: var(--accent);
+}
+
+/* ---------------- 摘要 ---------------- */
+.summary-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.summary-field :deep(.el-textarea) {
+  width: 100%;
+}
+
+/* ---------------- 窄屏：合并为单栏 ---------------- */
+@media (max-width: 1180px) {
+  .ed-body {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .span-2 {
-    grid-column: span 1;
+
+  .ed-side {
+    position: static;
+    max-height: none;
+    overflow: visible;
   }
-  .editor-wrap {
-    flex-direction: column;
-  }
-  /* 窄屏：隐藏保存提示文字，压缩工具条间距 */
-  .save-hint {
+}
+
+@media (max-width: 720px) {
+  .ed-kbd {
     display: none;
   }
-  .md-toolbar {
-    flex-wrap: wrap;
+
+  .ed-topbar-right {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .ed-editor :deep(.md-editor .el-textarea__inner) {
+    min-height: 44vh !important;
+    padding: 14px 16px;
+  }
+
+  .ed-preview {
+    min-height: 44vh;
+    padding: 16px;
   }
 }
 </style>

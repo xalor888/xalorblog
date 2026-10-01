@@ -247,11 +247,21 @@ async function llmModeration(text) {
 
 /**
  * 综合审核入口
+ *
+ * 开关（后台「设置 → 内容审核」可改，默认值来自环境变量）：
+ *   - settings.ai_moderation === false      → 整个 AI 层不介入，一律放行，
+ *                                             评论/留言只由人工审核开关决定
+ *   - settings.ai_llm_moderation === false  → 跳过 LLM 二判（本地规则仍生效）
+ *
  * @returns {Promise<{action: 'approved'|'pending'|'rejected', reason: string, score: number}>}
  */
 async function moderateComment(content, nickname = '', website = '') {
-  const settings = config.ai?.enabled !== false;
-  if (!settings) return { action: 'approved', reason: 'AI 审核未开启', score: 0 };
+  // 放在函数内 require：避免 settings ← → aiModeration 之间出现静态环
+  const { getAllSettings } = require('./settings');
+  const settings = await getAllSettings();
+  if (settings.ai_moderation === false) {
+    return { action: 'approved', reason: 'AI 审核已关闭（后台设置）', score: 0 };
+  }
 
   const { score, reasons } = localModeration(content, nickname, website);
   // 低分：直接放行（交审核开关）
@@ -263,7 +273,7 @@ async function moderateComment(content, nickname = '', website = '') {
     return { action: 'rejected', reason: `AI 拦截：${reasons.join('、')}`, score };
   }
   // 中分：LLM 二判（未配置 LLM 时降级为待审）
-  const llm = await llmModeration(content);
+  const llm = settings.ai_llm_moderation === false ? null : await llmModeration(content);
   if (llm === 'APPROVED') return { action: 'approved', reason: 'LLM 判定正常', score };
   if (llm === 'REJECTED') return { action: 'rejected', reason: 'LLM 判定违规', score };
   return { action: 'pending', reason: `AI 标记可疑：${reasons.join('、')}`, score };

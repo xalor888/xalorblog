@@ -69,6 +69,26 @@
           <el-switch v-model="form.message_moderation" />
           <span class="switch-tip">开启后新留言默认进入待审，需在后台「留言管理」中通过</span>
         </el-form-item>
+        <el-form-item label="AI 内容审核">
+          <el-switch v-model="form.ai_moderation" />
+          <span class="switch-tip">
+            <b>独立于上面两个开关的第二层</b>：开启时本地规则会自动拦广告/辱骂/引流，
+            严重内容直接拒绝、可疑内容强制送审（这就是「审核开关明明关着，评论还是进了待审」的原因）。
+            关掉后评论与留言完全按「评论审核 / 留言审核」处理。
+          </span>
+        </el-form-item>
+        <el-form-item label="AI 深度复核">
+          <el-switch v-model="form.ai_llm_moderation" :disabled="!form.ai_moderation" />
+          <span class="switch-tip">
+            <template v-if="form.ai_llm_ready">
+              已配置大模型，会对本地判为「可疑」的内容再复核一次（有 API 调用成本）
+            </template>
+            <template v-else>
+              需在服务器 <code>.env</code> 配置 <code>AI_API_KEY</code> / <code>AI_BASE_URL</code> /
+              <code>AI_MODEL</code> 后才会真正生效 —— <b>当前未配置，本项不影响任何结果</b>
+            </template>
+          </span>
+        </el-form-item>
         <el-form-item label="友链审核">
           <el-switch :model-value="true" disabled />
           <span class="switch-tip">友链申请固定进入待审，在「友链管理」中通过</span>

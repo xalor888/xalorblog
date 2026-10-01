@@ -18,6 +18,14 @@ const DEFAULT_SETTINGS = {
   // 内容审核开关：开启后新评论/留言进入待审，需后台手动通过
   comment_moderation: false,
   message_moderation: false,
+  // AI 内容审核：独立于上面两个「人工审核」开关的第二层。
+  // 打开时本地规则引擎会自动拦广告/辱骂（≥60 分直接拒绝、≥30 分强制待审），
+  // 关掉后评论/留言完全听从 comment_moderation / message_moderation 的安排。
+  // 默认值直接跟环境变量（与 config.ai.enabled 同一判据），后台设置可覆盖。
+  ai_moderation: process.env.AI_MODERATION !== 'false',
+  // LLM 深度二判：仅对本地判为中风险的评论调用大模型复核。
+  // 需要同时配置 AI_API_KEY / AI_BASE_URL / AI_MODEL 才会真正生效（有 API 成本）。
+  ai_llm_moderation: true,
   // 全站是否允许复制正文/选中文字。默认允许（单篇可用 articles.allow_copy 覆盖）
   allow_copy: true,
   // RSS 默认仅摘要。全文会绕过文章详情的传输加密，须站长显式打开。
@@ -30,7 +38,14 @@ const DEFAULT_SETTINGS = {
 
 /** 允许保存的键白名单（防止任意键注入） */
 const ALLOWED_KEYS = new Set(Object.keys(DEFAULT_SETTINGS));
-const BOOL_KEYS = new Set(['comment_moderation', 'message_moderation', 'rss_full_content', 'allow_copy']);
+const BOOL_KEYS = new Set([
+  'comment_moderation',
+  'message_moderation',
+  'rss_full_content',
+  'allow_copy',
+  'ai_moderation',
+  'ai_llm_moderation',
+]);
 
 // 设置缓存：读多写少，保存时失效
 let settingsCache = null;
