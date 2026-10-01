@@ -175,6 +175,7 @@
             <el-switch v-model="form.allow_comment" active-text="允许评论" />
             <el-switch v-model="form.allow_copy" active-text="允许复制" />
           </div>
+          <p class="ed-hint">「允许复制」需站点设置里的全站开关也开着，本篇才可复制</p>
         </section>
       </aside>
     </div>
@@ -606,9 +607,11 @@ watch(form, scheduleAutosave, { deep: true });
   flex-wrap: wrap;
   padding: 10px 14px;
   border-radius: 18px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-1);
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
 }
 
 .ed-topbar-left,
@@ -725,9 +728,11 @@ watch(form, scheduleAutosave, { deep: true });
 .ed-editor {
   border-radius: 18px;
   overflow: hidden;
-  background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-1);
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
 }
 
 .ed-toolbar {
@@ -860,9 +865,11 @@ watch(form, scheduleAutosave, { deep: true });
   gap: 10px;
   padding: 14px 16px;
   border-radius: 16px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-1);
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
 }
 
 .ed-panel-title {
@@ -924,7 +931,7 @@ watch(form, scheduleAutosave, { deep: true });
   position: relative;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--sg-edge);
 }
 
 .cover-preview img {
