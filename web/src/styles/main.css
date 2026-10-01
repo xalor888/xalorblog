@@ -517,11 +517,10 @@ input:-webkit-autofill:focus {
 
 /* 卡片基座 */
 .card {
-  background: color-mix(in srgb, var(--card) 92%, transparent);
+  background: var(--card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-1);
-  backdrop-filter: blur(10px);
   /* 性能：transform/box-shadow 变化不触发重排 */
   contain: layout paint style;
 }

@@ -160,19 +160,44 @@ async function logout() {
 </script>
 
 <style scoped>
+/* ============================================================
+   后台：极简工具风（与前台液态玻璃区分）。
+   只在这一层重定义变量，所有后台页面/卡片自动变成中性简洁底，
+   不逐页改 —— 这是让整个后台统一换皮的关键。 */
 .admin-layout {
   display: flex;
   min-height: 100vh;
   min-height: 100dvh;
-  background:
-    radial-gradient(900px 420px at 0% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 55%),
-    var(--bg);
+  --bg: #f6f6f4;
+  --card: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+  --line: rgba(0, 0, 0, 0.06);
+  --text: #1e1c18;
+  --text-2: #57534a;
+  --text-3: #8b8679;
+  --bg-soft: #ecebe7;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-2: 0 6px 20px rgba(0, 0, 0, 0.06);
+  background: var(--bg);
+}
+
+[data-theme='dark'] .admin-layout {
+  --bg: #15161a;
+  --card: #1e1f24;
+  --border: rgba(255, 255, 255, 0.08);
+  --line: rgba(255, 255, 255, 0.06);
+  --text: #e9e7e1;
+  --text-2: #a6a29a;
+  --text-3: #6d6960;
+  --bg-soft: #26272c;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
 /* ============ 侧边栏 ============ */
 .admin-side {
   width: 232px;
-  background: color-mix(in srgb, var(--card) 92%, transparent);
+  background: var(--card);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -181,7 +206,6 @@ async function logout() {
   bottom: 0;
   left: 0;
   z-index: var(--z-nav);
-  backdrop-filter: var(--lg-blur-pop);
   transition: width 0.25s var(--ease);
 }
 
@@ -294,9 +318,8 @@ async function logout() {
 }
 
 .admin-header {
-  height: 64px;
-  background: color-mix(in srgb, var(--card) 72%, transparent);
-  backdrop-filter: var(--lg-blur-pop);
+  height: 60px;
+  background: var(--card);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -397,13 +420,10 @@ async function logout() {
   grid-template-columns: repeat(4, 26px);
   gap: 8px;
   padding: 10px;
-  /* 液态玻璃气泡 */
-  background: var(--lg-sheen), var(--lg-surface-pop);
-  border: 1px solid var(--lg-edge);
-  border-radius: var(--lg-radius-sm);
-  box-shadow: var(--lg-inner), var(--lg-shadow-pop);
-  backdrop-filter: var(--lg-blur-pop);
-  -webkit-backdrop-filter: var(--lg-blur-pop);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-2);
 }
 
 .accent-opt {
