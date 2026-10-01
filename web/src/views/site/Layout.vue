@@ -3,11 +3,11 @@
     <!-- 键盘无障碍：跳过导航直达正文（仅在 Tab 聚焦时可见） -->
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <!-- 顶部导航 -->
-    <header class="site-nav" :class="{ scrolled: scrolled, overlay: navOverlay }">
+    <header class="site-nav sg-liquid" :class="{ scrolled: scrolled, overlay: navOverlay }">
       <div class="nav-progress" :style="{ transform: `scaleX(${scrollPercent / 100})` }"></div>
       <div class="container nav-inner">
         <router-link to="/" class="brand">
-          <img src="/logo.png" alt="logo" class="brand-mark-img" />
+          <img src="/logo-256.webp" alt="logo" class="brand-mark-img" />
           <span class="brand-text">{{ site.settings.site_name || 'Xalor的小站' }}</span>
         </router-link>
 
@@ -122,7 +122,7 @@
         <div class="footer-grid">
           <div class="footer-col brand-col">
             <div class="footer-brand">
-              <img src="/logo.png" alt="" class="footer-logo" />
+              <img src="/logo-256.webp" alt="" class="footer-logo" />
               <span class="footer-name">{{ site.settings.site_name }}</span>
             </div>
             <p class="footer-desc">{{ site.settings.site_desc }}</p>
@@ -444,25 +444,35 @@ onUnmounted(() => {
   outline: none;
 }
 
-/* ============ 顶部导航 ============ */
+/* ============ 顶部导航：浮起的液态玻璃条 ============ */
 .site-nav {
   position: sticky;
-  top: 0;
+  top: 12px;
   z-index: var(--z-nav);
-  background: var(--card-trans);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  border-bottom: 1px solid transparent;
+  /* 离边浮起 + 居中限宽：让玻璃条像真的"浮"在页面上，而不是贴死的一条 */
+  width: calc(100% - 28px);
+  max-width: calc(var(--content-w) + 48px);
+  margin: 12px auto 0; /* 顶部留白：滚动前后都保持离边，玻璃条始终"浮"着 */
+  border-radius: 20px;
+  /* 液态玻璃：渐变面 + 顶部镜面 + 边缘折射亮线 + 内嵌体积光，底下背景化进来 */
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur);
+  -webkit-backdrop-filter: var(--sg-blur);
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 
 .site-nav.overlay {
   position: fixed;
+  top: 12px;
   left: 0;
   right: 0;
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  /* 浮在首页头图上：用更深的半透明玻璃，白字才压得住，头图也能透进玻璃里 */
+  background:
+    radial-gradient(130% 70% at 16% -12%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 55%),
+    linear-gradient(160deg, rgba(18, 15, 13, 0.36) 0%, rgba(14, 12, 10, 0.26) 46%, rgba(20, 17, 15, 0.4) 100%);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .site-nav.overlay .brand-text,
@@ -493,9 +503,9 @@ onUnmounted(() => {
   background: #fff;
 }
 
+/* 滚下后就是浅色玻璃面，自身带阴影，无需再加描边 */
 .site-nav.scrolled {
-  border-bottom-color: var(--border);
-  box-shadow: 0 8px 28px rgba(26, 24, 20, 0.08);
+  border-color: var(--sg-edge);
 }
 
 .nav-inner {
@@ -504,6 +514,8 @@ onUnmounted(() => {
   justify-content: space-between;
   height: var(--nav-h);
   gap: 20px;
+  position: relative;
+  z-index: 1; /* 压在流动高光之上 */
 }
 
 /* 品牌 */
@@ -675,7 +687,7 @@ onUnmounted(() => {
 
 .ticker.overlay {
   position: fixed;
-  top: var(--nav-h);
+  top: calc(var(--nav-h) + 22px); /* 避开浮起的玻璃导航条（12px 上边距 + 10px 间隔） */
   left: 0;
   right: 0;
   z-index: calc(var(--z-nav) - 10);
@@ -796,8 +808,11 @@ onUnmounted(() => {
   position: relative;
   z-index: 1;
   margin-top: 0;
-  background: color-mix(in srgb, var(--bg-soft) 88%, var(--card));
-  border-top: 1px solid var(--border);
+  /* 页脚也是液态玻璃：底部透出彩色渐变底，整站材质统一 */
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border-top: 1px solid var(--sg-edge);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
 }
 
 .footer-inner {
@@ -943,10 +958,11 @@ onUnmounted(() => {
 
 .nav-progress {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 16px;
+  right: 16px;
   top: 0;
   height: 2px;
+  border-radius: 2px;
   background: var(--accent);
   transform-origin: left center;
   pointer-events: none;
@@ -966,10 +982,12 @@ onUnmounted(() => {
   width: 44px;
   height: 44px;
   border-radius: 14px;
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
   color: var(--text-2);
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
   display: flex;
   align-items: center;
   justify-content: center;

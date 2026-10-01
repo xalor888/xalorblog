@@ -20,6 +20,15 @@ export default defineConfig(({ mode }) => {
     .filter(Boolean);
   // 构建期默认盐；运行时闸门挑战会下发服务端 ENC_SALT 覆盖
   const ENC_SALT = env.VITE_ENC_SALT || 'xalor-content-v1';
+  // 开发/预览服务器的 API 反代目标。默认本机 127.0.0.1:3000；
+  // 需要对着真实数据调 UI 时，用 VITE_API_PROXY_TARGET=https://blog.xalor.cn 指向生产
+  const API_PROXY_TARGET = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:3000';
+  // 反代到生产时改写 Origin/Referer 为目标源：生产 refererRequired 校验写请求必须同源，
+  // 否则本地页（127.0.0.1）发过去的 POST（如换票据）会被判成跨域来源而拒绝。
+  // 反代本机后端时保持空对象，不画蛇添足。
+  const proxyOrigin = /^https?:\/\//i.test(API_PROXY_TARGET) ? new URL(API_PROXY_TARGET).origin : '';
+  const isLocalTarget = /127\.0\.0\.1|localhost/i.test(proxyOrigin);
+  const proxyHeaders = isLocalTarget || !proxyOrigin ? {} : { Origin: proxyOrigin, Referer: `${proxyOrigin}/` };
 
   return {
     plugins: [
@@ -49,12 +58,14 @@ export default defineConfig(({ mode }) => {
       ...(DEV_ALLOWED_HOSTS.length ? { allowedHosts: DEV_ALLOWED_HOSTS } : {}),
       proxy: {
         [API_PREFIX]: {
-          target: 'http://127.0.0.1:3000',
+          target: API_PROXY_TARGET,
           changeOrigin: true,
+          headers: proxyHeaders,
         },
         '/uploads': {
-          target: 'http://127.0.0.1:3000',
+          target: API_PROXY_TARGET,
           changeOrigin: true,
+          headers: proxyHeaders,
         },
       },
     },
@@ -64,12 +75,14 @@ export default defineConfig(({ mode }) => {
       port: 4173,
       proxy: {
         [API_PREFIX]: {
-          target: 'http://127.0.0.1:3000',
+          target: API_PROXY_TARGET,
           changeOrigin: true,
+          headers: proxyHeaders,
         },
         '/uploads': {
-          target: 'http://127.0.0.1:3000',
+          target: API_PROXY_TARGET,
           changeOrigin: true,
+          headers: proxyHeaders,
         },
       },
     },

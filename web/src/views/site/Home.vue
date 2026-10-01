@@ -6,7 +6,7 @@
       <div class="hero-veil" aria-hidden="true"></div>
       <div class="hero-dots" aria-hidden="true"></div>
 
-      <div class="hero-card">
+      <div class="hero-card sg-liquid">
         <p class="hero-kicker">XALOR</p>
         <h1 class="hero-title">{{ site.settings.site_name || 'Xalor的小站' }}</h1>
         <p class="hero-desc" :title="typedFull">
@@ -63,7 +63,7 @@
           <div class="side-sticky">
             <div class="side-card author-card">
               <div class="author-halo">
-                <img class="author-avatar" :src="site.settings.avatar || '/logo.png'" alt="" />
+                <img class="author-avatar" :src="site.settings.avatar || '/logo-256.webp'" alt="" />
               </div>
               <h2>{{ site.settings.site_name || 'Xalor' }}</h2>
               <p>{{ site.settings.site_desc || '记录技术、生活与思考' }}</p>
@@ -407,8 +407,13 @@ onUnmounted(() => {
   position: absolute;
   inset: -8%;
   z-index: 0;
-  background-color: #14110e;
-  background-image: url('@/assets/hero.jpg');
+  background-color: #14110e; /* 不支持 image-set 的老浏览器退化为纯色底 */
+  /* WebP 优先（约 1/3 体积）：1x 屏喂 1600px 版（86KB），高分屏喂 2560px 版（175KB）。
+     image-set 与 WebP 的支持窗口基本一致，无需再兜底 528KB 的原 JPG。 */
+  background-image: image-set(
+    url('@/assets/hero-1600.webp') 1x,
+    url('@/assets/hero.webp') 2x
+  );
   background-size: cover;
   background-position: center 40%;
   background-repeat: no-repeat;
@@ -444,14 +449,26 @@ onUnmounted(() => {
   position: relative;
   z-index: 3;
   width: min(920px, calc(100% - 40px));
-  padding: 42px 36px 36px;
+  padding: 44px 38px 38px;
   text-align: center;
-  border-radius: 28px;
-  background: rgba(8, 7, 6, 0.32);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(28px) saturate(1.3);
-  -webkit-backdrop-filter: blur(28px) saturate(1.3);
+  border-radius: 30px;
+  /* 真液态玻璃：半透明暗色渐变让头图透进来，叠加顶部镜面高光与边缘折射亮线 */
+  background:
+    radial-gradient(130% 90% at 16% -12%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 55%),
+    linear-gradient(160deg, rgba(18, 15, 13, 0.4) 0%, rgba(12, 10, 8, 0.28) 46%, rgba(20, 17, 15, 0.46) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(30px) saturate(1.5);
+  -webkit-backdrop-filter: blur(30px) saturate(1.5);
+}
+
+/* 让正文压在流动高光之上，光带只在玻璃"表面"流动、不糊字 */
+.hero-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .hero-kicker {
@@ -463,10 +480,11 @@ onUnmounted(() => {
 }
 
 .hero-title {
-  font-size: clamp(2.1rem, 5vw, 3.4rem);
+  font-size: clamp(2.5rem, 6.2vw, 4.2rem);
   font-weight: 800;
-  letter-spacing: 0.04em;
-  line-height: 1.15;
+  letter-spacing: 0.01em;
+  line-height: 1.08;
+  text-shadow: 0 2px 30px rgba(0, 0, 0, 0.25); /* 大字浮起，与玻璃拉开层次 */
 }
 
 .hero-desc {
@@ -583,9 +601,11 @@ onUnmounted(() => {
   gap: 8px;
   padding: 12px 22px;
   border-radius: 999px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-1);
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
   font-weight: 600;
 }
 
@@ -599,9 +619,11 @@ onUnmounted(() => {
   padding: 48px 20px;
   text-align: center;
   color: var(--text-3);
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
   border-radius: var(--radius-lg);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
 }
 
 .side-sticky {
@@ -613,12 +635,14 @@ onUnmounted(() => {
 }
 
 .side-card {
-  background: color-mix(in srgb, var(--card) 88%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-1);
+  /* 液态玻璃卡片：渐变面 + 顶部镜面 + 边缘折射亮线 + 内嵌体积光 */
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
   padding: 18px 16px 14px;
-  backdrop-filter: blur(16px);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
 }
 
 .side-card h3 {

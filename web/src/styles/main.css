@@ -124,6 +124,42 @@
   --lg-scrim-blur: blur(3px);
   --lg-radius: 24px;
   --lg-radius-sm: 16px;
+
+  /* ============================================================
+     液态玻璃 · 页面级表面材质（nav / hero 面板 / 卡片 / 页脚 / 按钮）
+     与弹层那套 --lg-* 同源，但更透——让背景在玻璃里真正"化开"，
+     靠的不是堆白，而是四层叠加：
+       ① --sg-surface  半透明渐变主体（光从上往下衰减，像真实玻璃）
+       ② --sg-sheen    顶部镜面高光（点光源打在玻璃上沿）
+       ③ --sg-edge     边缘亮线（玻璃厚度的折射亮边）
+       ④ --sg-inner    内嵌高光/暗影（玻璃的"体积感"）
+     再叠加 backdrop-filter 的模糊 + 饱和，底下背景被"拉进"玻璃里。
+     ============================================================ */
+  --sg-blur: blur(26px) saturate(1.75);
+  --sg-blur-soft: blur(18px) saturate(1.55);
+  --sg-surface: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.2) 42%,
+    rgba(255, 255, 255, 0.38) 100%
+  );
+  --sg-sheen: radial-gradient(
+    130% 70% at 16% -12%,
+    rgba(255, 255, 255, 0.72) 0%,
+    rgba(255, 255, 255, 0) 55%
+  );
+  --sg-edge: rgba(255, 255, 255, 0.6);
+  --sg-inner: inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.2);
+  --sg-shadow: 0 1px 2px rgba(26, 24, 20, 0.05),
+    0 12px 30px rgba(26, 24, 20, 0.1),
+    0 32px 64px rgba(26, 24, 20, 0.1);
+  /* 叠在玻璃上的强调色薄染，让玻璃有"色温" */
+  --sg-tint: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--accent) 8%, transparent),
+    transparent 60%
+  );
 }
 
 /* 暗色主题覆盖 */
@@ -172,6 +208,87 @@
   --lg-shadow-pop: 0 2px 8px rgba(0, 0, 0, 0.4),
     0 16px 36px rgba(0, 0, 0, 0.5);
   --lg-scrim: rgba(6, 5, 4, 0.5);
+
+  /* ---------- 页面级表面材质：暗色 ----------
+     深色玻璃比浅色更难做"真"——关键是底要够深、高光要克制，
+     折射出来的彩色背景（来自 body 的彩色渐变）才是灵魂。 */
+  --sg-surface: linear-gradient(
+    155deg,
+    rgba(72, 66, 76, 0.5) 0%,
+    rgba(40, 36, 46, 0.34) 42%,
+    rgba(56, 50, 62, 0.48) 100%
+  );
+  --sg-sheen: radial-gradient(
+    130% 70% at 16% -12%,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0) 55%
+  );
+  --sg-edge: rgba(255, 255, 255, 0.16);
+  --sg-inner: inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.35);
+  --sg-shadow: 0 1px 2px rgba(0, 0, 0, 0.35),
+    0 14px 36px rgba(0, 0, 0, 0.45),
+    0 40px 84px rgba(0, 0, 0, 0.5);
+  --sg-tint: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--accent) 12%, transparent),
+    transparent 60%
+  );
+}
+
+/* ============================================================
+   液态玻璃 · 流动高光
+   一道极淡的光带周期性扫过玻璃面，像光在液体上缓慢流动——
+   这是"真液态玻璃"区别于"静态磨砂"的那口气。
+   仅作装饰层（pointer-events:none），尊重 prefers-reduced-motion。
+   ============================================================ */
+@keyframes sg-sheen-sweep {
+  0% {
+    background-position: 130% 0;
+  }
+  60%,
+  100% {
+    background-position: -30% 0;
+  }
+}
+
+/* 给带 .sg-liquid 的表面叠加流动高光（用 ::after，避免覆盖 ::before 的镜面） */
+.sg-liquid {
+  position: relative;
+}
+.sg-liquid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    115deg,
+    transparent 34%,
+    rgba(255, 255, 255, 0.16) 48%,
+    transparent 62%
+  );
+  background-size: 300% 100%;
+  background-repeat: no-repeat;
+  animation: sg-sheen-sweep 9s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* 暗色下高光带再收敛一点（过亮会破坏深色玻璃的质感） */
+[data-theme='dark'] .sg-liquid::after {
+  background: linear-gradient(
+    115deg,
+    transparent 34%,
+    rgba(255, 255, 255, 0.1) 48%,
+    transparent 62%
+  );
+  background-size: 300% 100%;
+  background-repeat: no-repeat;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sg-liquid::after {
+    animation: none;
+  }
 }
 
 /* ============================================================
@@ -193,15 +310,33 @@ html {
 
 body {
   font-family: var(--font-sans);
+  /* 多层彩色渐变底：液态玻璃需要底下有"颜色"可折射。
+     暖珊瑚 / 冷青蓝 / 琥珀三层光源交错，让玻璃在页面各处呈现不同的色温，
+     这正是"真液态玻璃"和"贴一层白磨砂"的分水岭。 */
   background:
-    radial-gradient(1200px 600px at 8% -10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 55%),
+    radial-gradient(1500px 820px at 4% -16%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 62%),
+    radial-gradient(1150px 720px at 100% 8%, color-mix(in srgb, #2f6fb3 27%, transparent), transparent 58%),
+    radial-gradient(900px 640px at 88% 78%, color-mix(in srgb, #6d5bb8 16%, transparent), transparent 58%),
+    radial-gradient(1400px 920px at 48% 116%, color-mix(in srgb, #c9900f 22%, transparent), transparent 64%),
     var(--bg);
+  background-attachment: fixed; /* 滚动时背景不动，玻璃像真的浮在一张彩色底上 */
   color: var(--text);
   font-size: 16px;
   line-height: 1.75;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+/* 暗色背景：同样的光源更浓——暗色玻璃折射出的彩色才是"夺目"的灵魂 */
+[data-theme='dark'] body {
+  background:
+    radial-gradient(1500px 820px at 4% -16%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 62%),
+    radial-gradient(1150px 720px at 100% 8%, color-mix(in srgb, #2f6fb3 32%, transparent), transparent 58%),
+    radial-gradient(900px 640px at 88% 78%, color-mix(in srgb, #6d5bb8 26%, transparent), transparent 58%),
+    radial-gradient(1400px 920px at 48% 116%, color-mix(in srgb, #c9900f 22%, transparent), transparent 64%),
+    var(--bg);
+  background-attachment: fixed;
 }
 
 ::selection {

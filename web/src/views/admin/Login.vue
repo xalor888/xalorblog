@@ -2,7 +2,7 @@
   <div class="login-page">
     <div class="login-card fade-up">
       <div class="login-logo">
-        <img src="/logo.png" alt="logo" class="login-logo-img" />
+        <img src="/logo-256.webp" alt="logo" class="login-logo-img" />
       </div>
       <h1 class="login-title">后台登录</h1>
       <p class="login-sub">请输入账号和密码</p>

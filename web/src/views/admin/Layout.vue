@@ -3,7 +3,7 @@
     <!-- 侧边栏 -->
     <aside class="admin-side" :class="{ collapsed }">
       <router-link :to="adminHref('dashboard')" class="side-brand">
-        <img src="/logo.png" alt="logo" class="brand-mark-img" />
+        <img src="/logo-256.webp" alt="logo" class="brand-mark-img" />
         <span v-show="!collapsed" class="brand-text">管理后台</span>
       </router-link>
 

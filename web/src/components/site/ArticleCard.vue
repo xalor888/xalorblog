@@ -68,19 +68,22 @@ defineProps({
 .article-card {
   display: flex;
   flex-direction: column;
-  background: var(--card);
-  border: 1px solid var(--border);
+  /* 液态玻璃卡片 */
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
   border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
   transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
   position: relative;
 }
 
 .article-card:hover {
   transform: translateY(-4px) scale(1.01);
-  box-shadow: var(--shadow-2);
-  border-color: var(--line);
+  box-shadow: var(--shadow-2), var(--sg-inner);
+  border-color: var(--sg-edge);
 }
 
 .article-card.feed {
