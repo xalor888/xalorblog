@@ -665,17 +665,17 @@ input:-webkit-autofill:focus {
   --el-border-color-light: #332e26 !important;
 }
 
-/* ============ ElMessage：玻璃胶囊 ============
-   保留左侧品牌色条做状态语义，其余交给玻璃材质。
-   高光作为 background 的第一层（而非伪元素）——伪元素会落在"定位后代"这一
-   绘画层级里，反倒盖在文字上。 */
+/* ============ ElMessage：液态玻璃胶囊 ============
+   与页面级表面同一套 --sg-* 材质（导航/卡片/页脚同款），更透、带色温。
+   左侧保留品牌色条做状态语义。高光作为 background 的第一层（而非伪元素）——
+   伪元素会落在"定位后代"这一绘画层级里，反倒盖在文字上。 */
 .el-message {
   border-radius: 16px !important;
-  border: 1px solid var(--lg-edge) !important;
-  background: var(--lg-sheen), var(--lg-surface-pop) !important;
-  -webkit-backdrop-filter: var(--lg-blur-pop);
-  backdrop-filter: var(--lg-blur-pop);
-  box-shadow: var(--lg-inner), var(--lg-shadow-pop) !important;
+  border: 1px solid var(--sg-edge) !important;
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface) !important;
+  -webkit-backdrop-filter: var(--sg-blur-soft);
+  backdrop-filter: var(--sg-blur-soft);
+  box-shadow: var(--sg-shadow), var(--sg-inner) !important;
   padding: 12px 20px 12px 24px !important;
   min-width: 240px !important;
   overflow: hidden;

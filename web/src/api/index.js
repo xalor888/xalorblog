@@ -74,11 +74,33 @@ request.interceptors.request.use(async (config) => {
 });
 
 // 响应拦截：统一错误处理 + 正文解密
+//
+// 同一文案的提示在短时间内只弹一次：锁屏唤醒 / 票据过期瞬间，往往并发失败一串
+// 相同请求（典型：3 个 seed 一起 429），会瞬间叠出好几条一模一样的 toast 且
+// 都没有关闭钮——看起来像「一个关不掉的弹窗」。这里统一去重 + 给关闭钮。
+const recentToasts = new Map(); // message -> 上次弹出时间戳
+// toast 顶部偏移：导航是浮起的玻璃条（top 12 + 最高 72px），默认的 top:16 会跟它叠在一起。
+// 统一把 toast 压到导航之下，避免提示条嵌进导航里、看着像「粘在顶栏上的弹窗」。
+const TOAST_OFFSET = 96;
+function toastOnce(kind, message) {
+  if (!message) return;
+  const now = Date.now();
+  if (now - (recentToasts.get(message) || 0) < 4000) return;
+  recentToasts.set(message, now);
+  // 防长时间运行缓慢涨内存
+  if (recentToasts.size > 50) {
+    for (const [k, t] of recentToasts) {
+      if (now - t > 15000) recentToasts.delete(k);
+    }
+  }
+  ElMessage({ type: kind, message, showClose: true, offset: TOAST_OFFSET });
+}
+
 request.interceptors.response.use(
   async (response) => {
     const res = response.data;
     if (res.code !== 0) {
-      if (!response.config?.silent) ElMessage.error(res.message || '请求失败');
+      if (!response.config?.silent) toastOnce('error', res.message || '请求失败');
       return Promise.reject(new Error(res.message || '请求失败'));
     }
     // 解密加密正文（用请求时的票据，防在途续期导致密钥不匹配）
@@ -126,9 +148,9 @@ request.interceptors.response.use(
       }
       const key = getCachedAdminPath();
       if (onLoginPage || !key) {
-        ElMessage.error(message || '请先登录');
+        toastOnce('error', message || '请先登录');
       } else if (!location.hash.includes(`/${key}/login`)) {
-        ElMessage.error(message || '请先登录');
+        toastOnce('error', message || '请先登录');
         location.hash = `#/${key}/login`;
       }
     } else if (isGateError) {
@@ -141,7 +163,7 @@ request.interceptors.response.use(
           return request(cfg);
         }
       } catch (e) {
-        ElMessage.error('安全通道失效，请刷新页面');
+        toastOnce('error', '安全通道失效，请刷新页面');
       }
     } else if (
       status === 404 &&
@@ -162,14 +184,15 @@ request.interceptors.response.use(
         }
       } catch (e) { /* 忽略 */ }
     } else if (status === 429) {
-      // 限流（防刷/读取频率上限）：非错误语义，用 warning 提示避免误报
-      ElMessage.warning(message || '操作过于频繁，请稍后再试');
+      // 限流（防刷/读取频率上限）：非错误语义，用 warning 提示避免误报。
+      // 关键：后台静默请求（如 seed 预热）的 429 不该打扰用户。
+      if (!error.config?.silent) toastOnce('warning', message || '操作过于频繁，请稍后再试');
     } else if (status === 403 && error.response?.headers?.['retry-after']) {
       // IP 被自动封禁：给出剩余时间（Retry-After 秒数），可操作提示替代通用错误
       const remain = Math.ceil(Number(error.response.headers['retry-after']) / 60);
-      ElMessage.warning(`访问被拒绝：该 IP 因异常行为被临时封禁，约 ${remain} 分钟后自动解除`);
+      toastOnce('warning', `访问被拒绝：该 IP 因异常行为被临时封禁，约 ${remain} 分钟后自动解除`);
     } else if (!error.config?.silent) {
-      ElMessage.error(message);
+      toastOnce('error', message);
     }
     return Promise.reject(error);
   }

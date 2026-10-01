@@ -28,15 +28,16 @@ async function waitUntilReady(info) {
 /**
  * 获取表单安全令牌 + 随机蜜罐字段名
  * @param {string} forPath 目标提交接口（如 /comments），令牌与路径强绑定
+ * @param {{ silent?: boolean }} [options] silent 时后台静默获取（预热用，失败不弹提示）
  * @returns {Promise<{token: string, hpField: string}>}
  */
-export async function getFormTokenInfo(forPath = '/comments') {
+export async function getFormTokenInfo(forPath = '/comments', options = {}) {
   const cached = cachedByPath.get(forPath);
   if (cached && Date.now() - cached.ts < TOKEN_MAX_AGE) return waitUntilReady(cached);
   const pending = fetchingByPath.get(forPath);
   if (pending) return pending.then(waitUntilReady);
   const p = request
-    .get('/anti/seed', { params: { for: forPath } })
+    .get('/anti/seed', { params: { for: forPath }, silent: options.silent === true })
     .then((data) => {
       const info = {
         token: data.token,
@@ -74,11 +75,12 @@ export function refreshFormToken(forPath) {
 }
 
 /**
- * 加载站点时预热令牌（减少首次提交等待）
+ * 加载站点时预热令牌（减少首次提交等待）。
+ * 后台预热：静默获取——失败不该打扰用户（真到提交时会按需再取并单独报错）。
  */
 export function warmFormToken() {
   if (!useSiteStore().loaded) return;
   ['/comments', '/messages', '/links'].forEach((path) => {
-    getFormTokenInfo(path).catch(() => {});
+    getFormTokenInfo(path, { silent: true }).catch(() => {});
   });
 }
