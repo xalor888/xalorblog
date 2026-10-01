@@ -180,6 +180,28 @@ const SCANNER_UA_PATTERNS = [
   'greynoise',
 ];
 
+/* ==================== 应用内 WebView 标识（放宽 UA 长度上限） ====================
+ * 微信 / QQ / 支付宝等 App 内置浏览器的 UA 天然很长：微信实测 380+ 字符，
+ * 里面塞了 XWEB / MMWEBSDK / MMWEBID / REV / MicroMessenger / NetType 等一串标识。
+ * 用统一的「UA 太长 = 扫描器」阈值会把真实读者挡在门外，而且是一击即记分封 IP
+ * ——「从微信点开文章被拒」就是这么来的。命中这些标识的 UA 只放宽长度上限，
+ * 不放宽其它任何规则：伪装成长 UA 的扫描器本可以直接用短 UA，豁免不影响实际防护。
+ */
+const INAPP_BROWSER_MARKERS = [
+  'micromessenger', 'weixin', 'mmwebsdk', 'mmwebid', 'xweb/',
+  'qqbrowser', 'dingtalk', 'alipayclient', 'alipay',
+  'baiduboxapp', 'ucbrowser', 'quark', 'lark/', 'feishu',
+  'weibo', 'zhihu', 'douyin', 'aweme', 'toutiao',
+  'xiaohongshu', 'miuibrowser', 'huaweibrowser', 'heytapbrowser',
+  'vivobrowser', 'oppobrowser', 'honorbrowser', 'samsungbrowser',
+];
+
+function isInAppBrowserUA(ua) {
+  if (!ua) return false;
+  const lower = ua.toLowerCase();
+  return INAPP_BROWSER_MARKERS.some((m) => lower.includes(m));
+}
+
 /* ==================== 蜜罐路径（诱捕扫描器） ====================
  * 仅保留本博客永不该合法出现的路径；/v1、/graphql、/config、/metrics 等
  * 未来可能用到的通用路径已移除（避免加路由即踩雷封禁真实用户） */
@@ -541,8 +563,11 @@ function waf(req, res, next) {
     report(ip, 'waf', `SCANNER ${req.path}`);
     return res.status(403).json({ code: 1, message: '访问被拒绝' });
   }
-  // 超长 UA（>300 字符）：畸形/扫描器特征
-  if (ua.length > 300) {
+  // 超长 UA：畸形/扫描器特征。阈值按客户端类型分档 —— 普通客户端 512，
+  // 应用内 WebView（微信 380+、支付宝/QQ 同类）给 2048。
+  // 原先不分档的 300 会把「用微信打开文章」判成扫描器并封 IP 15 分钟。
+  const uaLimit = isInAppBrowserUA(ua) ? 2048 : 512;
+  if (ua.length > uaLimit) {
     report(ip, 'waf', `UA-TOO-LONG ${req.path}`);
     return res.status(403).json({ code: 1, message: '访问被拒绝' });
   }
