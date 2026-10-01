@@ -307,6 +307,9 @@
         </div>
       </aside>
     </div>
+
+    <!-- 读者问答：仅在被 gate 放行且站点配了模型时出现（组件内部自查） -->
+    <AskAi v-if="article && article.slug" :slug="article.slug" />
   </div>
 </template>
 
@@ -317,6 +320,7 @@ import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import ImageLightbox from '@/components/ui/ImageLightbox.vue';
 import CommentSection from '@/components/site/CommentSection.vue';
+import AskAi from '@/components/site/AskAi.vue';
 import { articleApi } from '@/api';
 import { renderMarkdown, extractToc, addHeadingIds, addImgAttrs } from '@/utils/markdown';
 import { formatDate, formatNumber, readingTime } from '@/utils/format';

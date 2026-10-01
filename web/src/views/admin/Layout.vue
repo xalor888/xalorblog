@@ -42,6 +42,15 @@
         </button>
         <span class="header-title">{{ currentTitle }}</span>
         <div class="header-right">
+          <button
+            class="theme-btn ai-trigger"
+            :class="{ active: aiOpen }"
+            title="AI 助手"
+            aria-label="AI 助手"
+            @click="aiOpen = !aiOpen"
+          >
+            <XIcon name="Sparkles" :size="17" />
+          </button>
           <span class="admin-user">
             <span class="user-avatar">{{ (auth.user?.nickname || auth.user?.username || 'A').charAt(0).toUpperCase() }}</span>
             {{ auth.user?.nickname || auth.user?.username || 'admin' }}
@@ -83,6 +92,7 @@
         </router-view>
       </main>
       <ShortcutHelp />
+      <AiPanel :open="aiOpen" @close="aiOpen = false" />
     </div>
   </div>
 </template>
@@ -97,12 +107,16 @@ import { useThemeStore, THEME_COLORS } from '@/stores/theme';
 import { useAdminStore } from '@/stores/admin';
 import { adminHref } from '@/utils/adminPath';
 import ShortcutHelp from '@/components/ui/ShortcutHelp.vue';
+import AiPanel from './AiPanel.vue';
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const theme = useThemeStore();
 const admin = useAdminStore();
+
+// AI 写作助手面板（右侧抽屉）
+const aiOpen = ref(false);
 
 // 侧栏折叠偏好本地记忆（每次进后台保持上次状态）
 const collapsed = ref((() => {
@@ -373,6 +387,12 @@ async function logout() {
 .theme-btn:hover {
   color: var(--text);
   background: var(--bg-soft);
+}
+
+/* AI 助手：打开时点亮，一眼看出面板是开着的 */
+.ai-trigger.active {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 /* 强调色选择器 */

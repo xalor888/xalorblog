@@ -20,6 +20,7 @@ const feedRouter = require('./routes/feed');
 const shareRouter = require('./routes/share');
 const antiRouter = require('./routes/anti');
 const hitokotoRouter = require('./routes/hitokoto');
+const aiRouter = require('./routes/ai');
 const adminRouter = require('./routes/admin');
 const { antiBot, readLimiter } = require('./middleware/antiBot');
 const { waf, recordMiss } = require('./middleware/waf');
@@ -350,6 +351,8 @@ app.use(`${api}/links`, strictLimiter, linksRouter);
 app.use(`${api}/messages`, strictLimiter, messagesRouter);
 app.use(`${api}/stats`, antiBot, statsRouter);
 app.use(`${api}/settings`, settingsRouter);
+// 博客页 AI 问答（读者就当前文章提问）：只读 + 自带限流，见 routes/ai.js
+app.use(`${api}/ai`, antiBot, aiRouter);
 app.use(`${api}/hitokoto`, antiBot, hitokotoRouter);
 // 管理后台全部接口（文章/分类/标签/评论/友链/留言/统计/设置/上传/安全中心）：
 // 统一挂载在由 JWT_SECRET 派生的秘钥路径下（非固定 /admin），

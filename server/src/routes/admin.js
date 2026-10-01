@@ -1794,4 +1794,182 @@ router.post('/security/test', (req, res) => {
   return ok(res, { hits, blocked: hits.length > 0 });
 });
 
+/* ============================================================
+   AI 写作助手
+   —— SSE 流式 + function calling：AI 直接改写当前文章，
+     而不是把一整篇正文贴在聊天框里让站长手动复制。
+      模型配置走「站点设置 → 内容审核 → AI 模型」，留空回落服务器 .env。
+      这里只提供「改内容」的工具，发布权仍在人手上（没有 publish 工具）。
+   ============================================================ */
+
+/** 写作助手可调用的工具（全部作用于当前正在编辑的文章） */
+const AI_WRITE_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'set_title',
+      description: '设置文章标题',
+      parameters: {
+        type: 'object',
+        properties: { title: { type: 'string', description: '新标题，40 字以内' } },
+        required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_content',
+      description: '整体替换文章正文（Markdown）。用于「写一篇 / 重写 / 换个写法」',
+      parameters: {
+        type: 'object',
+        properties: { markdown: { type: 'string', description: '完整正文，Markdown 格式' } },
+        required: ['markdown'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'append_content',
+      description: '在正文末尾追加内容（Markdown）。用于「续写 / 再加一段 / 补充」',
+      parameters: {
+        type: 'object',
+        properties: { markdown: { type: 'string', description: '要追加的 Markdown 片段' } },
+        required: ['markdown'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_summary',
+      description: '设置文章摘要',
+      parameters: {
+        type: 'object',
+        properties: { summary: { type: 'string', description: '摘要，150 字以内' } },
+        required: ['summary'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_tags',
+      description: '设置文章标签（整体替换）',
+      parameters: {
+        type: 'object',
+        properties: {
+          tags: { type: 'array', items: { type: 'string' }, description: '标签数组，2-5 个' },
+        },
+        required: ['tags'],
+      },
+    },
+  },
+];
+
+/** 写作助手的系统提示：文风要求写死，避免生成「AI 味」内容 */
+function buildWriterSystemPrompt(context = {}) {
+  const parts = [
+    '你是「Xalor的小站」博客后台的写作助手，直接帮站长干活。',
+    '',
+    '硬性规则：',
+    '- 要改文章时**直接调用工具写入**（set_title / set_content / append_content / set_summary / set_tags），不要在聊天里贴大段正文让人复制。',
+    '- 正文一律用 Markdown。代码块标语言，命令写全。',
+    '- 改完只用一两句话说明改了什么，不要复述全文、不要写总结段落。',
+    '- 站长只是提问（没让你改）时，正常回答即可，不要乱动工具。',
+    '',
+    '文风（很重要）：',
+    '- 第一人称、口语、直接，像一个有主见的技术博主在讲话。',
+    '- 禁止套话：不要「总而言之」「综上所述」「值得注意的是」「在这个快节奏的时代」「让我们一起」之类。',
+    '- 不要为凑长度堆排比、堆形容词：有话则长，无话则短。',
+    '- 技术内容要具体，写清版本、命令、踩过的坑，不要空泛地说「要注意性能」。',
+  ];
+
+  const ctx = [];
+  if (context.title) ctx.push(`标题：${context.title}`);
+  if (context.summary) ctx.push(`摘要：${context.summary}`);
+  if (Array.isArray(context.tags) && context.tags.length) ctx.push(`标签：${context.tags.join('、')}`);
+  if (Array.isArray(context.categories) && context.categories.length) {
+    ctx.push(`已有分类：${context.categories.map((c) => c.name).join('、')}`);
+  }
+  if (context.content) {
+    const raw = String(context.content);
+    // 正文可能很长：截到 6000 字，够 AI 判断上下文又不炸 token
+    ctx.push(`当前正文${raw.length > 6000 ? '（已截断）' : ''}：\n\n${raw.slice(0, 6000)}`);
+  }
+  if (ctx.length) parts.push('', '当前正在编辑的文章：', ...ctx);
+  return parts.join('\n');
+}
+
+/** 只保留最近若干轮、单条截断，防 token 爆炸 */
+function trimChatMessages(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  return list
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+    .slice(-12)
+    .map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
+}
+
+/** 模型可用性：前端据此决定是否显示 AI 入口，以及提示"还没配模型" */
+router.get('/ai/status', async (req, res) => {
+  try {
+    const { getAiConfig } = require('../utils/aiClient');
+    const ai = await getAiConfig();
+    return ok(res, { ready: ai.ready, model: ai.ready ? ai.model : '' }, 'ok');
+  } catch (e) {
+    return ok(res, { ready: false, model: '' }, 'ok');
+  }
+});
+
+/** AI 写作助手：SSE 流式对话 */
+router.post('/ai/chat', async (req, res) => {
+  // SSE 头：no-transform + X-Accel-Buffering 关掉 nginx 缓冲，否则流式会被攒成一坨
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  const send = (obj) => {
+    try {
+      res.write(`data: ${JSON.stringify(obj)}\n\n`);
+    } catch (e) {
+      /* 连接已断 */
+    }
+  };
+
+  // 客户端断开 → 中止上游请求，避免悬挂连接白烧 token
+  const ac = new AbortController();
+  req.on('close', () => ac.abort());
+
+  try {
+    const { messages = [], context = {} } = req.body || {};
+    const chat = trimChatMessages(messages);
+    if (!chat.length) {
+      send({ type: 'error', message: '没有收到对话内容' });
+      return res.end();
+    }
+
+    const { streamChat } = require('../utils/aiClient');
+    const payload = [{ role: 'system', content: buildWriterSystemPrompt(context) }, ...chat];
+
+    for await (const ev of streamChat({
+      messages: payload,
+      tools: AI_WRITE_TOOLS,
+      maxTokens: 4096,
+      signal: ac.signal,
+    })) {
+      if (ev.type === 'text') send({ type: 'text', text: ev.text });
+      else if (ev.type === 'tool') send({ type: 'action', name: ev.name, args: ev.args });
+      else if (ev.type === 'usage') send({ type: 'usage', usage: ev.usage });
+    }
+    send({ type: 'done' });
+  } catch (e) {
+    send({ type: 'error', message: e.message || '生成失败' });
+  } finally {
+    res.end();
+  }
+});
+
 module.exports = router;

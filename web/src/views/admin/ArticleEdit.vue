@@ -190,6 +190,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { articleApi, categoryApi, tagApi, uploadApi } from '@/api';
 import { renderMarkdown } from '@/utils/markdown';
 import { adminHref } from '@/utils/adminPath';
+import { setAiContext, setAiApplier, resetAiBridge } from '@/utils/aiBridge';
 import {
   migrateLegacyPrefix,
   readSessionValue,
@@ -566,6 +567,61 @@ onUnmounted(() => {
   // 且 DRAFT_KEY() 延迟求值会读到已指向新文章的 editingId，
   // 把旧文章内容写入新文章的草稿键（下次新建/编辑时弹出错误的恢复草稿提示）
   clearTimeout(autosaveTimer);
+  resetAiBridge();
+});
+
+/* ---------- AI 写作助手桥接 ----------
+   把当前正在编辑的文章交给 AI 面板当上下文，并接收 AI 改好的内容直接写进表单。
+   只有「改内容」的动作，没有发布 —— 发布永远由人点。 */
+watch(
+  // 用轻量签名做依赖：正文可能上万字，每次输入都做深比较太亏
+  () =>
+    [
+      form.value.title,
+      form.value.summary,
+      form.value.category_id,
+      (form.value.tags || []).join(','),
+      String(form.value.content || '').length,
+    ].join('\u0000'),
+  () => {
+    setAiContext({
+      title: form.value.title,
+      content: String(form.value.content || '').slice(0, 8000),
+      summary: form.value.summary,
+      tags: form.value.tags || [],
+      categories: categories.value || [],
+    });
+  },
+  { immediate: true }
+);
+
+setAiApplier((name, args) => {
+  switch (name) {
+    case 'set_title':
+      if (!args.title) return null;
+      form.value.title = String(args.title).slice(0, 200);
+      return '已改标题';
+    case 'set_content':
+      if (typeof args.markdown !== 'string') return null;
+      form.value.content = args.markdown;
+      return '已替换正文';
+    case 'append_content': {
+      if (typeof args.markdown !== 'string') return null;
+      const cur = String(form.value.content || '').replace(/\s+$/, '');
+      form.value.content = cur ? `${cur}\n\n${args.markdown}` : args.markdown;
+      return '已追加正文';
+    }
+    case 'set_summary':
+      if (!args.summary) return null;
+      form.value.summary = String(args.summary).slice(0, 500);
+      return '已写摘要';
+    case 'set_tags':
+      if (!Array.isArray(args.tags)) return null;
+      form.value.tags = args.tags.map(String).filter(Boolean).slice(0, 10);
+      return '已设标签';
+    default:
+      return null; // 未识别的动作 → 面板提示「当前页面不支持」
+  }
 });
 
 /** 编辑器快捷键：Ctrl+S 保存草稿，Ctrl+Enter 发布 */

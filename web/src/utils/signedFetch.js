@@ -39,12 +39,15 @@ function sigPath(url) {
   return path;
 }
 
-export async function signedFetch(url, { method = 'GET', headers = {} } = {}) {
+export async function signedFetch(url, { method = 'GET', body = null, headers = {}, signal = null } = {}) {
   const ticket = getTicket();
   const jti = ticket ? ticket.split('.')[1] || '' : '';
   const ts = String(Date.now());
   const nonce = randomHex(16);
-  const bodyHash = await sha256Hex('{}');
+  // 与 axios 拦截器的 signRequest 保持同一算法：body 哈希取 JSON 序列化后的 sha256，
+  // 空 body 等价于 '{}'（GET 沿用旧行为，POST 传真实 body）
+  const payload = body === null || body === undefined ? {} : body;
+  const bodyHash = await sha256Hex(typeof payload === 'string' ? payload : JSON.stringify(payload));
   const msg = [method.toUpperCase(), sigPath(url), ts, bodyHash, jti, nonce].join('|');
   const sig = await hmacHex(ticket, msg);
   return fetch(url, {
@@ -57,7 +60,10 @@ export async function signedFetch(url, { method = 'GET', headers = {} } = {}) {
       'X-Timestamp': ts,
       'X-Nonce': nonce,
       'X-Sig': sig,
+      ...(body !== null && body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...headers,
     },
+    body: body === null || body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
+    ...(signal ? { signal } : {}),
   });
 }
