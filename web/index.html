@@ -30,9 +30,12 @@
     <meta name="twitter:description" content="记录技术、生活与思考的个人博客" />
     <title>Xalor的小站</title>
     <!-- 主题初始化（外部文件，同步阻塞加载防闪烁；配合 script-src 'self' 无内联脚本） -->
-    <script src="/theme-init.js"></script>
+    <!-- ?v= 是必需的：public/ 下的脚本不进打包、没有内容哈希，浏览器和 Cloudflare
+         都按扩展名给它 4 小时强缓存。不带版本号改动后老访客会继续跑旧脚本
+         （曾导致「复制已放开」上线两小时仍有人被拦）。改这两个文件时必须递增 v。 -->
+    <script src="/theme-init.js?v=20261001b"></script>
     <!-- 反调试：最早加载，防 DevTools 分析 -->
-    <script src="/anti-debug.js"></script>
+    <script src="/anti-debug.js?v=20261001b"></script>
   </head>
   <body>
     <div id="app"></div>

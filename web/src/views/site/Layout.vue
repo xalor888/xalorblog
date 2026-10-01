@@ -91,14 +91,17 @@
       </nav>
     </transition>
 
-    <!-- 公告 -->
+    <!-- 公告：浮在导航下方的第二块玻璃胶囊 -->
     <transition name="ticker-slide">
       <div v-if="site.settings.announcement && !announcementClosed" class="ticker" :class="{ overlay: isHome, compact: isHome && scrolled }">
-        <div class="container ticker-inner">
-          <span class="ticker-icon"><XIcon name="Megaphone" :size="14" /></span>
+        <div class="ticker-inner">
+          <span class="ticker-badge">
+            <XIcon name="Megaphone" :size="12" />
+            <em>公告</em>
+          </span>
           <span class="ticker-text">{{ site.settings.announcement }}</span>
           <button class="ticker-close" @click="closeAnnouncement" title="关闭公告">
-            <XIcon name="X" :size="14" />
+            <XIcon name="X" :size="13" />
           </button>
         </div>
       </div>
@@ -717,55 +720,96 @@ onUnmounted(() => {
   outline-offset: 2px;
 }
 
-/* ============ 公告 ============ */
+/* ============ 公告：浮在导航下方的第二块玻璃 ============
+   与导航条共用同一套 --sg-* 液态玻璃材质和同样的「离边浮起」语言，
+   形成 navigate → 公告 两片玻璃的纵向节奏，而不是一条贴边的实色通栏。
+   宽度收敛到内容：短公告是一枚小胶囊，长公告到 760px 才走省略号。 */
 .ticker {
-  background: var(--bg-soft);
-  border-bottom: 1px solid var(--border);
-  font-size: 0.85rem;
+  position: relative;
+  z-index: calc(var(--z-nav) - 1);
+  width: fit-content;
+  max-width: min(calc(100% - 40px), 760px);
+  margin: 12px auto 0;
+  border-radius: 999px;
   color: var(--text-2);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
+  overflow: hidden;
 }
 
+/* 浮在首页头图上：换深色玻璃，白字才压得住，头图也能透进玻璃里 */
 .ticker.overlay {
   position: fixed;
-  top: calc(var(--nav-h) + 22px); /* 避开浮起的玻璃导航条（12px 上边距 + 10px 间隔） */
-  left: 0;
-  right: 0;
-  z-index: calc(var(--z-nav) - 10);
-  background: rgba(8, 7, 6, 0.28);
-  color: rgba(255, 255, 255, 0.88);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(16px);
+  top: calc(var(--nav-h) + 22px); /* 12px 导航上边距 + 10px 间隔 */
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  z-index: calc(var(--z-nav) - 1);
+  background:
+    radial-gradient(120% 170% at 12% 0%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(
+      160deg,
+      rgba(18, 15, 13, 0.44) 0%,
+      rgba(14, 12, 10, 0.32) 46%,
+      rgba(20, 17, 15, 0.48) 100%
+    );
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
 }
 
+/* 滚下头图后回到浅色玻璃 */
 .ticker.overlay.compact {
-  background: var(--card-trans);
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border-color: var(--sg-edge);
   color: var(--text-2);
-  border-bottom-color: var(--border);
-}
-
-.ticker.overlay.compact .ticker-close {
-  color: var(--text-3);
-}
-
-.ticker.overlay .ticker-close {
-  color: rgba(255, 255, 255, 0.7);
 }
 
 .ticker-inner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 24px;
+  gap: 10px;
+  padding: 6px 8px 6px 10px;
 }
 
-.ticker-icon {
-  color: var(--accent);
-  display: flex;
+/* 左侧「公告」标签：品牌色玻璃小胶囊，让这条通知一眼可辨 */
+.ticker-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
+  padding: 2px 9px 2px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.ticker-badge em {
+  font-style: normal;
+}
+
+.ticker.overlay .ticker-badge {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.ticker.overlay.compact .ticker-badge {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .ticker-text {
-  flex: 1;
+  min-width: 0; /* 配合 overflow 才能在本胶囊宽度内走省略号 */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -775,31 +819,37 @@ onUnmounted(() => {
   flex-shrink: 0;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-3);
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
 .ticker-close:hover {
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: #fff;
+  background: var(--accent);
+  transform: rotate(90deg);
+}
+
+.ticker.overlay .ticker-close {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ticker.overlay .ticker-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .ticker-slide-enter-active,
 .ticker-slide-leave-active {
-  transition: all 0.25s var(--ease-out);
-  overflow: hidden;
+  transition: opacity 0.26s var(--ease-out);
 }
 
 .ticker-slide-enter-from,
 .ticker-slide-leave-to {
   opacity: 0;
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
 }
 
 /* ============ 主体 ============ */
