@@ -13,9 +13,30 @@
       </header>
 
       <div ref="listEl" class="ask-list">
-        <p v-if="!messages.length" class="ask-hint">就这篇文章的内容提问，比如「这篇讲了什么」「第二步为什么这么做」。</p>
+        <!-- 还没问过：给三个一键问题，降低使用门槛 -->
+        <div v-if="!messages.length" class="ask-hello">
+          <p class="ask-hint">就这篇文章的内容提问</p>
+          <div class="ask-suggests">
+            <button v-for="s in suggests" :key="s" class="ask-suggest" type="button" @click="send(s)">{{ s }}</button>
+          </div>
+        </div>
+
         <div v-for="(m, i) in messages" :key="i" class="ask-row" :class="m.role">
-          <div class="ask-bubble">{{ m.content }}<span v-if="m.streaming" class="ask-cursor"></span></div>
+          <div class="ask-wrap">
+            <!-- 回答用 Markdown 渲染（DOMPurify 净化），流式期间照样渲染 -->
+            <div v-if="m.role === 'assistant'" class="ask-bubble ask-md" v-html="renderMarkdown(m.content)"></div>
+            <div v-else class="ask-bubble">{{ m.content }}</div>
+            <span v-if="m.streaming" class="ask-cursor"></span>
+            <!-- 回答完成：一键复制 -->
+            <button
+              v-if="m.role === 'assistant' && !m.streaming && m.content"
+              class="ask-copy"
+              type="button"
+              @click="copyAnswer(m)"
+            >
+              {{ m.copied ? '已复制' : '复制' }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -33,6 +54,7 @@
 import { ref, nextTick, onMounted } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import { signedFetch } from '@/utils/signedFetch';
+import { renderMarkdown } from '@/utils/markdown';
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -42,11 +64,13 @@ const API_PREFIX = import.meta.env.VITE_API_PREFIX || '/api';
 
 const open = ref(false);
 const available = ref(false);
-const messages = ref([]); // { role, content, streaming? }
+const messages = ref([]); // { role, content, streaming?, copied? }
 const draft = ref('');
 const pending = ref(false);
 const listEl = ref(null);
 let controller = null;
+
+const suggests = ['总结一下全文', '核心观点是什么', '列出 3 个要点'];
 
 async function scrollToEnd() {
   await nextTick();
@@ -69,6 +93,29 @@ async function checkAvailable() {
 function toggle() {
   if (!available.value) return;
   open.value = true;
+}
+
+/** 复制一条回答（不用全局弹层，按钮自身变「已复制」就够） */
+async function copyAnswer(m) {
+  const text = String(m.content || '').trim();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    // 旧浏览器降级
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+  m.copied = true;
+  setTimeout(() => {
+    m.copied = false;
+  }, 1600);
 }
 
 async function send() {
@@ -227,10 +274,37 @@ onMounted(checkAvailable);
 }
 
 .ask-hint {
-  margin: auto 0;
+  margin: 0 0 10px;
   font-size: 0.8rem;
   line-height: 1.7;
   color: var(--text-3);
+}
+
+.ask-hello {
+  margin: auto 0;
+}
+
+/* 一键问题 */
+.ask-suggests {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ask-suggest {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--sg-edge);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--text-2);
+  font-size: 0.82rem;
+  text-align: left;
+  transition: all var(--dur) var(--ease);
+}
+
+.ask-suggest:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .ask-row {
@@ -241,19 +315,24 @@ onMounted(checkAvailable);
   justify-content: flex-end;
 }
 
-.ask-bubble {
+/* 气泡 + 复制按钮 的容器 */
+.ask-wrap {
+  position: relative;
   max-width: 88%;
+}
+
+.ask-bubble {
   padding: 8px 11px;
   border-radius: 12px;
   font-size: 0.84rem;
   line-height: 1.7;
-  white-space: pre-wrap;
   word-break: break-word;
 }
 
 .ask-row.user .ask-bubble {
   background: var(--accent);
   color: #fff;
+  white-space: pre-wrap;
 }
 
 .ask-row.assistant .ask-bubble {
@@ -261,11 +340,72 @@ onMounted(checkAvailable);
   color: var(--text);
 }
 
+/* 回答里的 Markdown */
+.ask-md :deep(p) {
+  margin: 0 0 5px;
+}
+
+.ask-md :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.ask-md :deep(ul),
+.ask-md :deep(ol) {
+  margin: 4px 0;
+  padding-left: 17px;
+}
+
+.ask-md :deep(li) {
+  margin: 2px 0;
+}
+
+.ask-md :deep(code) {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  font-size: 0.82em;
+}
+
+.ask-md :deep(pre) {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  overflow-x: auto;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.ask-md :deep(pre code) {
+  padding: 0;
+  background: none;
+}
+
+/* 复制按钮：贴在气泡右下角外侧，不抢内容位置 */
+.ask-copy {
+  position: absolute;
+  right: 0;
+  bottom: -22px;
+  font-size: 0.7rem;
+  color: var(--text-3);
+  padding: 1px 4px;
+  border-radius: 5px;
+  transition: color var(--dur) var(--ease);
+}
+
+.ask-copy:hover {
+  color: var(--accent);
+}
+
+.ask-row.assistant {
+  margin-bottom: 16px;
+}
+
 .ask-cursor {
+  position: absolute;
+  right: -2px;
+  bottom: 8px;
   display: inline-block;
   width: 5px;
   height: 13px;
-  margin-left: 2px;
   vertical-align: middle;
   background: currentColor;
   opacity: 0.5;

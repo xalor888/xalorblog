@@ -40,10 +40,20 @@ async function getAiConfig() {
     .trim()
     .replace(/\/+$/, '');
   const model = String(s.ai_model || config.ai?.model || FALLBACK_MODEL).trim();
+  // 生成参数：后台留空用默认；越界的值在保存时已被钳制，这里再兜一层
+  const tRaw = parseFloat(String(s.ai_temperature ?? '').trim());
+  const temperature = Number.isFinite(tRaw) && tRaw >= 0 && tRaw <= 2 ? tRaw : 0.7;
+  const mRaw = parseInt(String(s.ai_max_tokens ?? '').trim(), 10);
+  const maxTokens = Number.isFinite(mRaw) && mRaw >= 256 && mRaw <= 8192 ? mRaw : 4096;
+  // 自定义写作助手人设（仅管理端使用；公开接口不下发、导出剔除）
+  const systemPrompt = String(s.ai_system_prompt || '').trim().slice(0, 3000);
   return {
     apiKey,
     baseUrl,
     model,
+    temperature,
+    maxTokens,
+    systemPrompt,
     // 必须同时有 key 且地址可用，才算配置就绪
     ready: !!apiKey && isUsableBase(baseUrl),
   };
@@ -93,7 +103,7 @@ async function* parseSse(body) {
  * @param {AbortSignal} [opts.signal] 客户端断开时传入以中止上游
  * @yields {{type:'text',text:string} | {type:'tool',id:string,name:string,args:object} | {type:'usage',usage:object}}
  */
-async function* streamChat({ messages, tools = null, maxTokens = 2048, signal = null }) {
+async function* streamChat({ messages, tools = null, maxTokens = null, signal = null }) {
   const ai = await getAiConfig();
   if (!ai.ready) {
     const err = new Error('AI 未配置：请在后台「站点设置 → 内容审核 → AI 模型」填写接口地址与 API Key');
@@ -105,8 +115,9 @@ async function* streamChat({ messages, tools = null, maxTokens = 2048, signal = 
     model: ai.model,
     messages,
     stream: true,
-    temperature: 0.7,
-    max_tokens: maxTokens,
+    // 调用方显式传的 maxTokens 优先（如读者问答的 800），否则用后台配置
+    temperature: ai.temperature ?? 0.7,
+    max_tokens: maxTokens || ai.maxTokens || 2048,
   };
   if (Array.isArray(tools) && tools.length) {
     body.tools = tools;
@@ -177,7 +188,10 @@ async function* streamChat({ messages, tools = null, maxTokens = 2048, signal = 
       } catch (e) {
         args = {};
       }
-      yield { type: 'tool', id: cur.id || '', name: cur.name, args };
+      // id 兜底：个别兼容实现不给 id，客户端回传工具结果时需要稳定标识
+      const id = cur.id || `tc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      // raw = 原始参数 JSON 串：调用方（SSE 转发）要用它重建 assistant.tool_calls
+      yield { type: 'tool', id, name: cur.name, args, raw: cur.args || '{}' };
     }
     if (usage) yield { type: 'usage', usage };
   } finally {

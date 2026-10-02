@@ -186,8 +186,9 @@ async function logout() {
 /* ============ 侧边栏 ============ */
 .admin-side {
   width: 232px;
-  background: color-mix(in srgb, var(--card) 92%, transparent);
-  border-right: 1px solid var(--border);
+  /* 液态玻璃侧栏：与卡片同套材质 */
+  background: var(--lg-sheen), var(--lg-surface-pop);
+  border-right: 1px solid var(--lg-edge);
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -196,6 +197,7 @@ async function logout() {
   left: 0;
   z-index: var(--z-nav);
   backdrop-filter: var(--lg-blur-pop);
+  -webkit-backdrop-filter: var(--lg-blur-pop);
   transition: width 0.25s var(--ease);
 }
 
@@ -309,9 +311,10 @@ async function logout() {
 
 .admin-header {
   height: 64px;
-  background: color-mix(in srgb, var(--card) 72%, transparent);
+  background: var(--lg-sheen), var(--lg-surface-pop);
   backdrop-filter: var(--lg-blur-pop);
-  border-bottom: 1px solid var(--border);
+  -webkit-backdrop-filter: var(--lg-blur-pop);
+  border-bottom: 1px solid var(--lg-edge);
   display: flex;
   align-items: center;
   gap: 14px;

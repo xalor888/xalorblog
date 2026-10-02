@@ -517,11 +517,13 @@ input:-webkit-autofill:focus {
 
 /* 卡片基座 */
 .card {
-  background: color-mix(in srgb, var(--card) 92%, transparent);
-  border: 1px solid var(--border);
+  /* 液态玻璃卡片（后台统一材质）：高光 → 半透面 → 折射亮边 */
+  background: var(--lg-sheen), var(--lg-surface-pop);
+  border: 1px solid var(--lg-edge);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-1);
-  backdrop-filter: blur(10px);
+  box-shadow: var(--lg-shadow-pop), var(--lg-inner);
+  backdrop-filter: var(--lg-blur-pop);
+  -webkit-backdrop-filter: var(--lg-blur-pop);
   /* 性能：transform/box-shadow 变化不触发重排 */
   contain: layout paint style;
 }

@@ -63,55 +63,49 @@
       <el-form label-width="130px" class="setting-form">
         <el-form-item label="评论审核">
           <el-switch v-model="form.comment_moderation" />
-          <span class="switch-tip">开启后新评论默认进入待审，需在后台「评论管理」中通过</span>
         </el-form-item>
         <el-form-item label="留言审核">
           <el-switch v-model="form.message_moderation" />
-          <span class="switch-tip">开启后新留言默认进入待审，需在后台「留言管理」中通过</span>
         </el-form-item>
         <el-form-item label="AI 内容审核">
           <el-switch v-model="form.ai_moderation" />
-          <span class="switch-tip">
-            <b>独立于上面两个开关的第二层</b>：开启时本地规则会自动拦广告/辱骂/引流，
-            严重内容直接拒绝、可疑内容强制送审（这就是「审核开关明明关着，评论还是进了待审」的原因）。
-            关掉后评论与留言完全按「评论审核 / 留言审核」处理。
-          </span>
         </el-form-item>
         <el-form-item label="AI 深度复核">
           <el-switch v-model="form.ai_llm_moderation" :disabled="!form.ai_moderation" />
-          <span class="switch-tip">
-            <template v-if="form.ai_llm_ready">
-              已配置大模型，会对本地判为「可疑」的内容再复核一次（有 API 调用成本）
-            </template>
-            <template v-else>
-              需在服务器 <code>.env</code> 配置 <code>AI_API_KEY</code> / <code>AI_BASE_URL</code> /
-              <code>AI_MODEL</code> 后才会真正生效 —— <b>当前未配置，本项不影响任何结果</b>
-            </template>
+          <span class="ai-status" :class="{ on: form.ai_llm_ready }">
+            {{ form.ai_llm_ready ? '已配置模型' : '未配置模型' }}
           </span>
         </el-form-item>
         <el-form-item label="AI 模型配置">
           <div class="ai-config">
-            <el-input v-model="form.ai_base_url" placeholder="接口地址，如 https://api.openai.com/v1" />
-            <el-input v-model="form.ai_model" placeholder="模型名，如 gpt-4o-mini" />
+            <el-input v-model="form.ai_base_url" placeholder="接口地址，如 https://api.deepseek.com/v1" />
+            <div class="ai-config-row">
+              <el-input v-model="form.ai_model" placeholder="模型名，如 deepseek-chat" />
+              <el-input
+                v-model="form.ai_api_key"
+                type="password"
+                show-password
+                :placeholder="form.ai_llm_ready ? 'Key 已配置 · 留空不修改' : 'API Key'"
+              />
+            </div>
+            <div class="ai-config-row">
+              <el-input v-model="form.ai_temperature" placeholder="温度 0-2，默认 0.7" />
+              <el-input v-model="form.ai_max_tokens" placeholder="最大输出 256-8192，默认 4096" />
+            </div>
             <el-input
-              v-model="form.ai_api_key"
-              type="password"
-              show-password
-              :placeholder="form.ai_llm_ready ? 'API Key 已配置 · 留空则不修改' : 'API Key'"
+              v-model="form.ai_system_prompt"
+              type="textarea"
+              :rows="3"
+              maxlength="3000"
+              placeholder="自定义 AI 人设与文风（留空用内置写作助手）"
             />
-            <span class="switch-tip ai-config-tip">
-              留空即用服务器 <code>.env</code> 的值。密钥只写入不回显，导出的设置备份里也会剔除；
-              接口地址必须是 <code>https://</code>（拒绝明文与内网地址）。
-            </span>
           </div>
         </el-form-item>
         <el-form-item label="友链审核">
           <el-switch :model-value="true" disabled />
-          <span class="switch-tip">友链申请固定进入待审，在「友链管理」中通过</span>
         </el-form-item>
         <el-form-item label="RSS 全文输出">
           <el-switch v-model="form.rss_full_content" />
-          <span class="switch-tip">默认关闭，仅输出摘要。开启后 RSS 会输出全文（绕过文章详情的传输加密，订阅器可直接抓取）</span>
         </el-form-item>
         <el-form-item label="版权声明">
           <el-input
@@ -120,13 +114,11 @@
             :rows="2"
             maxlength="300"
             show-word-limit
-            placeholder="留空使用默认声明：署名-非商业性使用 4.0 国际 (CC BY-NC 4.0)"
+            placeholder="留空使用默认 CC BY-NC 4.0 声明"
           />
-          <span class="switch-tip">显示在文章页版权卡片；仅支持纯文本（自动转义，不解析 HTML）</span>
         </el-form-item>
         <el-form-item label="ICP 备案号">
           <el-input v-model="form.icp" maxlength="50" placeholder="如 京ICP备00000000号（留空不显示）" />
-          <span class="switch-tip">显示在页脚底部，用于国内服务器备案信息公示</span>
         </el-form-item>
       </el-form>
     </div>
@@ -137,9 +129,6 @@
       <el-form label-width="130px" class="setting-form">
         <el-form-item label="允许复制">
           <el-switch v-model="form.allow_copy" />
-          <span class="switch-tip">
-            默认允许。关闭后全站禁止选中/复制正文与右键菜单；个别文章可在「文章编辑」页单独放开
-          </span>
         </el-form-item>
       </el-form>
     </div>
@@ -931,14 +920,22 @@ onMounted(async () => {
   text-decoration: underline;
 }
 
-/* 审核开关说明文字 */
-.switch-tip {
+/* AI 复核状态：一行极简徽标 */
+.ai-status {
   margin-left: 10px;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
   color: var(--text-3);
-  font-size: 0.8rem;
+  background: var(--bg-soft);
 }
 
-/* AI 模型配置：三个输入纵排，提示贴左（覆盖 .switch-tip 的 margin-left） */
+.ai-status.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* AI 模型配置：接口/模型+密钥/温度+输出 纵排，自定义提示词垫底 */
 .ai-config {
   display: flex;
   flex-direction: column;
@@ -947,16 +944,10 @@ onMounted(async () => {
   max-width: 520px;
 }
 
-.ai-config .ai-config-tip {
-  margin-left: 0;
-  line-height: 1.65;
-}
-
-.ai-config code {
-  padding: 1px 5px;
-  border-radius: 5px;
-  font-size: 0.9em;
-  background: color-mix(in srgb, var(--text) 8%, transparent);
+.ai-config-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 /* 后台访问信息 */

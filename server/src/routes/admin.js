@@ -1378,7 +1378,7 @@ router.put('/settings', async (req, res) => {
 router.get('/settings/export', async (req, res) => {
   try {
     const settings = await getAllSettings();
-    const { ai_api_key: _key, ...safe } = settings;
+    const { ai_api_key: _key, ai_system_prompt: _prompt, ...safe } = settings;
     res.set('Content-Disposition', 'attachment; filename="settings-backup.json"');
     return res.send(JSON.stringify(safe, null, 2));
   } catch (e) {
@@ -1795,15 +1795,16 @@ router.post('/security/test', (req, res) => {
 });
 
 /* ============================================================
-   AI 写作助手
-   —— SSE 流式 + function calling：AI 直接改写当前文章，
-     而不是把一整篇正文贴在聊天框里让站长手动复制。
-      模型配置走「站点设置 → 内容审核 → AI 模型」，留空回落服务器 .env。
-      这里只提供「改内容」的工具，发布权仍在人手上（没有 publish 工具）。
+   AI 写作助手 v2 —— 带工具循环的真 Agent
+   —— SSE 流式 + function calling：AI 直接改写当前文章；
+     客户端把工具执行结果回传（role:'tool'），模型能「看到」
+     自己动作的结果并继续推理——搜图、读旧文都靠这个闭环。
+      模型配置走「站点设置 → 内容审核 → AI 模型」，留空回落 .env。
+      只提供「改内容」的工具，发布权永远在人手上（没有 publish）。
    ============================================================ */
 
-/** 写作助手可调用的工具（全部作用于当前正在编辑的文章） */
-const AI_WRITE_TOOLS = [
+/** 写作助手可调用的工具（写正文 ×6 + 元数据 ×4 + 检索 ×3，全部白名单化） */
+const AI_TOOLS = [
   {
     type: 'function',
     function: {
@@ -1820,7 +1821,7 @@ const AI_WRITE_TOOLS = [
     type: 'function',
     function: {
       name: 'set_content',
-      description: '整体替换文章正文（Markdown）。用于「写一篇 / 重写 / 换个写法」',
+      description: '整体替换文章正文（Markdown）。只在用户明确要求重写/新写整篇时使用',
       parameters: {
         type: 'object',
         properties: { markdown: { type: 'string', description: '完整正文，Markdown 格式' } },
@@ -1832,10 +1833,34 @@ const AI_WRITE_TOOLS = [
     type: 'function',
     function: {
       name: 'append_content',
-      description: '在正文末尾追加内容（Markdown）。用于「续写 / 再加一段 / 补充」',
+      description: '在正文末尾追加内容（Markdown）。用于续写/补充',
       parameters: {
         type: 'object',
         properties: { markdown: { type: 'string', description: '要追加的 Markdown 片段' } },
+        required: ['markdown'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'replace_selection',
+      description: '替换用户当前在编辑器里选中的那段文本。用于润色/改写选中内容',
+      parameters: {
+        type: 'object',
+        properties: { markdown: { type: 'string', description: '替换后的文本（Markdown）' } },
+        required: ['markdown'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'insert_at_cursor',
+      description: '在编辑器光标处插入内容（Markdown）。用于插入一段/一张图',
+      parameters: {
+        type: 'object',
+        properties: { markdown: { type: 'string', description: '要插入的 Markdown 片段' } },
         required: ['markdown'],
       },
     },
@@ -1856,60 +1881,372 @@ const AI_WRITE_TOOLS = [
     type: 'function',
     function: {
       name: 'set_tags',
-      description: '设置文章标签（整体替换）',
+      description: '设置文章标签（整体替换）。优先从「已有标签」里选',
+      parameters: {
+        type: 'object',
+        properties: { tags: { type: 'array', items: { type: 'string' }, description: '标签数组，2-5 个' } },
+        required: ['tags'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_category',
+      description: '设置文章分类。必须是「已有分类」之一（传分类名）',
+      parameters: {
+        type: 'object',
+        properties: { category: { type: 'string', description: '分类名，必须已存在' } },
+        required: ['category'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_cover',
+      description: '设置文章封面图（https 图片地址，通常是搜图结果里用户指定的那张）',
+      parameters: {
+        type: 'object',
+        properties: { url: { type: 'string', description: '图片的 https 地址' } },
+        required: ['url'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_options',
+      description: '设置文章选项：置顶/允许评论/允许复制/发布时间（只传要改的字段）',
       parameters: {
         type: 'object',
         properties: {
-          tags: { type: 'array', items: { type: 'string' }, description: '标签数组，2-5 个' },
+          is_top: { type: 'boolean', description: '置顶' },
+          allow_comment: { type: 'boolean', description: '允许评论' },
+          allow_copy: { type: 'boolean', description: '允许复制' },
+          publish_time: { type: 'string', description: '发布时间，格式 YYYY-MM-DD HH:mm' },
         },
-        required: ['tags'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_images',
+      description: '搜索可用作封面/插图的网络图片（Wikimedia Commons，CC 许可）。query 用英文，1-3 个词',
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string', description: '英文搜索关键词，如 mountain sunrise' } },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_articles',
+      description: '列出站内文章（标题 + slug + 状态），用于找参考文章',
+      parameters: {
+        type: 'object',
+        properties: { keyword: { type: 'string', description: '标题关键词，留空列出最近的' } },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_article',
+      description: '读取站内一篇文章的全文（Markdown），用于参考旧文写作',
+      parameters: {
+        type: 'object',
+        properties: { slug: { type: 'string', description: '文章 slug（从 list_articles 拿）' } },
+        required: ['slug'],
       },
     },
   },
 ];
 
-/** 写作助手的系统提示：文风要求写死，避免生成「AI 味」内容 */
-function buildWriterSystemPrompt(context = {}) {
+/** 站点简报：已有分类/标签/最近文章 —— 服务端直接查库补进提示词，
+ *  模型据此才能「优先复用已有标签」「分类必须已存在」「找到旧文 slug」 */
+async function loadSiteBrief() {
+  const [cats, tags, recent] = await Promise.all([
+    db('categories').orderBy('id', 'asc').limit(30).select('name'),
+    db('tags').orderBy('id', 'asc').limit(80).select('name'),
+    db('articles').orderBy('updated_at', 'desc').limit(10).select('slug', 'title', 'status'),
+  ]);
+  return {
+    categories: cats.map((c) => c.name),
+    tags: tags.map((t) => t.name),
+    recentArticles: recent.map((a) => `《${a.title}》 slug=${a.slug} [${a.status}]`),
+  };
+}
+
+/** 写作助手的系统提示：文风要求写死，避免生成「AI 味」内容。
+ *  systemPrompt 非空时用站长自定义的人设替换内置「角色与文风」层；
+ *  工具说明与文章上下文始终保留（那是工具调用的功能底线，自定义不碰）。 */
+function buildWriterSystemPrompt(context = {}, site = {}, systemPrompt = '') {
+  const role = systemPrompt
+    ? systemPrompt
+    : [
+        '你是「Xalor的小站」博客后台的 AI 写作助手，帮站长写文章、改稿、找配图。直接干活，不啰嗦。',
+        '',
+        '文风（很重要）：',
+        '- 第一人称、口语、直接，像一个有主见的技术博主在讲话。',
+        '- 禁止套话：「总而言之」「综上所述」「值得注意的是」「在这个快节奏的时代」「让我们一起」「希望对你有帮助」。',
+        '- 有话则长，无话则短；不堆排比、不堆形容词。',
+        '- 技术内容要具体：版本、命令、报错、坑点写清楚，不空泛。',
+        '- 聊天回复保持短，力气花在文章里；改完只用一两句话说明改了什么。',
+      ].join('\n');
+
   const parts = [
-    '你是「Xalor的小站」博客后台的写作助手，直接帮站长干活。',
+    role,
     '',
-    '硬性规则：',
-    '- 要改文章时**直接调用工具写入**（set_title / set_content / append_content / set_summary / set_tags），不要在聊天里贴大段正文让人复制。',
-    '- 正文一律用 Markdown。代码块标语言，命令写全。',
-    '- 改完只用一两句话说明改了什么，不要复述全文、不要写总结段落。',
-    '- 站长只是提问（没让你改）时，正常回答即可，不要乱动工具。',
-    '',
-    '文风（很重要）：',
-    '- 第一人称、口语、直接，像一个有主见的技术博主在讲话。',
-    '- 禁止套话：不要「总而言之」「综上所述」「值得注意的是」「在这个快节奏的时代」「让我们一起」之类。',
-    '- 不要为凑长度堆排比、堆形容词：有话则长，无话则短。',
-    '- 技术内容要具体，写清版本、命令、踩过的坑，不要空泛地说「要注意性能」。',
+    '工具使用：',
+    '- 改文章一律调工具写入，不要在聊天里贴大段正文让人复制。',
+    '- 局部修改优先 replace_selection（上下文里有「用户选中的文本」时）或 append_content；set_content 是推倒重写，仅在明确要求重写时用。',
+    '- 起标题：列出 3-5 个候选、各配一句理由，再调 set_title 应用你最推荐的。',
+    '- 标签优先从「已有标签」里选，一篇 2-5 个；分类必须是「已有分类」之一。',
+    '- 搜图：query 用英文（中文主题先翻译成 1-3 个英文词）。搜完让用户在卡片里挑一张，不要自作主张替用户 set_cover，除非用户明确让你选。',
+    '- 要参考旧文：先 list_articles 找 slug，再 read_article 读全文。',
+    '- 你没有发布权限。用户要发布时让他自己点发布。',
   ];
 
+  const siteLines = [];
+  if (site.categories?.length) siteLines.push(`已有分类：${site.categories.join('、')}`);
+  if (site.tags?.length) siteLines.push(`已有标签：${site.tags.join('、')}`);
+  if (site.recentArticles?.length) siteLines.push(`最近文章：\n${site.recentArticles.map((s) => `- ${s}`).join('\n')}`);
+  if (siteLines.length) parts.push('', '站点信息（标签/分类请对号入座）：', ...siteLines);
+
   const ctx = [];
-  if (context.title) ctx.push(`标题：${context.title}`);
-  if (context.summary) ctx.push(`摘要：${context.summary}`);
+  if (context.title) ctx.push(`标题：${String(context.title).slice(0, 200)}`);
+  if (context.slug) ctx.push(`slug：${String(context.slug).slice(0, 200)}`);
+  if (context.status) ctx.push(`状态：${context.status}`);
+  if (context.category) ctx.push(`当前分类：${String(context.category).slice(0, 60)}`);
+  if (context.summary) ctx.push(`摘要：${String(context.summary).slice(0, 500)}`);
   if (Array.isArray(context.tags) && context.tags.length) ctx.push(`标签：${context.tags.join('、')}`);
-  if (Array.isArray(context.categories) && context.categories.length) {
-    ctx.push(`已有分类：${context.categories.map((c) => c.name).join('、')}`);
+  if (context.selection) {
+    ctx.push(`用户在编辑器里选中的文本（润色/改写针对它，用 replace_selection）：\n${String(context.selection).slice(0, 3000)}`);
   }
   if (context.content) {
     const raw = String(context.content);
-    // 正文可能很长：截到 6000 字，够 AI 判断上下文又不炸 token
     ctx.push(`当前正文${raw.length > 6000 ? '（已截断）' : ''}：\n\n${raw.slice(0, 6000)}`);
   }
   if (ctx.length) parts.push('', '当前正在编辑的文章：', ...ctx);
   return parts.join('\n');
 }
 
-/** 只保留最近若干轮、单条截断，防 token 爆炸 */
+/**
+ * 对话消息清洗：支持三角色透传
+ *  - user / assistant（纯文本）
+ *  - assistant + tool_calls（工具调用记录，function.arguments 必须是 JSON 字符串）
+ *  - tool（工具执行结果，tool_call_id 与上面配对）
+ * 只保留最近 24 条；孤儿 tool 消息（配对的 assistant 被截掉）直接丢弃，
+ * 否则上游会因 id 对不上而 400。
+ */
 function trimChatMessages(messages) {
   const list = Array.isArray(messages) ? messages : [];
-  return list
-    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-    .slice(-12)
-    .map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
+  const out = [];
+  for (let i = list.length - 1; i >= 0 && out.length < 24; i--) {
+    const m = list[i];
+    if (!m || typeof m !== 'object') continue;
+
+    if (m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
+      out.unshift({ role: 'user', content: m.content.slice(0, 4000) });
+      continue;
+    }
+
+    if (m.role === 'assistant') {
+      const content = typeof m.content === 'string' ? m.content.slice(0, 4000) : '';
+      const calls = Array.isArray(m.tool_calls)
+        ? m.tool_calls.slice(0, 8).map((tc) => ({
+            id: String(tc?.id || '').slice(0, 80),
+            type: 'function',
+            function: {
+              name: String(tc?.function?.name || '').slice(0, 48),
+              arguments:
+                typeof tc?.function?.arguments === 'string'
+                  ? tc.function.arguments.slice(0, 24000)
+                  : '{}',
+            },
+          }))
+        : [];
+      const named = calls.filter((c) => c.function.name && c.id);
+      if (!content && !named.length) continue;
+      out.unshift(named.length ? { role: 'assistant', content, tool_calls: named } : { role: 'assistant', content });
+      continue;
+    }
+
+    if (m.role === 'tool') {
+      const id = String(m.tool_call_id || '').slice(0, 80);
+      if (!id) continue;
+      const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content || {});
+      out.unshift({ role: 'tool', tool_call_id: id, content: content.slice(0, 8000) });
+    }
+  }
+
+  // 清孤儿：tool 消息的 id 必须出现在它前面的某条 assistant.tool_calls 里
+  const callIds = new Set();
+  for (const m of out) {
+    if (m.role === 'assistant' && Array.isArray(m.tool_calls)) {
+      for (const c of m.tool_calls) callIds.add(c.id);
+    }
+  }
+  return out.filter((m) => m.role !== 'tool' || callIds.has(m.tool_call_id));
 }
+
+/* ---------------- 图片搜索（Wikimedia Commons） ----------------
+   源的选择：Openverse 从香港服务器不可达（实测 8s 超时），
+   Wikimedia Commons 0.6s 可达、免 key、CC 许可、允许外链。 */
+
+const WM_UA = 'XalorBlog/1.0 (https://blog.xalor.cn; admin image-search)';
+
+/** 搜 Wikimedia Commons：只留 https、位图、宽度 ≥600 的结果 */
+async function searchWikimediaImages(query) {
+  const params = new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    generator: 'search',
+    gsrnamespace: '6', // File 命名空间：只搜文件页
+    gsrsearch: query,
+    gsrlimit: '16',
+    prop: 'imageinfo',
+    iiprop: 'url|size|extmetadata',
+    iiurlwidth: '800', // 封面用 800px 缩略图足够（原图动辄 8-15MB，不适合转存）
+  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 9000);
+  try {
+    const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
+      headers: { 'User-Agent': WM_UA, Accept: 'application/json' },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const pages = Object.values(data?.query?.pages || {});
+    pages.sort((a, b) => (a.index || 0) - (b.index || 0));
+    const stripTags = (s) => String(s || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    const imgs = [];
+    for (const p of pages) {
+      const info = Array.isArray(p.imageinfo) ? p.imageinfo[0] : null;
+      if (!info || !/^https:\/\//i.test(String(info.url || ''))) continue;
+      if (/\.(svg|tif|tiff|pdf|djvu)(\?|$)/i.test(info.url)) continue;
+      if ((info.width || 0) < 600) continue;
+      const meta = info.extmetadata || {};
+      imgs.push({
+        url: info.url,
+        thumb: /^https:\/\//i.test(String(info.thumburl || '')) ? info.thumburl : info.url,
+        title: stripTags(String(p.title || '').replace(/^File:/, '')).slice(0, 90) || '未命名',
+        creator: stripTags(meta.Artist?.value).slice(0, 60) || '佚名',
+        license: stripTags(meta.LicenseShortName?.value).slice(0, 40) || '见来源页',
+        page: String(info.descriptionurl || '').slice(0, 300),
+        width: info.width,
+        height: info.height,
+      });
+      if (imgs.length >= 9) break;
+    }
+    return imgs;
+  } catch (e) {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+router.get('/ai/images', async (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 80);
+  if (!q) return fail(res, '缺少搜索词', 400);
+  const images = await searchWikimediaImages(q);
+  if (!images.length) return ok(res, { images: [], source: 'wikimedia' }, '没搜到合适的图，换个词试试');
+  return ok(res, { images, source: 'wikimedia' });
+});
+
+/* ---------------- 图片转存：外链图 → 本站 uploads ----------------
+   封面直接外链会随源站失效，转存一份到 /uploads/ai/ 更稳。 */
+
+const IMG_MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+/** 图片源安全校验：仅 https、拒绝 IP 字面量/内网域名/userinfo（SSRF 防护） */
+function riskyImageSource(raw) {
+  let u;
+  try {
+    u = new URL(raw);
+  } catch (e) {
+    return true;
+  }
+  if (u.protocol !== 'https:') return true;
+  if (u.username || u.password) return true;
+  const h = u.hostname.toLowerCase();
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true;
+  if (h.includes(':')) return true; // IPv6 字面量，一刀切拒绝
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true; // IPv4 字面量（含全部内网段）
+  return false;
+}
+
+router.post('/ai/save-image', async (req, res) => {
+  const raw = String(req.body?.url || '').trim().slice(0, 500);
+  if (!raw || riskyImageSource(raw)) return fail(res, '不支持的图片地址', 400);
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const r = await fetch(raw, { signal: ctrl.signal, headers: { 'User-Agent': WM_UA } });
+    if (!r.ok) return fail(res, `图片源返回 ${r.status}`, 502);
+    if (Number(r.headers.get('content-length') || 0) > 5 * 1024 * 1024) return fail(res, '图片超过 5MB', 413);
+    const mime = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const ext = IMG_MIME_EXT[mime];
+    if (!ext) return fail(res, '仅支持 jpg / png / webp', 415);
+
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 5 * 1024 * 1024) return fail(res, '图片超过 5MB', 413);
+
+    const fs = require('fs');
+    const path = require('path');
+    const dir = path.join(config.uploadDir, 'ai');
+    fs.mkdirSync(dir, { recursive: true });
+    const name = `${Date.now()}-${require('crypto').randomBytes(6).toString('hex')}.${ext}`;
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, buf);
+    fs.chmodSync(file, 0o644); // 与 multer 上传保持一致，nginx 才读得到
+    return ok(res, { path: `/uploads/ai/${name}` }, '已保存到本站');
+  } catch (e) {
+    return fail(res, '下载图片失败', 502);
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+/* ---------------- 站内文章检索（供 read/list 工具） ---------------- */
+
+router.get('/ai/articles', async (req, res) => {
+  const keyword = String(req.query.keyword || '').trim().slice(0, 60);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 20);
+  const q = db('articles').orderBy('updated_at', 'desc').limit(limit)
+    .select('id', 'slug', 'title', 'status', 'published_at');
+  if (keyword) q.where('title', 'like', `%${escapeLike(keyword)}%`);
+  const rows = await q;
+  return ok(res, { articles: rows });
+});
+
+router.get('/ai/article', async (req, res) => {
+  const slug = String(req.query.slug || '').trim().slice(0, 220);
+  if (!slug) return fail(res, '缺少 slug', 400);
+  const row = await db('articles').where('slug', slug).first();
+  if (!row) return notFound(res, '文章不存在');
+  const tagRows = await db('article_tags as at')
+    .join('tags as t', 'at.tag_id', 't.id')
+    .where('at.article_id', row.id)
+    .select('t.name');
+  const cat = row.category_id ? await db('categories').where('id', row.category_id).first('name') : null;
+  return ok(res, {
+    slug: row.slug,
+    title: row.title,
+    status: row.status,
+    category: cat?.name || '',
+    tags: tagRows.map((t) => t.name),
+    summary: String(row.summary || '').slice(0, 500),
+    content: String(row.content || '').slice(0, 8000),
+  });
+});
 
 /** 模型可用性：前端据此决定是否显示 AI 入口，以及提示"还没配模型" */
 router.get('/ai/status', async (req, res) => {
@@ -1922,7 +2259,7 @@ router.get('/ai/status', async (req, res) => {
   }
 });
 
-/** AI 写作助手：SSE 流式对话 */
+/** AI 写作助手：SSE 流式对话（支持工具结果回传的多轮循环） */
 router.post('/ai/chat', async (req, res) => {
   // SSE 头：no-transform + X-Accel-Buffering 关掉 nginx 缓冲，否则流式会被攒成一坨
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -1951,17 +2288,20 @@ router.post('/ai/chat', async (req, res) => {
       return res.end();
     }
 
-    const { streamChat } = require('../utils/aiClient');
-    const payload = [{ role: 'system', content: buildWriterSystemPrompt(context) }, ...chat];
+    const site = await loadSiteBrief().catch(() => ({}));
+    const { streamChat, getAiConfig } = require('../utils/aiClient');
+    const aiCfg = await getAiConfig();
+    // maxTokens 不传：让后台配置的 ai_max_tokens 生效（默认 4096）
+    const payload = [{ role: 'system', content: buildWriterSystemPrompt(context, site, aiCfg.systemPrompt) }, ...chat];
 
     for await (const ev of streamChat({
       messages: payload,
-      tools: AI_WRITE_TOOLS,
-      maxTokens: 4096,
+      tools: AI_TOOLS,
       signal: ac.signal,
     })) {
       if (ev.type === 'text') send({ type: 'text', text: ev.text });
-      else if (ev.type === 'tool') send({ type: 'action', name: ev.name, args: ev.args });
+      // raw = 原始参数 JSON 串：客户端要靠它重建 assistant.tool_calls 才能回传结果
+      else if (ev.type === 'tool') send({ type: 'action', id: ev.id, name: ev.name, args: ev.args, raw: ev.raw });
       else if (ev.type === 'usage') send({ type: 'usage', usage: ev.usage });
     }
     send({ type: 'done' });

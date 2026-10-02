@@ -96,7 +96,6 @@
               placeholder="默认当前时间"
               style="width: 100%"
             />
-            <p v-else class="ed-hint">首次发布时自动记录当前时间</p>
           </div>
         </section>
 
@@ -175,7 +174,6 @@
             <el-switch v-model="form.allow_comment" active-text="允许评论" />
             <el-switch v-model="form.allow_copy" active-text="允许复制" />
           </div>
-          <p class="ed-hint">「允许复制」需站点设置里的全站开关也开着，本篇才可复制</p>
         </section>
       </aside>
     </div>
@@ -190,7 +188,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { articleApi, categoryApi, tagApi, uploadApi } from '@/api';
 import { renderMarkdown } from '@/utils/markdown';
 import { adminHref } from '@/utils/adminPath';
-import { setAiContext, setAiApplier, resetAiBridge } from '@/utils/aiBridge';
+import { setAiContext, setAiApplier, setAiSelection, pushAiUndo, resetAiBridge, aiSelection as aiSelectionRef } from '@/utils/aiBridge';
 import {
   migrateLegacyPrefix,
   readSessionValue,
@@ -557,11 +555,14 @@ onMounted(async () => {
   }
   window.addEventListener('beforeunload', onBeforeUnload);
   window.addEventListener('keydown', onEditorKeydown);
+  // AI 面板要用「当前选中的文本」做润色：selectionchange 对 textarea 同样触发
+  document.addEventListener('selectionchange', syncAiSelection);
 });
 
 onUnmounted(() => {
   window.removeEventListener('beforeunload', onBeforeUnload);
   window.removeEventListener('keydown', onEditorKeydown);
+  document.removeEventListener('selectionchange', syncAiSelection);
   // 关键：卸载时清掉待触发的自动保存定时器。
   // 否则 2 秒防抖窗口内离开编辑页，旧实例的回调会在卸载后触发，
   // 且 DRAFT_KEY() 延迟求值会读到已指向新文章的 editingId，
@@ -569,10 +570,37 @@ onUnmounted(() => {
   clearTimeout(autosaveTimer);
   resetAiBridge();
 });
-
 /* ---------- AI 写作助手桥接 ----------
    把当前正在编辑的文章交给 AI 面板当上下文，并接收 AI 改好的内容直接写进表单。
-   只有「改内容」的动作，没有发布 —— 发布永远由人点。 */
+   只有「改内容」的动作，没有发布 —— 发布永远由人点。
+   所有正文/标题/摘要/标签的改动都先压撤销快照，面板上可一键撤销。 */
+
+/** 把编辑器里的实时选区同步给 AI 面板（「润色选中」就靠它） */
+function syncAiSelection() {
+  const ta = document.querySelector('.md-editor textarea');
+  if (!ta || document.activeElement !== ta) return;
+  const start = ta.selectionStart ?? 0;
+  const end = ta.selectionEnd ?? 0;
+  if (end > start) {
+    setAiSelection({ text: String(form.value.content || '').slice(start, end), start, end });
+  } else {
+    setAiSelection(null);
+  }
+}
+
+/** applier 内取选区快照（润色/替换选区用） */
+function aiSelectionBridge() {
+  return aiSelectionRef && aiSelectionRef.value ? { ...aiSelectionRef.value } : null;
+}
+
+/** 内容快照：改前压栈，供面板撤销 */
+function snap(label, field) {
+  const old = form.value[field];
+  pushAiUndo(label, () => {
+    form.value[field] = old;
+  });
+}
+
 watch(
   // 用轻量签名做依赖：正文可能上万字，每次输入都做深比较太亏
   () =>
@@ -580,15 +608,23 @@ watch(
       form.value.title,
       form.value.summary,
       form.value.category_id,
+      form.value.cover,
+      form.value.slug,
+      form.value.status,
       (form.value.tags || []).join(','),
       String(form.value.content || '').length,
-    ].join('\u0000'),
+    ].join(''),
   () => {
     setAiContext({
+      type: 'article', // 面板据此显示写作快捷操作
       title: form.value.title,
+      slug: form.value.slug,
+      status: form.value.status,
+      cover: form.value.cover,
       content: String(form.value.content || '').slice(0, 8000),
       summary: form.value.summary,
       tags: form.value.tags || [],
+      category: (categories.value || []).find((c) => c.id === form.value.category_id)?.name || '',
       categories: categories.value || [],
     });
   },
@@ -597,28 +633,106 @@ watch(
 
 setAiApplier((name, args) => {
   switch (name) {
-    case 'set_title':
+    case 'set_title': {
       if (!args.title) return null;
+      snap('已改标题', 'title');
       form.value.title = String(args.title).slice(0, 200);
       return '已改标题';
-    case 'set_content':
-      if (typeof args.markdown !== 'string') return null;
+    }
+    case 'set_content': {
+      if (typeof args.markdown !== 'string' || !args.markdown.trim()) return null;
+      snap('已替换正文', 'content');
       form.value.content = args.markdown;
       return '已替换正文';
+    }
     case 'append_content': {
-      if (typeof args.markdown !== 'string') return null;
+      if (typeof args.markdown !== 'string' || !args.markdown.trim()) return null;
+      snap('已追加正文', 'content');
       const cur = String(form.value.content || '').replace(/\s+$/, '');
       form.value.content = cur ? `${cur}\n\n${args.markdown}` : args.markdown;
       return '已追加正文';
     }
-    case 'set_summary':
+    case 'replace_selection': {
+      if (typeof args.markdown !== 'string') return null;
+      const content = String(form.value.content || '');
+      const sel = aiSelectionBridge();
+      if (!sel) return null; // 没有可用选区（或选区已被改没）
+      let start = -1;
+      if (content.slice(sel.start, sel.end) === sel.text) start = sel.start;
+      else {
+        const idx = content.indexOf(sel.text);
+        if (idx !== -1) start = idx; // 偏移失效但原文还在：按内容找
+      }
+      if (start === -1) return null;
+      snap('已替换选中文本', 'content');
+      const end = start + sel.text.length;
+      form.value.content = content.slice(0, start) + args.markdown + content.slice(end);
+      return '已替换选中文本';
+    }
+    case 'insert_at_cursor': {
+      if (typeof args.markdown !== 'string' || !args.markdown.trim()) return null;
+      const content = String(form.value.content || '');
+      const ta = document.querySelector('.md-editor textarea');
+      const pos = ta && document.activeElement === ta ? ta.selectionStart ?? content.length : content.length;
+      snap('已在光标处插入', 'content');
+      form.value.content = content.slice(0, pos) + args.markdown + content.slice(pos);
+      return '已在光标处插入';
+    }
+    case 'set_summary': {
       if (!args.summary) return null;
+      snap('已写摘要', 'summary');
       form.value.summary = String(args.summary).slice(0, 500);
       return '已写摘要';
-    case 'set_tags':
+    }
+    case 'set_tags': {
       if (!Array.isArray(args.tags)) return null;
+      snap('已设标签', 'tags');
       form.value.tags = args.tags.map(String).filter(Boolean).slice(0, 10);
       return '已设标签';
+    }
+    case 'set_category': {
+      const catName = String(args.category || '').trim();
+      const cat = (categories.value || []).find((c) => c.name === catName);
+      if (!cat || form.value.category_id === cat.id) return null; // 分类必须已存在
+      const old = form.value.category_id;
+      pushAiUndo(`已设分类：${cat.name}`, () => {
+        form.value.category_id = old;
+      });
+      form.value.category_id = cat.id;
+      return `已设分类：${cat.name}`;
+    }
+    case 'set_cover': {
+      const url = String(args.url || '').trim();
+      // 只接受 https 外链或本站转存路径
+      if (!/^https:\/\//i.test(url) && !url.startsWith('/uploads/')) return null;
+      const old = form.value.cover;
+      pushAiUndo('已设封面', () => {
+        form.value.cover = old;
+      });
+      form.value.cover = url;
+      return '已设封面';
+    }
+    case 'set_options': {
+      const o = args || {};
+      const changed = [];
+      if (typeof o.is_top === 'boolean' && o.is_top !== form.value.is_top) {
+        form.value.is_top = o.is_top;
+        changed.push('置顶');
+      }
+      if (typeof o.allow_comment === 'boolean' && o.allow_comment !== form.value.allow_comment) {
+        form.value.allow_comment = o.allow_comment;
+        changed.push('评论');
+      }
+      if (typeof o.allow_copy === 'boolean' && o.allow_copy !== form.value.allow_copy) {
+        form.value.allow_copy = o.allow_copy;
+        changed.push('复制');
+      }
+      if (o.publish_time && String(o.publish_time).slice(0, 20) !== String(form.value.published_at || '')) {
+        form.value.published_at = String(o.publish_time).slice(0, 20);
+        changed.push('发布时间');
+      }
+      return changed.length ? `已调整：${changed.join('、')}` : null;
+    }
     default:
       return null; // 未识别的动作 → 面板提示「当前页面不支持」
   }
@@ -947,13 +1061,6 @@ watch(form, scheduleAutosave, { deep: true });
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--text-2);
-}
-
-.ed-hint {
-  margin: 0;
-  font-size: 0.74rem;
-  line-height: 1.6;
-  color: var(--text-3);
 }
 
 .ed-switches {
