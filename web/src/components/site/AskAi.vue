@@ -1,10 +1,13 @@
 <template>
-  <div class="ask-ai">
-    <button v-if="!open" class="ask-fab" type="button" title="问 AI" aria-label="问 AI" @click="toggle">
-      <XIcon name="Sparkles" :size="18" />
-    </button>
+  <!-- 传送挂到 body：组件本在文章页 main（z-index:1 的层叠上下文）里，
+       fixed 浮层会被关进该上下文集内，z-index 再高也压不住外面的回到顶部工具条 -->
+  <Teleport to="body">
+    <div class="ask-ai">
+      <button v-if="!open" class="ask-fab" type="button" title="问 AI" aria-label="问 AI" @click="toggle">
+        <XIcon name="Sparkles" :size="18" />
+      </button>
 
-    <section v-else class="ask-box" aria-label="就这篇文章提问">
+      <section v-else class="ask-box" aria-label="就这篇文章提问">
       <header class="ask-head">
         <span class="ask-title">问这篇</span>
         <button class="ask-close" type="button" title="关闭" @click="open = false">
@@ -47,7 +50,8 @@
         </button>
       </form>
     </section>
-  </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -224,7 +228,9 @@ onUnmounted(() => {
   position: fixed;
   right: 20px;
   bottom: 20px;
-  z-index: var(--z-float);
+  /* 高于同层的回到顶部工具条（同为 --z-float=300，且它在 DOM 里排更后），
+     否则 AI 按钮会被压在工具条底下点不到 */
+  z-index: calc(var(--z-float) + 20);
 }
 
 .ask-fab {
