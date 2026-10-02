@@ -1824,6 +1824,11 @@ onUnmounted(() => {
   max-height: calc(100vh - 180px);
   max-height: calc(100dvh - 180px);
   overflow-y: auto;
+  /* 抵掉卡片内边距把列表撑满（让高亮条贴到卡片左缘），
+     这样目录项不必再用负 margin —— 负 margin 会被这里的 overflow 横向裁掉，
+     表现为「标题只显示后半截」 */
+  margin: 0 -14px;
+  padding: 0 14px;
 }
 
 .toc-item {
@@ -1833,7 +1838,6 @@ onUnmounted(() => {
   font-size: 0.84rem;
   color: var(--text-2);
   border-left: 2px solid transparent;
-  margin-left: -21px;
   transition: all var(--dur) var(--ease);
   overflow: hidden;
   text-overflow: ellipsis;
