@@ -1964,6 +1964,45 @@ const AI_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'list_comments',
+      description: '查看最近评论（文章标题 + 读者昵称 + 内容 + 状态），用于了解读者在问什么',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_messages',
+      description: '查看最近留言板留言（昵称 + 内容），用于了解读者反馈',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'link_article',
+      description: '在光标处插入一篇站内文章的链接（Markdown）。用于正文里引用旧文',
+      parameters: {
+        type: 'object',
+        properties: {
+          slug: { type: 'string', description: '被引用文章的 slug' },
+          text: { type: 'string', description: '链接文字，留空用文章标题' },
+        },
+        required: ['slug'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'save_draft',
+      description: '把当前文章保存为草稿（不是发布）。写完/改完一段后用户说「存一下」时用',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
 ];
 
 /** 站点简报：已有分类/标签/最近文章 —— 服务端直接查库补进提示词，
@@ -1984,7 +2023,7 @@ async function loadSiteBrief() {
 /** 写作助手的系统提示：文风要求写死，避免生成「AI 味」内容。
  *  systemPrompt 非空时用站长自定义的人设替换内置「角色与文风」层；
  *  工具说明与文章上下文始终保留（那是工具调用的功能底线，自定义不碰）。 */
-function buildWriterSystemPrompt(context = {}, site = {}, systemPrompt = '') {
+function buildWriterSystemPrompt(context = {}, site = {}, systemPrompt = '', ctxChars = 6000) {
   const role = systemPrompt
     ? systemPrompt
     : [
@@ -2007,7 +2046,9 @@ function buildWriterSystemPrompt(context = {}, site = {}, systemPrompt = '') {
     '- 起标题：列出 3-5 个候选、各配一句理由，再调 set_title 应用你最推荐的。',
     '- 标签优先从「已有标签」里选，一篇 2-5 个；分类必须是「已有分类」之一。',
     '- 搜图：query 用英文（中文主题先翻译成 1-3 个英文词）。搜完让用户在卡片里挑一张，不要自作主张替用户 set_cover，除非用户明确让你选。',
-    '- 要参考旧文：先 list_articles 找 slug，再 read_article 读全文。',
+    '- 要参考旧文：先 list_articles 找 slug，再 read_article 读全文；正文里引用旧文用 link_article 插入链接。',
+    '- 想知道读者在关注什么：list_comments 看最近评论、list_messages 看最近留言。',
+    '- 用户说「存一下/保存」时调 save_draft（这只是存草稿，不是发布）。',
     '- 你没有发布权限。用户要发布时让他自己点发布。',
   ];
 
@@ -2029,10 +2070,39 @@ function buildWriterSystemPrompt(context = {}, site = {}, systemPrompt = '') {
   }
   if (context.content) {
     const raw = String(context.content);
-    ctx.push(`当前正文${raw.length > 6000 ? '（已截断）' : ''}：\n\n${raw.slice(0, 6000)}`);
+    ctx.push(`当前正文${raw.length > ctxChars ? '（已截断）' : ''}：\n\n${raw.slice(0, ctxChars)}`);
   }
   if (ctx.length) parts.push('', '当前正在编辑的文章：', ...ctx);
+  // 对话超长时，最早的部分已被压成纪要（见 compressHistory），挂在最后
+  if (context._compression) {
+    parts.push('', '此前对话纪要（更早的细节已省略）：', String(context._compression).slice(0, 800));
+  }
   return parts.join('\n');
+}
+
+/** 对话压缩：历史超出保留条数时，把最早的部分让模型压成一段纪要，
+ *  挂在 system prompt 里（不插进对话流，避免模型误把它当新指令） */
+async function compressHistory(messages, keep, cfg) {
+  const { chatOnce } = require('../utils/aiClient');
+  // 取被截掉的旧段（同一份清洗规则，孤儿 tool 也会被清掉）
+  const oldSeg = trimChatMessages(messages.slice(0, messages.length - keep), 999);
+  const oldText = oldSeg
+    .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content))
+    .map((m) => `${m.role === 'user' ? '站长' : 'AI'}：${String(m.content).slice(0, 500)}`)
+    .join('\n')
+    .slice(0, 6000);
+  if (!oldText) return '';
+  const summary = await chatOnce({
+    messages: [
+      {
+        role: 'system',
+        content: '把站长与 AI 写作助手的对话压缩成 150 字以内的纪要：站长要什么、已完成了哪些修改、正在处理什么。只输出纪要本身，不要评价、不要复述原文。',
+      },
+      { role: 'user', content: oldText },
+    ],
+    maxTokens: 300,
+  }).catch(() => '');
+  return String(summary || '').trim();
 }
 
 /**
@@ -2043,10 +2113,10 @@ function buildWriterSystemPrompt(context = {}, site = {}, systemPrompt = '') {
  * 只保留最近 24 条；孤儿 tool 消息（配对的 assistant 被截掉）直接丢弃，
  * 否则上游会因 id 对不上而 400。
  */
-function trimChatMessages(messages) {
+function trimChatMessages(messages, turns = 24) {
   const list = Array.isArray(messages) ? messages : [];
   const out = [];
-  for (let i = list.length - 1; i >= 0 && out.length < 24; i--) {
+  for (let i = list.length - 1; i >= 0 && out.length < turns; i--) {
     const m = list[i];
     if (!m || typeof m !== 'object') continue;
 
@@ -2248,6 +2318,36 @@ router.get('/ai/article', async (req, res) => {
   });
 });
 
+/** 最近评论（供 list_comments 工具）：了解读者在问什么 */
+router.get('/ai/comments', async (req, res) => {
+  const rows = await db('comments as c')
+    .join('articles as a', 'c.article_id', 'a.id')
+    .orderBy('c.created_at', 'desc')
+    .limit(8)
+    .select('c.nickname', 'c.status', 'c.created_at', db.raw('a.title as article_title'), db.raw('c.content as content'));
+  return ok(res, {
+    comments: rows.map((r) => ({
+      article: r.article_title,
+      nickname: r.nickname,
+      status: r.status,
+      content: String(r.content || '').slice(0, 200),
+    })),
+  });
+});
+
+/** 最近留言（供 list_messages 工具） */
+router.get('/ai/messages', async (req, res) => {
+  const rows = await db('messages').orderBy('created_at', 'desc').limit(8)
+    .select('nickname', 'content', 'status', 'created_at');
+  return ok(res, {
+    messages: rows.map((r) => ({
+      nickname: r.nickname,
+      status: r.status,
+      content: String(r.content || '').slice(0, 200),
+    })),
+  });
+});
+
 /** 模型可用性：前端据此决定是否显示 AI 入口，以及提示"还没配模型" */
 router.get('/ai/status', async (req, res) => {
   try {
@@ -2282,17 +2382,25 @@ router.post('/ai/chat', async (req, res) => {
 
   try {
     const { messages = [], context = {} } = req.body || {};
-    const chat = trimChatMessages(messages);
+    const { streamChat, getAiConfig } = require('../utils/aiClient');
+    const aiCfg = await getAiConfig();
+    const keep = aiCfg.ctxTurns || 24;
+    let chat = trimChatMessages(messages, keep);
     if (!chat.length) {
       send({ type: 'error', message: '没有收到对话内容' });
       return res.end();
     }
 
+    // 上下文压缩：对话超过保留条数且压缩开着 → 把最早的对话压成纪要塞进 system prompt
+    let ctx = context;
+    if (aiCfg.ctxCompress !== false && Array.isArray(messages) && messages.length > keep) {
+      const summary = await compressHistory(messages, keep, aiCfg);
+      if (summary) ctx = { ...context, _compression: summary };
+    }
+
     const site = await loadSiteBrief().catch(() => ({}));
-    const { streamChat, getAiConfig } = require('../utils/aiClient');
-    const aiCfg = await getAiConfig();
     // maxTokens 不传：让后台配置的 ai_max_tokens 生效（默认 4096）
-    const payload = [{ role: 'system', content: buildWriterSystemPrompt(context, site, aiCfg.systemPrompt) }, ...chat];
+    const payload = [{ role: 'system', content: buildWriterSystemPrompt(ctx, site, aiCfg.systemPrompt, aiCfg.ctxChars) }, ...chat];
 
     for await (const ev of streamChat({
       messages: payload,

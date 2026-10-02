@@ -39,6 +39,11 @@ const DEFAULT_SETTINGS = {
   // 自定义写作助手人设：留空用内置提示词；填了则替换「角色与文风」层，
   // 工具说明与文章上下文始终保留（那是功能正确性的底线，自定义不动它）。
   ai_system_prompt: '',
+  // AI 上下文控制：留空用默认（正文 6000 字 / 历史 24 条 / 超长自动压缩成纪要）。
+  ai_ctx_chars: '',
+  ai_ctx_turns: '',
+  // 对话超过保留条数时，把最早的对话先让模型压成一段纪要再续聊（默认开，可多烧一小次调用）
+  ai_ctx_compress: true,
   // 全站是否允许复制正文/选中文字。默认允许（单篇可用 articles.allow_copy 覆盖）
   allow_copy: true,
   // RSS 默认仅摘要。全文会绕过文章详情的传输加密，须站长显式打开。
@@ -58,6 +63,7 @@ const BOOL_KEYS = new Set([
   'allow_copy',
   'ai_moderation',
   'ai_llm_moderation',
+  'ai_ctx_compress',
 ]);
 
 // 设置缓存：读多写少，保存时失效
@@ -135,6 +141,15 @@ async function saveSettings(entries) {
       if (!Number.isFinite(n) || n < 256 || n > 8192) continue;
     }
     if (key === 'ai_system_prompt' && raw.length > 3000) continue;
+    // AI 上下文参数：正文 1000-20000 字、历史 6-48 条（越界忽略）
+    if (key === 'ai_ctx_chars' && raw) {
+      const n = parseInt(raw, 10);
+      if (!Number.isFinite(n) || n < 1000 || n > 20000) continue;
+    }
+    if (key === 'ai_ctx_turns' && raw) {
+      const n = parseInt(raw, 10);
+      if (!Number.isFinite(n) || n < 6 || n > 48) continue;
+    }
     let safeValue;
     if (BOOL_KEYS.has(key)) {
       safeValue = value === true || value === 'true' || value === 1 || value === '1';

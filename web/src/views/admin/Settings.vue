@@ -92,6 +92,10 @@
               <el-input v-model="form.ai_temperature" placeholder="温度 0-2，默认 0.7" />
               <el-input v-model="form.ai_max_tokens" placeholder="最大输出 256-8192，默认 4096" />
             </div>
+            <div class="ai-config-row">
+              <el-input v-model="form.ai_ctx_chars" placeholder="正文上下文字数 1000-20000，默认 6000" />
+              <el-input v-model="form.ai_ctx_turns" placeholder="对话保留条数 6-48，默认 24" />
+            </div>
             <el-input
               v-model="form.ai_system_prompt"
               type="textarea"
@@ -100,6 +104,9 @@
               placeholder="自定义 AI 人设与文风（留空用内置写作助手）"
             />
           </div>
+        </el-form-item>
+        <el-form-item label="AI 上下文压缩">
+          <el-switch v-model="form.ai_ctx_compress" />
         </el-form-item>
         <el-form-item label="友链审核">
           <el-switch :model-value="true" disabled />

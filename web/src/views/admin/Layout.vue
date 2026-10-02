@@ -178,16 +178,18 @@ async function logout() {
   display: flex;
   min-height: 100vh;
   min-height: 100dvh;
+  /* 双光斑背景：让玻璃卡片有「可透的内容」，玻璃感才出得来 */
   background:
-    radial-gradient(900px 420px at 0% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 55%),
+    radial-gradient(900px 420px at 0% 0%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 55%),
+    radial-gradient(760px 520px at 100% 100%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
     var(--bg);
 }
 
 /* ============ 侧边栏 ============ */
 .admin-side {
   width: 232px;
-  /* 液态玻璃侧栏：与卡片同套材质 */
-  background: var(--lg-sheen), var(--lg-surface-pop);
+  /* 液态玻璃侧栏：与卡片同套材质（更透一档，内容区在玻璃里化开） */
+  background: var(--lg-sheen), var(--lg-surface);
   border-right: 1px solid var(--lg-edge);
   display: flex;
   flex-direction: column;
@@ -196,8 +198,8 @@ async function logout() {
   bottom: 0;
   left: 0;
   z-index: var(--z-nav);
-  backdrop-filter: var(--lg-blur-pop);
-  -webkit-backdrop-filter: var(--lg-blur-pop);
+  backdrop-filter: var(--lg-blur);
+  -webkit-backdrop-filter: var(--lg-blur);
   transition: width 0.25s var(--ease);
 }
 
@@ -257,12 +259,14 @@ async function logout() {
 
 .side-link:hover {
   color: var(--text);
-  background: var(--bg-soft);
+  background: color-mix(in srgb, var(--card) 55%, transparent);
 }
 
 .side-link.active {
   color: var(--accent);
-  background: var(--accent-soft);
+  /* 选中态 = 一小片更实的玻璃：半透明品牌色 + 顶部高光边 */
+  background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 9%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lg-edge) 70%, transparent);
   font-weight: 600;
 }
 
@@ -311,9 +315,9 @@ async function logout() {
 
 .admin-header {
   height: 64px;
-  background: var(--lg-sheen), var(--lg-surface-pop);
-  backdrop-filter: var(--lg-blur-pop);
-  -webkit-backdrop-filter: var(--lg-blur-pop);
+  background: var(--lg-sheen), var(--lg-surface);
+  backdrop-filter: var(--lg-blur);
+  -webkit-backdrop-filter: var(--lg-blur);
   border-bottom: 1px solid var(--lg-edge);
   display: flex;
   align-items: center;

@@ -130,7 +130,7 @@ import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { signedFetch } from '@/utils/signedFetch';
 import { renderMarkdown } from '@/utils/markdown';
-import { aiContext, aiSelection, applyAiAction, undoAiLast } from '@/utils/aiBridge';
+import { aiContext, aiSelection, applyAiAction, undoAiLast, aiUndoTopId } from '@/utils/aiBridge';
 import { getCachedAdminPath, adminHref } from '@/utils/adminPath';
 
 const props = defineProps({ open: { type: Boolean, default: false } });
@@ -263,11 +263,28 @@ async function handleTool(ev, reply) {
     const json = slug ? await apiJson(`${adminUrl('/ai/article')}?slug=${encodeURIComponent(slug)}`) : {};
     reply.articleRead = json.data || null;
     result = json.data || { error: '文章不存在' };
+  } else if (name === 'list_comments') {
+    const json = await apiJson(adminUrl('/ai/comments'));
+    result = { comments: Array.isArray(json.data?.comments) ? json.data.comments : [] };
+  } else if (name === 'list_messages') {
+    const json = await apiJson(adminUrl('/ai/messages'));
+    result = { messages: Array.isArray(json.data?.messages) ? json.data.messages : [] };
+  } else if (name === 'link_article') {
+    // 链接文字缺省时读文章标题，再借 insert_at_cursor 插入（快照由它压）
+    const slug = String(args.slug || '').trim();
+    let text = String(args.text || '').trim();
+    if (!text) {
+      const json = await apiJson(`${adminUrl('/ai/article')}?slug=${encodeURIComponent(slug)}`);
+      text = json.data?.title || slug;
+    }
+    const applied = await applyAiAction('insert_at_cursor', { markdown: `[${text}](#/article/${slug})` });
+    if (applied) reply.applied.push({ label: `已插入链接：${text.slice(0, 16)}`, snapshotId: applied.snapshotId, undone: false });
+    result = { ok: !!applied, label: applied ? '已插入站内链接' : '当前页面不支持' };
   } else {
-    // 写操作：交给当前页面执行（撤销快照在页面 applier 里压）
-    const label = applyAiAction(name, args);
-    if (label) reply.applied.push({ label, undone: false });
-    result = { ok: !!label, label: label || '当前页面不支持这个操作' };
+    // 写操作：交给当前页面执行（撤销快照在页面 applier 里压，save_draft 无快照=不可撤销）
+    const applied = await applyAiAction(name, args);
+    if (applied) reply.applied.push({ label: applied.label, snapshotId: applied.snapshotId, undone: false });
+    result = { ok: !!applied, label: applied ? applied.label : '当前页面不支持这个操作' };
   }
 
   reply.tool_calls.push(call);
@@ -389,9 +406,9 @@ async function useAsCover(msg, img) {
       ElMessage.error(json?.message || '转存失败');
       return;
     }
-    const label = applyAiAction('set_cover', { url: local });
-    if (label) {
-      msg.applied.push({ label, undone: false });
+    const applied = await applyAiAction('set_cover', { url: local });
+    if (applied) {
+      msg.applied.push({ label: applied.label, snapshotId: applied.snapshotId, undone: false });
       ElMessage.success('已设为封面');
     } else {
       ElMessage.warning('当前页面不能设封面，去文章编辑页操作');
@@ -402,29 +419,22 @@ async function useAsCover(msg, img) {
 }
 
 /** 插入正文：Markdown 图片语法插到光标处 */
-function insertImage(msg, img) {
-  const label = applyAiAction('insert_at_cursor', { markdown: `\n![${img.title}](${img.url})\n` });
-  if (label) {
-    msg.applied.push({ label, undone: false });
+async function insertImage(msg, img) {
+  const applied = await applyAiAction('insert_at_cursor', { markdown: `\n![${img.title}](${img.url})\n` });
+  if (applied) {
+    msg.applied.push({ label: applied.label, snapshotId: applied.snapshotId, undone: false });
     ElMessage.success('已插入正文');
   } else {
     ElMessage.warning('当前页面不能插图，去文章编辑页操作');
   }
 }
 
-/* ---------- 撤销：只有最新一条可撤（栈序保证恢复正确） ---------- */
+/* ---------- 撤销：只有栈顶快照对应的标签显示撤销钮（防止撤销错位） ---------- */
 
 function canUndoTag(msg, j) {
-  if (msg.applied[j].undone) return false;
-  // 找全局最新一条未撤销的 applied，只有它显示撤销按钮
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    const m = messages.value[i];
-    if (!m.applied?.length) continue;
-    for (let k = m.applied.length - 1; k >= 0; k--) {
-      if (!m.applied[k].undone) return m === msg && k === j;
-    }
-  }
-  return false;
+  const tag = msg.applied[j];
+  if (tag.undone || !tag.snapshotId) return false;
+  return tag.snapshotId === aiUndoTopId();
 }
 
 function undoOne(msg, j) {
@@ -456,9 +466,12 @@ defineExpose({
   width: min(440px, 94vw);
   display: flex;
   flex-direction: column;
-  background: var(--card);
-  border-left: 1px solid var(--border);
-  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.12);
+  /* 面板本身也是一块液态玻璃，而不是实色板 */
+  background: var(--lg-sheen), var(--lg-surface-pop);
+  border-left: 1px solid var(--lg-edge);
+  box-shadow: var(--lg-shadow), var(--lg-inner);
+  backdrop-filter: var(--lg-blur);
+  -webkit-backdrop-filter: var(--lg-blur);
   transform: translateX(101%);
   transition: transform 0.26s var(--ease);
 }
@@ -474,7 +487,7 @@ defineExpose({
   align-items: center;
   gap: 10px;
   padding: 0 14px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--lg-edge);
 }
 
 .ai-title {
@@ -574,9 +587,11 @@ defineExpose({
 }
 
 .ai-bubble-main {
-  background: var(--bg-soft);
+  /* AI 气泡：玻璃面上的「磨砂块」，靠高一点的反差立在面板上 */
+  background: color-mix(in srgb, var(--card) 70%, transparent);
   color: var(--text);
   min-width: 40px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lg-edge) 60%, transparent);
 }
 
 /* AI 回复的 Markdown 渲染 */
@@ -869,7 +884,7 @@ defineExpose({
   gap: 8px;
   align-items: flex-end;
   padding: 12px 14px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--lg-edge);
 }
 
 .ai-textarea {
@@ -878,8 +893,8 @@ defineExpose({
   resize: none;
   padding: 8px 10px;
   border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--card);
+  border: 1px solid var(--lg-edge);
+  background: color-mix(in srgb, var(--card) 72%, transparent);
   color: var(--text);
   font-family: inherit;
   font-size: 0.86rem;

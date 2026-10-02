@@ -517,13 +517,13 @@ input:-webkit-autofill:focus {
 
 /* 卡片基座 */
 .card {
-  /* 液态玻璃卡片（后台统一材质）：高光 → 半透面 → 折射亮边 */
-  background: var(--lg-sheen), var(--lg-surface-pop);
+  /* 液态玻璃卡片（后台统一材质）：高光 → 更透的面 → 折射亮边 → 强模糊背板 */
+  background: var(--lg-sheen), var(--lg-surface);
   border: 1px solid var(--lg-edge);
   border-radius: var(--radius);
   box-shadow: var(--lg-shadow-pop), var(--lg-inner);
-  backdrop-filter: var(--lg-blur-pop);
-  -webkit-backdrop-filter: var(--lg-blur-pop);
+  backdrop-filter: var(--lg-blur);
+  -webkit-backdrop-filter: var(--lg-blur);
   /* 性能：transform/box-shadow 变化不触发重排 */
   contain: layout paint style;
 }

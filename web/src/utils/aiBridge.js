@@ -18,8 +18,9 @@ export const aiContext = ref(null);
 export const aiSelection = ref(null);
 /** 当前页面注册的动作处理器 */
 const applier = ref(null);
-/** 撤销栈：[{ label, restore }]，栈顶是最近一次可撤销的 AI 修改 */
+/** 撤销栈：[{ id, label, restore }]，栈顶是最近一次可撤销的 AI 修改 */
 const undoStack = ref([]);
+let snapshotSeq = 0;
 
 export function setAiContext(ctx) {
   aiContext.value = ctx || null;
@@ -42,11 +43,14 @@ export function setAiApplier(fn) {
  * applier 改内容前调用：压入一条撤销记录
  * @param {string} label 展示用标签，如「已替换正文」
  * @param {() => void} restore 恢复函数（闭包持有旧值）
+ * @returns {number} 快照 id（面板用它把「应用标签」和「可撤销项」对上，防止撤销错位）
  */
 export function pushAiUndo(label, restore) {
-  if (typeof restore !== 'function') return;
-  undoStack.value.push({ label, restore });
+  if (typeof restore !== 'function') return 0;
+  const id = ++snapshotSeq;
+  undoStack.value.push({ id, label, restore });
   if (undoStack.value.length > 12) undoStack.value.shift();
+  return id;
 }
 
 /** 撤销最近一次 AI 修改，返回其标签；栈空返回 null */
@@ -62,19 +66,33 @@ export function undoAiLast() {
   return top.label;
 }
 
+/** 栈顶快照 id（面板据此判断哪个标签是可撤销的） */
+export function aiUndoTopId() {
+  return undoStack.value.length ? undoStack.value[undoStack.value.length - 1].id : 0;
+}
+
 /** 是否有可撤销的修改（面板据此显示撤销按钮） */
 export const aiCanUndo = computed(() => undoStack.value.length > 0);
 
 /**
  * 执行 AI 下发的动作
- * @returns {string|null} 人类可读的执行结果；未注册处理器时返回 null（页面不支持该动作）
+ * @returns {Promise<{label: string, snapshotId: number}|null>}
+ *   执行成功返回标签与关联快照（snapshotId=0 表示该动作不可撤销，如保存草稿）；
+ *   未注册处理器或执行失败时返回 null。applier 可以是 async。
  */
 export function applyAiAction(name, args) {
-  if (!applier.value) return null;
+  if (!applier.value) return Promise.resolve(null);
+  const before = aiUndoTopId();
+  const wrap = (label) => {
+    if (!label) return null;
+    const after = aiUndoTopId();
+    return { label, snapshotId: after !== before ? after : 0 };
+  };
   try {
-    return applier.value(name, args) || null;
+    const ret = applier.value(name, args);
+    return ret instanceof Promise ? ret.then(wrap, () => null) : Promise.resolve(wrap(ret));
   } catch (e) {
-    return null;
+    return Promise.resolve(null);
   }
 }
 

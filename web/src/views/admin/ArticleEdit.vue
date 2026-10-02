@@ -631,7 +631,7 @@ watch(
   { immediate: true }
 );
 
-setAiApplier((name, args) => {
+setAiApplier(async (name, args) => {
   switch (name) {
     case 'set_title': {
       if (!args.title) return null;
@@ -732,6 +732,12 @@ setAiApplier((name, args) => {
         changed.push('发布时间');
       }
       return changed.length ? `已调整：${changed.join('、')}` : null;
+    }
+    case 'save_draft': {
+      // 保存草稿（不是发布）：沿用页面自己的保存逻辑（校验/提示/本地草稿清理都在里面）
+      if (savingDraft.value || publishing.value) return null;
+      await saveDraft();
+      return '已保存草稿';
     }
     default:
       return null; // 未识别的动作 → 面板提示「当前页面不支持」
