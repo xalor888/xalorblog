@@ -51,9 +51,10 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue';
+import { ref, nextTick, onMounted, onUnmounted } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import { signedFetch } from '@/utils/signedFetch';
+import { ensurePass } from '@/utils/pass';
 import { renderMarkdown } from '@/utils/markdown';
 
 const props = defineProps({
@@ -81,13 +82,32 @@ async function scrollToEnd() {
 /** 站点没配模型就不显示入口，避免点了才报错 */
 async function checkAvailable() {
   try {
-    // 闸门对 /api 全量生效（/ai 不在白名单），所以必须走带票据+签名的请求
+    // 闸门对 /api 全量生效（/ai 不在白名单），所以必须走带票据+签名的请求。
+    // 先等 PoW 票据就绪：首次打开页面时挑战可能还没算完，此时直接请求必然 403，
+    // 且不重试的话浮窗会一直点不开（表现为「AI 没刷新出来」）。
+    await ensurePass();
     const res = await signedFetch(`${API_PREFIX}/ai/status`);
     const json = await res.json();
     available.value = json?.data?.ready === true;
   } catch (e) {
     available.value = false;
   }
+}
+
+// 挂载即查；没查到（票据未就绪/网络抖动）每 10s 重试一次，最多 6 次，
+// 避免「第一次没查到后来永远不可用」
+let retryTimer = null;
+function scheduleRetry() {
+  let attempts = 0;
+  retryTimer = setInterval(async () => {
+    if (available.value || attempts >= 6) {
+      clearInterval(retryTimer);
+      retryTimer = null;
+      return;
+    }
+    attempts += 1;
+    await checkAvailable();
+  }, 10000);
 }
 
 function toggle() {
@@ -185,7 +205,18 @@ async function send() {
   }
 }
 
-onMounted(checkAvailable);
+onMounted(() => {
+  checkAvailable().then(() => {
+    if (!available.value) scheduleRetry();
+  });
+});
+
+onUnmounted(() => {
+  if (retryTimer) {
+    clearInterval(retryTimer);
+    retryTimer = null;
+  }
+});
 </script>
 
 <style scoped>

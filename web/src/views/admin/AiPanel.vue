@@ -124,11 +124,12 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted } from 'vue';
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { signedFetch } from '@/utils/signedFetch';
+import { ensurePass } from '@/utils/pass';
 import { renderMarkdown } from '@/utils/markdown';
 import { aiContext, aiSelection, applyAiAction, undoAiLast, aiUndoTopId } from '@/utils/aiBridge';
 import { getCachedAdminPath, adminHref } from '@/utils/adminPath';
@@ -194,15 +195,36 @@ function goSettings() {
   router.push(adminHref('settings'));
 }
 
+let readyTimer = null;
 async function checkReady() {
   try {
+    // 等 PoW 票据就绪再查：后台刚打开时挑战可能还没算完，直接查必然 403，
+    // 且面板只在打开时查这一次 —— 不重试就会一直显示「未配置」。
+    await ensurePass();
     const res = await signedFetch(adminUrl('/ai/status'));
     const json = await res.json();
     const d = json?.data || {};
     aiReady.value = d.ready === true;
     modelName.value = d.model || '';
+    if (readyTimer) {
+      clearInterval(readyTimer);
+      readyTimer = null;
+    }
   } catch (e) {
     aiReady.value = false;
+    // 失败（票据/网络抖动）每 6s 重试，最多 5 次 —— 仍失败才落定「未配置」
+    if (!readyTimer) {
+      let attempts = 0;
+      readyTimer = setInterval(async () => {
+        attempts += 1;
+        if (attempts > 5 || aiReady.value === true) {
+          clearInterval(readyTimer);
+          readyTimer = null;
+          return;
+        }
+        await checkReady();
+      }, 6000);
+    }
   }
 }
 
@@ -446,6 +468,13 @@ function undoOne(msg, j) {
 }
 
 onMounted(checkReady);
+
+onUnmounted(() => {
+  if (readyTimer) {
+    clearInterval(readyTimer);
+    readyTimer = null;
+  }
+});
 
 defineExpose({
   reset() {
