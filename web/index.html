@@ -39,6 +39,9 @@
   </head>
   <body>
     <div id="app"></div>
+    <!-- 右下角浮层栈：静态容器，全局工具/文章互动/问 AI 都 teleport 进这一列。
+         放在 #app 之外是为了让它先于任何组件存在（同源组件内的目标在挂载时还查不到） -->
+    <div id="float-dock" class="float-dock"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

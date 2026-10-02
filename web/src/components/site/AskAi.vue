@@ -1,14 +1,16 @@
 <template>
   <!-- 传送挂到 body：组件本在文章页 main（z-index:1 的层叠上下文）里，
        fixed 浮层会被关进该上下文集内，z-index 再高也压不住外面的回到顶部工具条 -->
-  <Teleport to="body">
-    <!-- --ask-bottom 由脚本按侧边工具条的实际高度算出：和那排按钮同列、紧贴上方，不互相压 -->
-    <div class="ask-ai" :style="{ '--ask-bottom': bottomOffset + 'px' }">
-      <button v-if="!open" class="ask-fab" type="button" title="问 AI" aria-label="问 AI" @click="toggle">
-        <XIcon name="Sparkles" :size="18" />
-      </button>
+  <!-- 按钮并进右下角浮层栈（和点赞/评论/回顶那排按钮同一列，永不互相压住） -->
+  <Teleport :to="dockTarget">
+    <button v-if="!open" class="ask-fab" type="button" title="问 AI" aria-label="问 AI" @click="toggle">
+      <XIcon name="Sparkles" :size="18" />
+    </button>
+  </Teleport>
 
-      <section v-else class="ask-box" aria-label="就这篇文章提问">
+  <!-- 面板单独挂 body（覆盖式弹层），底部贴在浮层栈上方 -->
+  <Teleport to="body">
+    <section v-if="open" class="ask-box" aria-label="就这篇文章提问" :style="{ '--ask-bottom': bottomOffset + 'px' }">
       <header class="ask-head">
         <span class="ask-title">问这篇</span>
         <button class="ask-close" type="button" title="关闭" @click="open = false">
@@ -56,7 +58,6 @@
         </button>
       </form>
     </section>
-    </div>
   </Teleport>
 </template>
 
@@ -75,8 +76,10 @@ const API_PREFIX = import.meta.env.VITE_API_PREFIX || '/api';
 
 const open = ref(false);
 const available = ref(false);
-/** 底部偏移：默认 20，检测到侧边工具条时抬到它上方（同列排布，互不遮挡） */
+/** 底部偏移：面板抬到浮层栈上方（默认 20） */
 const bottomOffset = ref(20);
+/** 按钮并进右下角浮层栈；栈不存在时退回 body（避免 Teleport 目标缺失告警） */
+const dockTarget = ref('body');
 const messages = ref([]); // { role, content, streaming?, copied? }
 const draft = ref('');
 const pending = ref(false);
@@ -218,19 +221,20 @@ async function send(preset) {
   }
 }
 
-/** 把浮窗排到侧边工具条正上方：工具条按钮数量不固定，所以量它的实际高度而不是写死数值 */
+/** 面板贴在右下角浮层栈上方：栈里按钮数量不固定，所以量实际高度而不是写死数值 */
 function syncBottom() {
-  const tools = document.querySelector('.side-tools');
-  if (!tools) {
+  const dock = document.querySelector('#float-dock') || document.querySelector('.side-tools');
+  if (!dock) {
     bottomOffset.value = 20;
     return;
   }
-  const cs = getComputedStyle(tools);
+  const cs = getComputedStyle(dock);
   const gap = parseFloat(cs.bottom) || 20;
-  bottomOffset.value = Math.round(gap + tools.getBoundingClientRect().height + 12);
+  bottomOffset.value = Math.round(gap + dock.getBoundingClientRect().height + 12);
 }
 
 onMounted(() => {
+  if (document.querySelector('#float-dock')) dockTarget.value = '#float-dock';
   syncBottom();
   window.addEventListener('resize', syncBottom);
   checkAvailable().then(() => {
@@ -248,19 +252,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.ask-ai {
-  position: fixed;
-  right: 20px;
-  /* 与侧边工具条同列、排在其上方（--ask-bottom 由脚本按工具条实际高度算出） */
-  bottom: var(--ask-bottom, 20px);
-  /* 高于同层的回到顶部工具条（同为 --z-float=300，且它在 DOM 里排更后），
-     否则 AI 按钮会被压在工具条底下点不到 */
-  z-index: calc(var(--z-float) + 20);
-}
-
+/* 按钮已 teleport 进 #float-dock（与那排按钮同列），尺寸与它们对齐 */
 .ask-fab {
-  width: 46px;
-  height: 46px;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -528,12 +524,8 @@ onUnmounted(() => {
 }
 
 @media (max-width: 640px) {
-  .ask-ai,
   .ask-box {
     right: 12px;
-  }
-
-  .ask-box {
     width: calc(100vw - 24px);
   }
 }

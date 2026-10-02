@@ -516,6 +516,30 @@ input:-webkit-autofill:focus {
 }
 
 /* 卡片基座 */
+/* 右下角浮层栈（容器在 index.html 里静态存在，各组件 teleport 进来）：
+   全局工具 / 文章互动 / 问 AI 并成同一列，彼此不再 fixed 定位、不会互相压住 */
+.float-dock {
+  position: fixed;
+  right: 22px;
+  bottom: 28px;
+  z-index: var(--z-float);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.float-dock > * {
+  pointer-events: auto;
+}
+
+@media (max-width: 640px) {
+  .float-dock {
+    right: 12px;
+    bottom: 18px;
+  }
+}
+
 .card {
   /* 液态玻璃卡片（后台统一材质）：高光 → 更透的面 → 折射亮边 → 强模糊背板 */
   background: var(--lg-sheen), var(--lg-surface);

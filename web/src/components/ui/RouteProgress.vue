@@ -1,15 +1,18 @@
 <template>
-  <!-- 路由切换顶部进度条 -->
-  <div class="route-progress" :class="{ visible: visible }" aria-hidden="true">
+  <!-- 路由切换顶部进度条。文章页已有自己的阅读进度条（两条平行细线看着像重复），这里让位 -->
+  <div v-show="!onArticle" class="route-progress" :class="{ visible: visible }" aria-hidden="true">
     <div class="rp-bar"></div>
   </div>
 </template>
 
 <script setup>
-import { ref, onUnmounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, onUnmounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 
 const router = useRouter();
+const route = useRoute();
+// 文章详情页顶部是阅读进度条，路由进度条不叠加
+const onArticle = computed(() => /^\/article\//.test(route.path || ''));
 const visible = ref(false);
 let timer = null;
 let doneTimer = null;

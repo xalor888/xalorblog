@@ -232,23 +232,26 @@
       <!-- 图片灯箱 -->
       <ImageLightbox ref="lightboxRef" />
 
-      <!-- 移动端：悬浮按钮（点赞 / 评论 / 目录 / 回顶）——文章不存在时不渲染，防空引用 -->
-      <div v-if="article" class="float-actions">
-        <button class="fab" :class="{ liked }" :title="liked ? '已点赞' : '点赞'" @click="doLike">
-          <XIcon name="Heart" :size="18" :fill="liked" />
-          <span v-if="article?.likes" class="fab-num">{{ article.likes }}</span>
-        </button>
-        <button class="fab" title="跳到评论区" aria-label="跳到评论区" @click="scrollToComments">
-          <XIcon name="MessageSquare" :size="18" />
-          <span v-if="article?.comment_count" class="fab-num">{{ article.comment_count }}</span>
-        </button>
-        <button v-if="toc.length" class="fab" title="打开目录" aria-label="打开目录" @click="mobileTocOpen = true">
-          <XIcon name="ListTree" :size="18" />
-        </button>
-        <button class="fab" title="回到顶部" aria-label="回到顶部" @click="scrollTop">
-          <XIcon name="ArrowUp" :size="18" />
-        </button>
-      </div>
+      <!-- 移动端：悬浮按钮（点赞 / 评论 / 目录 / 回顶）——文章不存在时不渲染，防空引用。
+           并进右下角浮层栈（#float-dock），不再自己 fixed 定位，避免与全局工具条堆叠 -->
+      <Teleport to="#float-dock">
+        <div v-if="article" class="float-actions">
+          <button class="fab" :class="{ liked }" :title="liked ? '已点赞' : '点赞'" @click="doLike">
+            <XIcon name="Heart" :size="18" :fill="liked" />
+            <span v-if="article?.likes" class="fab-num">{{ article.likes }}</span>
+          </button>
+          <button class="fab" title="跳到评论区" aria-label="跳到评论区" @click="scrollToComments">
+            <XIcon name="MessageSquare" :size="18" />
+            <span v-if="article?.comment_count" class="fab-num">{{ article.comment_count }}</span>
+          </button>
+          <button v-if="toc.length" class="fab" title="打开目录" aria-label="打开目录" @click="mobileTocOpen = true">
+            <XIcon name="ListTree" :size="18" />
+          </button>
+          <button class="fab" title="回到顶部" aria-label="回到顶部" @click="scrollTop">
+            <XIcon name="ArrowUp" :size="18" />
+          </button>
+        </div>
+      </Teleport>
 
       <!-- 移动端：目录抽屉 -->
       <transition name="toc-mask">
@@ -1275,11 +1278,8 @@ onUnmounted(() => {
 }
 
 /* ============ 移动端悬浮按钮与目录抽屉 ============ */
+/* 已在 #float-dock 这一列里排布，不再自己 fixed 定位 */
 .float-actions {
-  position: fixed;
-  right: 18px;
-  bottom: calc(24px + env(safe-area-inset-bottom, 0px)); /* iOS 全面屏底部指示条避让 */
-  z-index: var(--z-float);
   display: flex;
   flex-direction: column;
   gap: 10px;

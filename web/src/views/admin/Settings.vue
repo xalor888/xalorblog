@@ -78,6 +78,7 @@
         </el-form-item>
         <el-form-item label="AI 模型配置">
           <div class="ai-config">
+            <p class="ai-scope">写作助手 · 读者问答 · 评论审核 共用这一套</p>
             <!-- 快捷预设：选服务商自动填接口+模型，只留 API Key 要填 -->
             <div class="ai-config-row">
               <el-select
@@ -975,6 +976,13 @@ onMounted(async () => {
   gap: 8px;
   width: 100%;
   max-width: 520px;
+}
+
+/* 一行说明这套模型给哪些功能用（避免以为助手/审核各配一套） */
+.ai-scope {
+  margin: 0 0 2px;
+  font-size: 0.78rem;
+  color: var(--text-3);
 }
 
 .ai-config-row {

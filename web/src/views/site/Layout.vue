@@ -182,7 +182,10 @@
 
     <AmbientParticles />
 
-    <div class="side-tools">
+    <!-- 全局工具按钮：并进右下角浮层栈（静态容器，见 index.html），
+         避免与文章页的互动按钮、问 AI 各自 fixed 定位互相压住 -->
+    <Teleport to="#float-dock">
+      <div class="side-tools-group">
       <button class="tool-btn theme-tool" :title="theme.isDark ? '切换亮色' : '切换暗色'" @click="theme.toggleTheme">
         <XIcon :name="theme.isDark ? 'Sun' : 'Moon'" :size="18" />
       </button>
@@ -201,7 +204,8 @@
           <XIcon name="ArrowUp" :size="16" class="top-icon" />
         </button>
       </transition>
-    </div>
+      </div>
+    </Teleport>
 
     <!-- 全局搜索 (Ctrl+K) -->
     <SearchModal />
@@ -1058,14 +1062,11 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.side-tools {
-  position: fixed;
-  right: 22px;
-  bottom: 28px;
-  z-index: var(--z-float);
+/* 容器样式移到全局 main.css 的 .float-dock（静态容器在 index.html 里） */
+.side-tools-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .tool-btn {
@@ -1290,10 +1291,6 @@ onUnmounted(() => {
 @media (max-width: 560px) {
   .brand-text {
     display: none;
-  }
-  .side-tools {
-    right: 12px;
-    bottom: 16px;
   }
   .tool-btn {
     width: 40px;
