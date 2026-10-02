@@ -527,6 +527,14 @@ input:-webkit-autofill:focus {
   flex-direction: column;
   gap: 10px;
   pointer-events: none;
+  /* 平时压到 0.8 不抢视线，鼠标移上去才完全显示 */
+  opacity: 0.8;
+  transition: opacity var(--dur, 0.2s) var(--ease, ease);
+}
+
+.float-dock:hover,
+.float-dock:focus-within {
+  opacity: 1;
 }
 
 .float-dock > * {

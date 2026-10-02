@@ -196,13 +196,12 @@
         <XIcon name="Rss" :size="17" />
       </a>
       <transition name="pop">
-        <button v-if="showTop" class="tool-btn back-top" @click="scrollTop" title="回到顶部">
-          <svg class="progress-ring" viewBox="0 0 44 44">
-            <circle class="ring-bg" cx="22" cy="22" r="20" />
-            <circle class="ring-fill" cx="22" cy="22" r="20" :stroke-dasharray="ringDash" :stroke-dashoffset="ringOffset" />
-          </svg>
-          <XIcon name="ArrowUp" :size="16" class="top-icon" />
-        </button>
+        <!-- 阅读进度绕在按钮外圈（不再挤在按钮里面画一个圈） -->
+        <div v-if="showTop" class="back-top-wrap" :style="{ '--p': scrollPercent }">
+          <button class="tool-btn back-top" @click="scrollTop" title="回到顶部" aria-label="回到顶部">
+            <XIcon name="ArrowUp" :size="18" />
+          </button>
+        </div>
       </transition>
       </div>
     </Teleport>
@@ -314,11 +313,7 @@ function closeAnnouncement() {
   } catch (e) { /* 隐私模式忽略 */ }
 }
 
-// 进度环参数
-const RING_R = 20;
-const RING_C = 2 * Math.PI * RING_R;
-const ringDash = RING_C;
-const ringOffset = computed(() => RING_C * (1 - scrollPercent.value / 100));
+// 进度环改用 CSS conic-gradient（外圈），不再需要 SVG 的周长计算
 
 const navItems = [
   { to: '/', label: '首页', short: 'HOME', exact: true },
@@ -1072,7 +1067,8 @@ onUnmounted(() => {
 .tool-btn {
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  /* 与文章页按钮、问 AI 同一个圆形玻璃语言 */
+  border-radius: 50%;
   background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
   border: 1px solid var(--sg-edge);
   color: var(--text-2);
@@ -1103,35 +1099,25 @@ onUnmounted(() => {
   transform: translateY(-3px);
 }
 
-.tool-btn.back-top {
-  overflow: hidden;
-}
-
-.progress-ring {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-
-.ring-bg {
-  fill: none;
-  stroke: var(--border);
-  stroke-width: 2;
-}
-
-.ring-fill {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  transition: stroke-dashoffset 0.1s linear;
-}
-
-.top-icon {
+/* 阅读进度环：绕在按钮外圈（伪元素画环，按钮本体不受影响） */
+.back-top-wrap {
   position: relative;
-  z-index: 1;
+  line-height: 0;
+}
+
+.back-top-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--accent) calc(var(--p, 0) * 1%),
+    color-mix(in srgb, var(--border) 55%, transparent) 0
+  );
+  /* 只留最外 2.5px 一圈，中间挖空 → 环形进度 */
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+  pointer-events: none;
 }
 
 .pop-enter-active,
