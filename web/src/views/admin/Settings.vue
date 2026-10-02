@@ -59,18 +59,18 @@
 
     <!-- 内容审核 -->
     <div class="setting-card card">
-      <h3 class="card-title">内容审核</h3>
-      <el-form label-width="130px" class="setting-form">
-        <el-form-item label="评论审核">
+      <h3 class="card-title">评论与留言</h3>
+      <el-form label-width="150px" class="setting-form">
+        <el-form-item label="评论先审后发">
           <el-switch v-model="form.comment_moderation" />
         </el-form-item>
-        <el-form-item label="留言审核">
+        <el-form-item label="留言先审后发">
           <el-switch v-model="form.message_moderation" />
         </el-form-item>
-        <el-form-item label="AI 内容审核">
+        <el-form-item label="AI 自动拦垃圾">
           <el-switch v-model="form.ai_moderation" />
         </el-form-item>
-        <el-form-item label="AI 深度复核">
+        <el-form-item label="拿不准再问 AI">
           <el-switch v-model="form.ai_llm_moderation" :disabled="!form.ai_moderation" />
           <span class="ai-status" :class="{ on: form.ai_llm_ready }">
             {{ form.ai_llm_ready ? '已配置模型' : '未配置模型' }}
@@ -94,12 +94,16 @@
             <el-input v-model="form.ai_base_url" placeholder="接口地址，如 https://api.deepseek.com/v1" />
             <el-input v-model="form.ai_model" placeholder="模型名，如 deepseek-chat" />
             <div class="ai-config-row">
-              <el-input v-model="form.ai_temperature" placeholder="温度 0-2，默认 0.7" />
-              <el-input v-model="form.ai_max_tokens" placeholder="最大输出 256-8192，默认 4096" />
+              <el-select v-model="form.ai_temperature" placeholder="创意程度" clearable class="ai-temp">
+                <el-option label="保守 · 稳定可预测" value="0.3" />
+                <el-option label="平衡 · 推荐" value="0.7" />
+                <el-option label="发散 · 更有创意" value="1.2" />
+              </el-select>
+              <el-input v-model="form.ai_max_tokens" placeholder="单次回复上限 256-8192，默认 4096" />
             </div>
             <div class="ai-config-row">
-              <el-input v-model="form.ai_ctx_chars" placeholder="正文上下文字数 1000-20000，默认 6000" />
-              <el-input v-model="form.ai_ctx_turns" placeholder="对话保留条数 6-48，默认 24" />
+              <el-input v-model="form.ai_ctx_chars" placeholder="AI 读多长的正文 1000-100000，默认 20000 字" />
+              <el-input v-model="form.ai_ctx_turns" placeholder="AI 记住多少轮对话 6-200，默认 48" />
             </div>
             <el-input
               v-model="form.ai_system_prompt"
@@ -110,7 +114,7 @@
             />
           </div>
         </el-form-item>
-        <el-form-item label="AI 上下文压缩">
+        <el-form-item label="对话太长自动总结">
           <el-switch v-model="form.ai_ctx_compress" />
         </el-form-item>
         <el-form-item label="友链审核">
@@ -980,6 +984,10 @@ onMounted(async () => {
 }
 
 .ai-preset {
+  width: 100%;
+}
+
+.ai-temp {
   width: 100%;
 }
 

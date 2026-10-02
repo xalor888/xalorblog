@@ -145,14 +145,15 @@ async function saveSettings(entries) {
       if (!Number.isFinite(n) || n < 256 || n > 8192) continue;
     }
     if (key === 'ai_system_prompt' && raw.length > 3000) continue;
-    // AI 上下文参数：正文 1000-20000 字、历史 6-48 条（越界忽略）
+    // AI 上下文参数：正文 1000-100000 字、历史 6-200 轮。
+    // 上限对齐现代长上下文模型（百万 token 级）：10 万中文字 ≈ 5-10 万 token，占比个位数。
     if (key === 'ai_ctx_chars' && raw) {
       const n = parseInt(raw, 10);
-      if (!Number.isFinite(n) || n < 1000 || n > 20000) continue;
+      if (!Number.isFinite(n) || n < 1000 || n > 100000) continue;
     }
     if (key === 'ai_ctx_turns' && raw) {
       const n = parseInt(raw, 10);
-      if (!Number.isFinite(n) || n < 6 || n > 48) continue;
+      if (!Number.isFinite(n) || n < 6 || n > 200) continue;
     }
     let safeValue;
     if (BOOL_KEYS.has(key)) {

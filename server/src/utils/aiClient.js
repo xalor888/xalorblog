@@ -47,11 +47,11 @@ async function getAiConfig() {
   const maxTokens = Number.isFinite(mRaw) && mRaw >= 256 && mRaw <= 8192 ? mRaw : 4096;
   // 自定义写作助手人设（仅管理端使用；公开接口不下发、导出剔除）
   const systemPrompt = String(s.ai_system_prompt || '').trim().slice(0, 3000);
-  // 上下文控制：正文上限 / 历史保留条数 / 超长自动压缩
+  // 上下文控制：默认按现代长上下文模型给足（100 万 token 级模型下占比很小）
   const cRaw = parseInt(String(s.ai_ctx_chars ?? '').trim(), 10);
-  const ctxChars = Number.isFinite(cRaw) && cRaw >= 1000 && cRaw <= 20000 ? cRaw : 6000;
+  const ctxChars = Number.isFinite(cRaw) && cRaw >= 1000 && cRaw <= 100000 ? cRaw : 20000;
   const tRaw2 = parseInt(String(s.ai_ctx_turns ?? '').trim(), 10);
-  const ctxTurns = Number.isFinite(tRaw2) && tRaw2 >= 6 && tRaw2 <= 48 ? tRaw2 : 24;
+  const ctxTurns = Number.isFinite(tRaw2) && tRaw2 >= 6 && tRaw2 <= 200 ? tRaw2 : 48;
   const ctxCompress = s.ai_ctx_compress !== false;
   return {
     apiKey,
