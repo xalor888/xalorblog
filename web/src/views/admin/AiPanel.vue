@@ -17,7 +17,6 @@
     <template v-else>
       <div ref="listEl" class="ai-list">
         <div v-if="!messages.length" class="ai-empty">
-          <span class="ai-empty-tip">选中一段文字再点「润色选中」，或直接说需求</span>
         </div>
 
         <template v-for="(m, i) in messages" :key="i">
@@ -502,11 +501,17 @@ defineExpose({
   backdrop-filter: var(--lg-blur);
   -webkit-backdrop-filter: var(--lg-blur);
   transform: translateX(101%);
-  transition: transform 0.26s var(--ease);
+  /* 收起时彻底隐藏：面板移出屏幕了，但 box-shadow 还会散回视口边缘，
+     在页面右侧留下一条阴影带 */
+  visibility: hidden;
+  box-shadow: none;
+  transition: transform 0.26s var(--ease), visibility 0.26s;
 }
 
 .ai-panel.open {
   transform: none;
+  visibility: visible;
+  box-shadow: var(--lg-shadow), var(--lg-inner);
 }
 
 .ai-head {

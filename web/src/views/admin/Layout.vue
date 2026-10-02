@@ -302,7 +302,8 @@ async function logout() {
 /* ============ 主区域 ============ */
 .admin-main {
   flex: 1;
-  margin-left: 224px;
+  /* 与侧栏同宽（原来 224 比侧栏 232 窄 8px，侧栏会压住内容左缘） */
+  margin-left: 232px;
   min-width: 0;
   display: flex;
   flex-direction: column;

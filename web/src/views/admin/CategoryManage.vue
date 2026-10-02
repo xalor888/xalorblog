@@ -63,7 +63,6 @@
         </el-form-item>
         <el-form-item label="Slug">
           <el-input v-model="editForm.slug" maxlength="60" placeholder="留空自动生成（仅 a-z0-9-）" />
-          <span class="field-tip">用于前台筛选链接 #/articles?category=slug</span>
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="editForm.description" maxlength="255" />

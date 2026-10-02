@@ -15,7 +15,6 @@
         <el-button @click="load(1)">搜索</el-button>
       </div>
       <div class="toolbar-right">
-        <span class="hint">日志保留 90 天，超出自动清理</span>
         <el-button plain :loading="exporting" @click="exportCsv">
           <XIcon name="Download" :size="14" /> 导出 CSV
         </el-button>

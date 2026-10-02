@@ -99,7 +99,6 @@
 
     <!-- 站长回复弹窗 -->
     <el-dialog v-model="replyDialog" title="回复留言" width="520" :close-on-click-modal="false">
-      <p class="reply-tip">回复内容将公开展示在留言下方，同时该留言自动通过审核。</p>
       <el-input
         v-model="replyForm.content"
         type="textarea"

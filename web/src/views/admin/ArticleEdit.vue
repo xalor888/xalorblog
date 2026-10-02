@@ -12,7 +12,6 @@
         <span v-if="autosavedAt" class="ed-autosave">
           <XIcon name="Check" :size="12" /> 已自动保存 {{ autosavedAt }}
         </span>
-        <span class="ed-kbd">Ctrl+S 保存 · Ctrl+Enter 发布</span>
         <el-button :loading="savingDraft" @click="saveDraft">保存草稿</el-button>
         <el-button type="primary" :loading="publishing" @click="publish">发布</el-button>
       </div>
@@ -70,7 +69,7 @@
               :rows="22"
               resize="none"
               class="md-editor"
-              placeholder="在这里用 Markdown 写作…（可直接 Ctrl/Cmd+V 粘贴截图，自动上传插入）"
+              placeholder="用 Markdown 写作，Ctrl+V 可粘贴截图"
               @paste="onEditorPaste"
             />
           </div>
@@ -846,8 +845,8 @@ watch(form, scheduleAutosave, { deep: true });
 /* ---------------- 两栏骨架 ---------------- */
 .ed-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 336px;
+  gap: 20px;
   align-items: start;
 }
 
@@ -1043,18 +1042,20 @@ watch(form, scheduleAutosave, { deep: true });
   top: 82px; /* 顶栏高度 + 间距 */
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   max-height: calc(100vh - 104px);
   overflow-y: auto;
-  padding-right: 2px;
+  padding-right: 4px;
+  /* 细滚动条，别在玻璃卡片旁杵一根粗灰条 */
+  scrollbar-width: thin;
 }
 
 .ed-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px 16px;
-  border-radius: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
   background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
   border: 1px solid var(--sg-edge);
   box-shadow: var(--sg-shadow), var(--sg-inner);

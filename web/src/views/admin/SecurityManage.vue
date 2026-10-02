@@ -49,7 +49,6 @@
     <div v-if="Object.keys(stats.type_counts || {}).length" class="panel">
       <div class="panel-head">
         <h3 class="panel-title"><XIcon name="BarChart3" :size="16" /> 攻击类型分布</h3>
-        <span class="panel-hint">全部历史拦截事件</span>
       </div>
       <div class="type-grid">
         <div v-for="(cnt, type) in stats.type_counts" :key="type" class="type-cell" :class="'tc-' + typeClass(type)">
@@ -63,7 +62,6 @@
     <div class="panel">
       <div class="panel-head">
         <h3 class="panel-title"><XIcon name="Activity" :size="16" /> 攻击拦截日志</h3>
-        <span class="panel-hint">每 5 秒自动刷新 · 最近 50 条</span>
         <button class="export-btn" title="导出 CSV" @click="exportCsv">
           <XIcon name="Download" :size="14" /> 导出
         </button>
@@ -87,7 +85,6 @@
     <div class="panel">
       <div class="panel-head">
         <h3 class="panel-title"><XIcon name="Ban" :size="16" /> 封禁中的 IP</h3>
-        <span v-if="(stats.banned || []).length" class="panel-hint">封禁期满自动解除</span>
       </div>
       <div v-if="!(stats.banned || []).length" class="panel-empty">
         <XIcon name="Smile" :size="26" />
@@ -117,7 +114,6 @@
     <div class="panel">
       <div class="panel-head">
         <h3 class="panel-title"><XIcon name="History" :size="16" /> 管理员操作审计</h3>
-        <span class="panel-hint">最近 100 条 · 谁在何时做了什么</span>
         <button class="export-btn" title="导出 CSV" @click="exportAuditCsv">
           <XIcon name="Download" :size="14" /> 导出
         </button>
@@ -142,7 +138,6 @@
       <div class="panel-head">
         <h3 class="panel-title"><XIcon name="MonitorSmartphone" :size="16" /> 登录会话</h3>
         <div class="panel-actions">
-          <span class="panel-hint">令牌绑定设备指纹，跨设备无效</span>
           <el-button v-if="sessions.filter((s) => !s.current).length" size="small" type="danger" plain @click="logoutAll">
             退出其他设备
           </el-button>
@@ -225,15 +220,15 @@
         <!-- 白名单与词库 -->
         <div class="cfg-section">
           <p class="cfg-title">可信 IP 白名单</p>
-          <p class="cfg-hint">白名单 IP 不记分、不封禁。支持单 IP 与 CIDR（如 10.0.0.0/8），回车添加</p>
+          <p class="cfg-hint">支持单 IP 与 CIDR，回车添加</p>
           <el-select v-model="cfg.trustedIps" multiple filterable allow-create default-first-option
             placeholder="如 203.0.113.7 或 198.51.100.0/24" class="cfg-tags" @change="markDirty" />
           <p class="cfg-title">自定义敏感词</p>
-          <p class="cfg-hint">追加到评论硬拒词库（≥2 字），回车添加</p>
+          <p class="cfg-hint">≥2 字，回车添加</p>
           <el-select v-model="cfg.customSensitiveWords" multiple filterable allow-create default-first-option
             placeholder="如 某某推广" class="cfg-tags" @change="markDirty" />
           <p class="cfg-title">豁免词</p>
-          <p class="cfg-hint">文本包含豁免词时跳过对应敏感词判定（如「回收」豁免「垃圾回收」触发的辱骂分）</p>
+          <p class="cfg-hint">命中豁免词则跳过敏感词判定</p>
           <el-select v-model="cfg.allowWords" multiple filterable allow-create default-first-option
             placeholder="如 回收" class="cfg-tags" @change="markDirty" />
         </div>
@@ -242,7 +237,7 @@
       <!-- 禁用规则 -->
       <div class="cfg-rules">
         <p class="cfg-title">禁用单条规则</p>
-        <p class="cfg-hint">误杀排查时可精确关闭某条规则，其余规则照常生效</p>
+        <p class="cfg-hint">关闭后该规则不生效</p>
         <el-select v-model="cfg.disabledRules" multiple filterable clearable placeholder="选择要禁用的规则 ID"
           class="cfg-tags" @change="markDirty">
           <el-option-group v-for="(rules, g) in rulesByGroup" :key="g" :label="GROUP_LABELS[g] || g">
@@ -254,7 +249,7 @@
       <!-- 规则测试器 -->
       <div class="cfg-tester">
         <p class="cfg-title">规则测试器</p>
-        <p class="cfg-hint">粘贴任意文本/URL 参数，dry-run 返回会命中的规则（不拦截不记分）</p>
+        <p class="cfg-hint">试跑不拦截、不记分</p>
         <div class="test-row">
           <el-input v-model="testText" type="textarea" :rows="2" maxlength="4000"
             placeholder="例如：union select 1,2,3 或 select the color from the palette" class="test-input" />

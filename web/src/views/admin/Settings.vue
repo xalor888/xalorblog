@@ -78,7 +78,6 @@
         </el-form-item>
         <el-form-item label="AI 模型配置">
           <div class="ai-config">
-            <p class="ai-scope">写作助手 · 读者问答 · 评论审核 共用这一套</p>
             <!-- 快捷预设：选服务商自动填接口+模型，只留 API Key 要填 -->
             <div class="ai-config-row">
               <el-select
