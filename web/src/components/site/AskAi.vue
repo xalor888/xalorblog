@@ -2,7 +2,8 @@
   <!-- 传送挂到 body：组件本在文章页 main（z-index:1 的层叠上下文）里，
        fixed 浮层会被关进该上下文集内，z-index 再高也压不住外面的回到顶部工具条 -->
   <Teleport to="body">
-    <div class="ask-ai">
+    <!-- --ask-bottom 由脚本按侧边工具条的实际高度算出：和那排按钮同列、紧贴上方，不互相压 -->
+    <div class="ask-ai" :style="{ '--ask-bottom': bottomOffset + 'px' }">
       <button v-if="!open" class="ask-fab" type="button" title="问 AI" aria-label="问 AI" @click="toggle">
         <XIcon name="Sparkles" :size="18" />
       </button>
@@ -26,10 +27,15 @@
 
         <div v-for="(m, i) in messages" :key="i" class="ask-row" :class="m.role">
           <div class="ask-wrap">
-            <!-- 回答用 Markdown 渲染（DOMPurify 净化），流式期间照样渲染 -->
-            <div v-if="m.role === 'assistant'" class="ask-bubble ask-md" v-html="renderMarkdown(m.content)"></div>
+            <!-- 流式期间渲染纯文本：markdown 是块级元素，会把光标挤到下一行（看着像错位） -->
+            <div v-if="m.role === 'assistant'" class="ask-bubble">
+              <template v-if="m.streaming"
+                ><span class="ask-raw">{{ m.content }}</span
+                ><span class="ask-cursor"></span
+              ></template>
+              <div v-else-if="m.content" class="ask-md" v-html="renderMarkdown(m.content)"></div>
+            </div>
             <div v-else class="ask-bubble">{{ m.content }}</div>
-            <span v-if="m.streaming" class="ask-cursor"></span>
             <!-- 回答完成：一键复制 -->
             <button
               v-if="m.role === 'assistant' && !m.streaming && m.content"
@@ -69,6 +75,8 @@ const API_PREFIX = import.meta.env.VITE_API_PREFIX || '/api';
 
 const open = ref(false);
 const available = ref(false);
+/** 底部偏移：默认 20，检测到侧边工具条时抬到它上方（同列排布，互不遮挡） */
+const bottomOffset = ref(20);
 const messages = ref([]); // { role, content, streaming?, copied? }
 const draft = ref('');
 const pending = ref(false);
@@ -142,8 +150,9 @@ async function copyAnswer(m) {
   }, 1600);
 }
 
-async function send() {
-  const question = draft.value.trim();
+/** 发问：preset 来自一键问题按钮；不传则取输入框内容（表单提交） */
+async function send(preset) {
+  const question = String(preset ?? draft.value ?? '').trim();
   if (!question || pending.value) return;
   draft.value = '';
   messages.value.push({ role: 'user', content: question });
@@ -209,13 +218,28 @@ async function send() {
   }
 }
 
+/** 把浮窗排到侧边工具条正上方：工具条按钮数量不固定，所以量它的实际高度而不是写死数值 */
+function syncBottom() {
+  const tools = document.querySelector('.side-tools');
+  if (!tools) {
+    bottomOffset.value = 20;
+    return;
+  }
+  const cs = getComputedStyle(tools);
+  const gap = parseFloat(cs.bottom) || 20;
+  bottomOffset.value = Math.round(gap + tools.getBoundingClientRect().height + 12);
+}
+
 onMounted(() => {
+  syncBottom();
+  window.addEventListener('resize', syncBottom);
   checkAvailable().then(() => {
     if (!available.value) scheduleRetry();
   });
 });
 
 onUnmounted(() => {
+  window.removeEventListener('resize', syncBottom);
   if (retryTimer) {
     clearInterval(retryTimer);
     retryTimer = null;
@@ -227,7 +251,8 @@ onUnmounted(() => {
 .ask-ai {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  /* 与侧边工具条同列、排在其上方（--ask-bottom 由脚本按工具条实际高度算出） */
+  bottom: var(--ask-bottom, 20px);
   /* 高于同层的回到顶部工具条（同为 --z-float=300，且它在 DOM 里排更后），
      否则 AI 按钮会被压在工具条底下点不到 */
   z-index: calc(var(--z-float) + 20);
@@ -256,7 +281,8 @@ onUnmounted(() => {
 .ask-box {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  /* 同列贴在工具条上方展开，不压住那排按钮 */
+  bottom: var(--ask-bottom, 20px);
   width: min(360px, calc(100vw - 40px));
   max-height: min(520px, calc(100vh - 40px));
   display: flex;
@@ -436,17 +462,22 @@ onUnmounted(() => {
   margin-bottom: 16px;
 }
 
+/* 打字光标：紧跟文本末尾的内联光标（早先钉在气泡右下角，看着就是「错位」） */
 .ask-cursor {
-  position: absolute;
-  right: -2px;
-  bottom: 8px;
   display: inline-block;
-  width: 5px;
-  height: 13px;
-  vertical-align: middle;
-  background: currentColor;
-  opacity: 0.5;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  opacity: 0.85;
   animation: ask-blink 1s steps(2, start) infinite;
+}
+
+/* 流式期间的纯文本：保留换行，等生成完再整体渲染成 Markdown */
+.ask-raw {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 @keyframes ask-blink {
@@ -500,7 +531,10 @@ onUnmounted(() => {
   .ask-ai,
   .ask-box {
     right: 12px;
-    bottom: 12px;
+  }
+
+  .ask-box {
+    width: calc(100vw - 24px);
   }
 }
 </style>
