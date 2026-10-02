@@ -1114,11 +1114,12 @@ onUnmounted(() => {
 }
 
 /* 阅读进度环：绕在按钮外圈的 SVG 环。
-   wrapper 必须固定尺寸 —— flex 容器会把不定宽的子项拉宽，之前伪元素环因此偏心 */
+   容器与其它按钮同为 44×44（不然这一格比别家宽 8px，整列看着不齐）；
+   环靠 inset 负值向外扩，绝对定位不占布局，所以不影响对齐也不算大 */
 .back-top-wrap {
   position: relative;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1126,25 +1127,25 @@ onUnmounted(() => {
 
 .back-ring {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  inset: -3px;
+  /* 让进度从 12 点方向起步 */
   transform: rotate(-90deg);
   pointer-events: none;
 }
 
 .ring-track {
   fill: none;
-  stroke: color-mix(in srgb, var(--border) 55%, transparent);
-  stroke-width: 2;
+  stroke: color-mix(in srgb, var(--border) 50%, transparent);
+  stroke-width: 1.6;
 }
 
 .ring-fill {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 2.5;
+  stroke-width: 2;
   stroke-linecap: round;
-  transition: stroke-dashoffset 0.1s linear;
+  /* 不加过渡：滚动时每帧刷新，过渡被反复打断会显得发飘/卡顿 */
+  transition: none;
 }
 
 .back-top-wrap .tool-btn {
