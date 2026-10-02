@@ -279,6 +279,9 @@ onUnmounted(() => {
   right: 20px;
   /* 同列贴在工具条上方展开，不压住那排按钮 */
   bottom: var(--ask-bottom, 20px);
+  /* 必须自带层级：面板单独挂在 body 下，没有父级容器给它撑层级，
+     不写 z-index 就会被浮层按钮栈、导航等盖住（手机上表现为"点开啥也看不到"） */
+  z-index: calc(var(--z-float) + 40);
   width: min(360px, calc(100vw - 40px));
   max-height: min(520px, calc(100vh - 40px));
   display: flex;
@@ -523,10 +526,15 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
+/* 手机：按钮栈能占掉半屏，面板再贴它上方会被顶出可视区 —— 改成贴底的抽屉，
+   层级高于按钮栈，直接盖在上面 */
 @media (max-width: 640px) {
   .ask-box {
+    left: 12px;
     right: 12px;
-    width: calc(100vw - 24px);
+    bottom: 12px;
+    width: auto;
+    max-height: min(72vh, 560px);
   }
 }
 </style>

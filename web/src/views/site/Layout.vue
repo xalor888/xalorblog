@@ -196,8 +196,19 @@
         <XIcon name="Rss" :size="17" />
       </a>
       <transition name="pop">
-        <!-- 阅读进度绕在按钮外圈（不再挤在按钮里面画一个圈） -->
-        <div v-if="showTop" class="back-top-wrap" :style="{ '--p': scrollPercent }">
+        <!-- 阅读进度绕在按钮外圈：SVG 画在固定尺寸的 wrapper 上，严格同心 -->
+        <div v-if="showTop" class="back-top-wrap">
+          <svg class="back-ring" viewBox="0 0 52 52" aria-hidden="true">
+            <circle class="ring-track" cx="26" cy="26" r="24.5" />
+            <circle
+              class="ring-fill"
+              cx="26"
+              cy="26"
+              r="24.5"
+              :stroke-dasharray="RING_C"
+              :stroke-dashoffset="ringOffset"
+            />
+          </svg>
           <button class="tool-btn back-top" @click="scrollTop" title="回到顶部" aria-label="回到顶部">
             <XIcon name="ArrowUp" :size="18" />
           </button>
@@ -313,7 +324,10 @@ function closeAnnouncement() {
   } catch (e) { /* 隐私模式忽略 */ }
 }
 
-// 进度环改用 CSS conic-gradient（外圈），不再需要 SVG 的周长计算
+// 进度环：SVG 外圈（wrapper 固定 52×52，r=24.5），天然与按钮同心
+const RING_R = 24.5;
+const RING_C = 2 * Math.PI * RING_R;
+const ringOffset = computed(() => RING_C * (1 - scrollPercent.value / 100));
 
 const navItems = [
   { to: '/', label: '首页', short: 'HOME', exact: true },
@@ -1099,25 +1113,43 @@ onUnmounted(() => {
   transform: translateY(-3px);
 }
 
-/* 阅读进度环：绕在按钮外圈（伪元素画环，按钮本体不受影响） */
+/* 阅读进度环：绕在按钮外圈的 SVG 环。
+   wrapper 必须固定尺寸 —— flex 容器会把不定宽的子项拉宽，之前伪元素环因此偏心 */
 .back-top-wrap {
   position: relative;
-  line-height: 0;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.back-top-wrap::before {
-  content: '';
+.back-ring {
   position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  background: conic-gradient(
-    var(--accent) calc(var(--p, 0) * 1%),
-    color-mix(in srgb, var(--border) 55%, transparent) 0
-  );
-  /* 只留最外 2.5px 一圈，中间挖空 → 环形进度 */
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
   pointer-events: none;
+}
+
+.ring-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--border) 55%, transparent);
+  stroke-width: 2;
+}
+
+.ring-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+.back-top-wrap .tool-btn {
+  width: 44px;
+  height: 44px;
 }
 
 .pop-enter-active,
