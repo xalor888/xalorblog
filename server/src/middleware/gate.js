@@ -311,8 +311,16 @@ function verifySig(req, ticket) {
   const nonce = String(req.headers['x-nonce'] || '');
   const bodyHash = sha256hex(JSON.stringify(req.body || {}));
   const method = req.method.toUpperCase();
-  // 签名路径 = 挂载点相对路径（与客户端 baseURL 相对路径一致）
-  const path = req.path;
+  // 签名路径 = 挂载点相对路径（与客户端 baseURL 相对路径一致）。
+  // 客户端对「未编码」的路径签名（axios config.url 是原始字符串），
+  // 而 req.path 是百分号编码后的 —— 含中文/空格的路径（如中文 slug）
+  // 两侧不一致会导致签名永远校验失败。这里统一解码后再参与签名。
+  let path = req.path;
+  try {
+    path = decodeURIComponent(path);
+  } catch (e) {
+    /* 非法编码序列：保留原样（按编码路径校验） */
+  }
   const expect = hmacWithKey(ticket.token, [method, path, t, bodyHash, ticket.jti, nonce].join('|'));
   const got = String(req.headers['x-sig'] || '');
   const a = Buffer.from(got, 'utf8');

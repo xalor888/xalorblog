@@ -97,8 +97,12 @@ async function getAllSettings() {
   return settingsCache;
 }
 
-/** 批量保存设置（upsert）：仅接受白名单内的键，字符串做长度限制 */
+/** 批量保存设置（upsert）：仅接受白名单内的键，字符串做长度限制。
+ *  全部键在单事务里并行写入 —— 逐条 await 会有 N 次网络往返（25 键 ≈ 秒级），
+ *  这里一次性提交，保存耗时从「键数 × RTT」降到一次事务。 */
 async function saveSettings(entries) {
+  const writes = []; // 待执行的 upsert
+  const clears = []; // 待执行的删除（密钥 __CLEAR__）
   for (const [key, value] of Object.entries(entries)) {
     if (!ALLOWED_KEYS.has(key)) continue; // 忽略未知键
     const raw = String(value ?? '');
@@ -126,7 +130,7 @@ async function saveSettings(entries) {
     if (key === 'ai_api_key') {
       if (!raw || /^\*+$/.test(raw)) continue;
       if (raw === '__CLEAR__') {
-        await db('settings').where('key', 'ai_api_key').del();
+        clears.push(key);
         continue;
       }
       if (raw.length < 8 || raw.length > 300) continue;
@@ -160,10 +164,19 @@ async function saveSettings(entries) {
       continue;
     }
     const json = JSON.stringify(safeValue);
-    await db('settings')
-      .insert({ key, value: json })
-      .onConflict('key')
-      .merge({ value: json, updated_at: db.fn.now() });
+    writes.push({ key, value: json });
+  }
+  // 单事务并行执行全部写入/删除，一次提交
+  if (writes.length || clears.length) {
+    await db.transaction(async (trx) => {
+      if (clears.length) await trx('settings').whereIn('key', clears).del();
+      if (writes.length) {
+        await trx('settings')
+          .insert(writes.map((w) => ({ key: w.key, value: w.value, updated_at: trx.fn.now() })))
+          .onConflict('key')
+          .merge(['value', 'updated_at']);
+      }
+    });
   }
   settingsCache = null; // 失效缓存
   return getAllSettings();

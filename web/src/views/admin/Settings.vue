@@ -78,16 +78,21 @@
         </el-form-item>
         <el-form-item label="AI 模型配置">
           <div class="ai-config">
-            <el-input v-model="form.ai_base_url" placeholder="接口地址，如 https://api.deepseek.com/v1" />
+            <!-- 快捷预设：选服务商自动填接口+模型，只留 API Key 要填 -->
             <div class="ai-config-row">
-              <el-input v-model="form.ai_model" placeholder="模型名，如 deepseek-chat" />
-              <el-input
-                v-model="form.ai_api_key"
-                type="password"
-                show-password
-                :placeholder="form.ai_llm_ready ? 'Key 已配置 · 留空不修改' : 'API Key'"
-              />
+              <el-select
+                :model-value="presetPick"
+                placeholder="快捷预设：选服务商自动填"
+                clearable
+                class="ai-preset"
+                @update:model-value="applyPreset"
+              >
+                <el-option v-for="p in AI_PRESETS" :key="p.name" :label="p.name" :value="p.name" />
+              </el-select>
+              <el-input v-model="form.ai_api_key" type="password" show-password placeholder="API Key" />
             </div>
+            <el-input v-model="form.ai_base_url" placeholder="接口地址，如 https://api.deepseek.com/v1" />
+            <el-input v-model="form.ai_model" placeholder="模型名，如 deepseek-chat" />
             <div class="ai-config-row">
               <el-input v-model="form.ai_temperature" placeholder="温度 0-2，默认 0.7" />
               <el-input v-model="form.ai_max_tokens" placeholder="最大输出 256-8192，默认 4096" />
@@ -341,6 +346,23 @@ import { useSiteStore } from '@/stores/site';
 const router = useRouter();
 const auth = useAuthStore();
 const form = ref({});
+
+/** 快捷预设：选服务商 → 自动填接口地址和模型名（API Key 仍需自己填） */
+const AI_PRESETS = [
+  { name: 'DeepSeek（推荐）', base: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { name: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  { name: '通义千问', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+  { name: 'Moonshot Kimi', base: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+];
+const presetPick = ref('');
+
+function applyPreset(name) {
+  const p = AI_PRESETS.find((x) => x.name === name);
+  if (!p) return;
+  form.value.ai_base_url = p.base;
+  form.value.ai_model = p.model;
+  presetPick.value = name;
+}
 const saving = ref(false);
 const uploading = ref(false);
 
@@ -955,6 +977,10 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.ai-preset {
+  width: 100%;
 }
 
 /* 后台访问信息 */

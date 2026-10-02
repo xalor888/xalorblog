@@ -2003,6 +2003,26 @@ const AI_TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'publish',
+      description: '发布当前文章（立即对访客可见）。只在用户明确说「发布」时使用，绝不主动调用',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_slug',
+      description: '设置文章的链接地址（slug）。建议用英文小写加连字符，如 my-first-post',
+      parameters: {
+        type: 'object',
+        properties: { slug: { type: 'string', description: '新的 slug，建议 ASCII' } },
+        required: ['slug'],
+      },
+    },
+  },
 ];
 
 /** 站点简报：已有分类/标签/最近文章 —— 服务端直接查库补进提示词，
@@ -2049,7 +2069,9 @@ function buildWriterSystemPrompt(context = {}, site = {}, systemPrompt = '', ctx
     '- 要参考旧文：先 list_articles 找 slug，再 read_article 读全文；正文里引用旧文用 link_article 插入链接。',
     '- 想知道读者在关注什么：list_comments 看最近评论、list_messages 看最近留言。',
     '- 用户说「存一下/保存」时调 save_draft（这只是存草稿，不是发布）。',
-    '- 你没有发布权限。用户要发布时让他自己点发布。',
+    '- 用户明确说「发布」时才调 publish，绝不主动发布；发布前可以先 save_draft 兜底。',
+    '- slug 建议英文小写连字符，中文 slug 对 SEO 和分享不友好。',
+    '- 发布是高危操作：只有用户明确说「发布」时才调 publish，说「保存」一律 save_draft。',
   ];
 
   const siteLines = [];

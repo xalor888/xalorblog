@@ -492,9 +492,10 @@ async function saveDraft() {
   }
 }
 
-async function publish() {
+async function publish({ skipConfirm = false } = {}) {
   // 新建或草稿状态下发布：二次确认（误点发布会直接对访客可见）
-  if (articleStatus.value !== 'published') {
+  // skipConfirm：AI 助手代为发布时跳过弹窗 —— 用户对 AI 说「发布」本身就是确认
+  if (!skipConfirm && articleStatus.value !== 'published') {
     try {
       await ElMessageBox.confirm('发布后文章将对访客可见，确定发布吗？', '发布确认', {
         type: 'warning',
@@ -738,6 +739,19 @@ setAiApplier(async (name, args) => {
       if (savingDraft.value || publishing.value) return null;
       await saveDraft();
       return '已保存草稿';
+    }
+    case 'publish': {
+      // 发布（用户明确要求时）：跳过确认弹窗，复用页面发布逻辑（含校验/导航）
+      if (savingDraft.value || publishing.value) return null;
+      const okPublished = await publish({ skipConfirm: true });
+      return okPublished === false ? null : '已发布';
+    }
+    case 'set_slug': {
+      const slug = String(args.slug || '').trim().slice(0, 200);
+      if (!slug) return null;
+      snap('已改链接地址', 'slug');
+      form.value.slug = slug;
+      return '已改链接地址';
     }
     default:
       return null; // 未识别的动作 → 面板提示「当前页面不支持」
