@@ -198,13 +198,13 @@
       <transition name="pop">
         <!-- 阅读进度绕在按钮外圈：SVG 画在固定尺寸的 wrapper 上，严格同心 -->
         <div v-if="showTop" class="back-top-wrap">
-          <svg class="back-ring" viewBox="0 0 52 52" aria-hidden="true">
-            <circle class="ring-track" cx="26" cy="26" r="24.5" />
+          <svg class="back-ring" viewBox="0 0 46 46" aria-hidden="true">
+            <circle class="ring-track" cx="23" cy="23" r="22" />
             <circle
               class="ring-fill"
-              cx="26"
-              cy="26"
-              r="24.5"
+              cx="23"
+              cy="23"
+              r="22"
               :stroke-dasharray="RING_C"
               :stroke-dashoffset="ringOffset"
             />
@@ -324,8 +324,8 @@ function closeAnnouncement() {
   } catch (e) { /* 隐私模式忽略 */ }
 }
 
-// 进度环：SVG 外圈（wrapper 固定 52×52，r=24.5），天然与按钮同心
-const RING_R = 24.5;
+// 进度环：外沿只比按钮大 1px，环心线正好压在按钮轮廓上（不再套一圈在外头）
+const RING_R = 22;
 const RING_C = 2 * Math.PI * RING_R;
 const ringOffset = computed(() => RING_C * (1 - scrollPercent.value / 100));
 
@@ -1126,8 +1126,9 @@ onUnmounted(() => {
 }
 
 .back-ring {
+  /* 只比按钮大 1px：46 viewBox 里 r=22（直径 44）与按钮同径，加 1px 的边 */
   position: absolute;
-  inset: -3px;
+  inset: -1px;
   /* 让进度从 12 点方向起步 */
   transform: rotate(-90deg);
   pointer-events: none;
@@ -1135,8 +1136,8 @@ onUnmounted(() => {
 
 .ring-track {
   fill: none;
-  stroke: color-mix(in srgb, var(--border) 50%, transparent);
-  stroke-width: 1.6;
+  stroke: color-mix(in srgb, var(--border) 45%, transparent);
+  stroke-width: 1.5;
 }
 
 .ring-fill {
