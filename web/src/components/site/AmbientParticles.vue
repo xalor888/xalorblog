@@ -32,13 +32,27 @@ function seed() {
   }));
 }
 
+// 粒子颜色不随主题瞬时翻转：每帧向目标色插值（约 400ms 收敛），
+// 否则整层画布在主题切换的单帧内黑白反转，加剧"马赛克/闪动"观感
+const FILL_LIGHT = [26, 24, 20]; // #1a1814
+const FILL_DARK = [255, 255, 255];
+let fillCur = FILL_LIGHT.slice();
+
+function nextFillColor() {
+  const target = document.documentElement.dataset.theme === 'dark' ? FILL_DARK : FILL_LIGHT;
+  for (let i = 0; i < 3; i++) {
+    fillCur[i] += (target[i] - fillCur[i]) * 0.12;
+    if (Math.abs(target[i] - fillCur[i]) < 0.6) fillCur[i] = target[i];
+  }
+  return `rgb(${Math.round(fillCur[0])}, ${Math.round(fillCur[1])}, ${Math.round(fillCur[2])})`;
+}
+
 function tick(c) {
   const ctx = c.getContext('2d');
   const w = window.innerWidth;
   const h = window.innerHeight;
   ctx.clearRect(0, 0, w, h);
-  const dark = document.documentElement.dataset.theme === 'dark';
-  ctx.fillStyle = dark ? '#ffffff' : '#1a1814';
+  ctx.fillStyle = nextFillColor();
   for (const p of particles) {
     p.y += p.s;
     p.x += p.drift;
@@ -68,6 +82,7 @@ onMounted(() => {
   reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const c = canvasRef.value;
   if (!c || reduce) return;
+  fillCur = (document.documentElement.dataset.theme === 'dark' ? FILL_DARK : FILL_LIGHT).slice();
   resize(c);
   seed();
   tick(c);

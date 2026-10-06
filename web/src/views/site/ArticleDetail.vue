@@ -236,11 +236,11 @@
            并进右下角浮层栈（#float-dock），不再自己 fixed 定位，避免与全局工具条堆叠 -->
       <Teleport to="#float-dock">
         <div v-if="article" class="float-actions">
-          <button v-if="article?.allow_comment !== false" class="fab" title="跳到评论区" aria-label="跳到评论区" @click="scrollToComments">
+          <button v-if="article?.allow_comment !== false" class="dock-btn fab" title="跳到评论区" aria-label="跳到评论区" @click="scrollToComments">
             <XIcon name="MessageSquare" :size="18" />
             <span v-if="article?.comment_count" class="fab-num">{{ article.comment_count }}</span>
           </button>
-          <button v-if="toc.length" class="fab" title="打开目录" aria-label="打开目录" @click="mobileTocOpen = true">
+          <button v-if="toc.length" class="dock-btn fab" title="打开目录" aria-label="打开目录" @click="mobileTocOpen = true">
             <XIcon name="ListTree" :size="18" />
           </button>
         </div>
@@ -1278,23 +1278,7 @@ onUnmounted(() => {
   gap: 10px;
 }
 
-/* 与全局工具按钮同一套玻璃语言（尺寸/圆角/材质一致，避免各管各的） */
-.fab {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
-  border: 1px solid var(--sg-edge);
-  color: var(--text-2);
-  box-shadow: var(--sg-shadow), var(--sg-inner);
-  backdrop-filter: var(--sg-blur-soft);
-  -webkit-backdrop-filter: var(--sg-blur-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all var(--dur) var(--ease);
-}
-
+/* 基础几何与玻璃材质来自全局 .dock-btn（main.css），这里只保留差异态 */
 .fab:hover {
   color: var(--accent);
   border-color: var(--accent);
@@ -1322,10 +1306,6 @@ onUnmounted(() => {
   font-weight: 700;
   line-height: 16px;
   text-align: center;
-}
-
-.fab {
-  position: relative;
 }
 
 .toc-mask {

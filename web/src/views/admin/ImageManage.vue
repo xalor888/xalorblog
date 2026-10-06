@@ -18,14 +18,14 @@
         </el-button>
         <input ref="uploadInput" type="file" accept="image/*" class="hidden-file" @change="uploadOne" />
         <el-button type="danger" plain :loading="cleaning" @click="cleanupOrphans">
-          <XIcon name="RefreshCw" :size="14" /> 清理孤儿文件
+          <XIcon name="RefreshCw" :size="14" /> 清理未引用文件
         </el-button>
       </div>
     </div>
 
     <div v-if="loading" v-loading="true" class="loading-block"></div>
 
-    <el-empty v-else-if="!files.length" description="还没有上传过图片" />
+    <el-empty v-else-if="!files.length" description="暂未上传图片" />
 
     <div v-else class="image-grid">
       <div v-for="f in visibleFiles" :key="f.name" class="image-cell">
@@ -174,7 +174,7 @@ function remove(name) {
 }
 
 function cleanupOrphans() {
-  ElMessageBox.confirm('将删除未被任何文章/设置引用的图片（保留 24 小时内新上传的），继续？', '清理孤儿文件', {
+  ElMessageBox.confirm('将删除未被任何文章/设置引用的图片（保留 24 小时内新上传的），继续？', '清理未引用文件', {
     type: 'warning',
     confirmButtonText: '清理',
     cancelButtonText: '取消',

@@ -44,6 +44,11 @@ const DEFAULT_SETTINGS = {
   ai_ctx_turns: '',
   // 对话超过保留条数时，把最早的对话先让模型压成一段纪要再续聊（默认开，可多烧一小次调用）
   ai_ctx_compress: true,
+  // 网页搜索（Tavily）：AI 助手的 search_web 工具数据源。
+  // websearch_api_key 是敏感字段：公开接口不下发、设置导出剔除，后台只显示「是否已配置」。
+  websearch_enabled: false,
+  websearch_provider: 'tavily',
+  websearch_api_key: '',
   // 全站是否允许复制正文/选中文字。默认允许（单篇可用 articles.allow_copy 覆盖）
   allow_copy: true,
   // RSS 默认仅摘要。全文会绕过文章详情的传输加密，须站长显式打开。
@@ -64,6 +69,7 @@ const BOOL_KEYS = new Set([
   'ai_moderation',
   'ai_llm_moderation',
   'ai_ctx_compress',
+  'websearch_enabled',
 ]);
 
 // 设置缓存：读多写少，保存时失效
@@ -145,6 +151,16 @@ async function saveSettings(entries) {
       if (!Number.isFinite(n) || n < 256 || n > 8192) continue;
     }
     if (key === 'ai_system_prompt' && raw.length > 3000) continue;
+    // 网页搜索密钥：与 ai_api_key 同一套「空值=不修改、__CLEAR__=删除」的约定
+    if (key === 'websearch_api_key') {
+      if (!raw || /^\*+$/.test(raw)) continue;
+      if (raw === '__CLEAR__') {
+        clears.push(key);
+        continue;
+      }
+      if (raw.length < 8 || raw.length > 300) continue;
+    }
+    if (key === 'websearch_provider' && !['tavily'].includes(String(raw).trim())) continue;
     // AI 上下文参数：正文 1000-100000 字、历史 6-200 轮。
     // 上限对齐现代长上下文模型（百万 token 级）：10 万中文字 ≈ 5-10 万 token，占比个位数。
     if (key === 'ai_ctx_chars' && raw) {

@@ -1,10 +1,15 @@
 <template>
   <div class="admin-layout">
+    <!-- 窄屏抽屉遮罩 -->
+    <transition name="fade">
+      <div v-if="mobileOpen" class="side-scrim" @click="mobileOpen = false"></div>
+    </transition>
+
     <!-- 侧边栏 -->
-    <aside class="admin-side" :class="{ collapsed }">
+    <aside class="admin-side" :class="{ collapsed: collapsed && !isMobile, 'mobile-open': mobileOpen }">
       <router-link :to="adminHref('dashboard')" class="side-brand">
         <img src="/logo-256.webp" alt="logo" class="brand-mark-img" />
-        <span v-show="!collapsed" class="brand-text">管理后台</span>
+        <span v-show="!collapsed || isMobile" class="brand-text">管理后台</span>
       </router-link>
 
       <nav class="side-nav">
@@ -14,22 +19,22 @@
           :to="adminHref(item.path)"
           class="side-link"
           active-class="active"
-          :title="collapsed ? item.title : undefined"
+          :title="collapsed && !isMobile ? item.title : undefined"
         >
           <XIcon :name="item.icon" :size="17" />
-          <span v-show="!collapsed">{{ item.title }}</span>
-          <span v-if="badgeFor(item)" class="side-badge" :class="{ hide: collapsed }">{{ badgeFor(item) }}</span>
+          <span v-show="!collapsed || isMobile">{{ item.title }}</span>
+          <span v-if="badgeFor(item)" class="side-badge" :class="{ hide: collapsed && !isMobile }">{{ badgeFor(item) }}</span>
         </router-link>
       </nav>
 
       <div class="side-bottom">
         <router-link to="/" class="side-link">
           <XIcon name="House" :size="17" />
-          <span v-show="!collapsed">返回前台</span>
+          <span v-show="!collapsed || isMobile">返回前台</span>
         </router-link>
         <a class="side-link" @click="logout">
           <XIcon name="LogOut" :size="17" />
-          <span v-show="!collapsed">退出登录</span>
+          <span v-show="!collapsed || isMobile">退出登录</span>
         </a>
       </div>
     </aside>
@@ -37,8 +42,8 @@
     <!-- 主区域 -->
     <div class="admin-main">
       <header class="admin-header">
-        <button class="collapse-btn" :title="collapsed ? '展开侧栏' : '收起侧栏'" :aria-label="collapsed ? '展开侧栏' : '收起侧栏'" @click="collapsed = !collapsed">
-          <XIcon :name="collapsed ? 'PanelLeftOpen' : 'PanelLeftClose'" :size="18" />
+        <button class="collapse-btn" :title="sideToggleTitle" :aria-label="sideToggleTitle" @click="toggleSide">
+          <XIcon :name="isMobile ? 'Menu' : collapsed ? 'PanelLeftOpen' : 'PanelLeftClose'" :size="18" />
         </button>
         <span class="header-title">{{ currentTitle }}</span>
         <div class="header-right">
@@ -53,7 +58,7 @@
           </button>
           <span class="admin-user">
             <span class="user-avatar">{{ (auth.user?.nickname || auth.user?.username || 'A').charAt(0).toUpperCase() }}</span>
-            {{ auth.user?.nickname || auth.user?.username || 'admin' }}
+            <span class="user-name">{{ auth.user?.nickname || auth.user?.username || 'admin' }}</span>
           </span>
           <button
             class="theme-btn"
@@ -106,6 +111,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useThemeStore, THEME_COLORS } from '@/stores/theme';
 import { useAdminStore } from '@/stores/admin';
 import { adminHref } from '@/utils/adminPath';
+import { useIsMobile } from '@/composables/useMedia';
 import ShortcutHelp from '@/components/ui/ShortcutHelp.vue';
 import AiPanel from './AiPanel.vue';
 
@@ -114,6 +120,10 @@ const router = useRouter();
 const auth = useAuthStore();
 const theme = useThemeStore();
 const admin = useAdminStore();
+
+// 窄屏（≤820px）：侧栏改为 off-canvas 抽屉，汉堡按钮开启
+const isMobile = useIsMobile();
+const mobileOpen = ref(false);
 
 // AI 写作助手面板（右侧抽屉）
 const aiOpen = ref(false);
@@ -145,6 +155,20 @@ const menus = [
 ];
 
 const currentTitle = computed(() => route.meta.title || '管理后台');
+
+// 侧栏开合：窄屏切换抽屉，桌面切换折叠
+const sideToggleTitle = computed(() =>
+  isMobile.value ? (mobileOpen.value ? '收起菜单' : '展开菜单') : collapsed.value ? '展开侧栏' : '收起侧栏'
+);
+function toggleSide() {
+  if (isMobile.value) mobileOpen.value = !mobileOpen.value;
+  else collapsed.value = !collapsed.value;
+}
+
+// 路由跳转后收起抽屉（窄屏点完菜单立即回到内容）
+watch(() => route.path, () => {
+  mobileOpen.value = false;
+});
 
 // 浏览器标签页标题随后台路由联动
 watchEffect(() => {
@@ -473,19 +497,58 @@ async function logout() {
   }
 }
 
+/* 窄屏抽屉遮罩 */
+.side-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-nav) - 1);
+  background: var(--lg-scrim, rgba(0, 0, 0, 0.45));
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s var(--ease);
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 @media (max-width: 820px) {
+  /* 侧栏改为 off-canvas 抽屉：完整宽度 + 全部文字与待审徽标可见，
+     旧的「图标条 + 文字隐藏」让待审数在手机上彻底看不见 */
   .admin-side {
-    width: 64px;
+    width: 232px;
+    transform: translateX(-105%);
+    transition: transform 0.28s var(--ease);
+  }
+  .admin-side.collapsed {
+    width: 232px; /* 抽屉态不受桌面折叠记忆影响 */
+  }
+  .admin-side.mobile-open {
+    transform: translateX(0);
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.3);
   }
   .admin-side .brand-text,
   .admin-side .side-link span {
-    display: none !important;
+    display: inline-flex !important; /* 覆盖 v-show 的行内 display:none */
   }
   .admin-main {
-    margin-left: 64px;
+    margin-left: 0 !important; /* 抽屉不占位，内容全宽 */
+  }
+  .admin-header {
+    padding: 0 14px;
+    gap: 10px;
+  }
+  .admin-user {
+    padding: 5px;
+    border-radius: 50%;
+  }
+  .admin-user .user-name {
+    display: none; /* 只留头像，昵称挤占顶栏空间 */
   }
   .admin-content {
-    padding: 18px;
+    padding: 14px;
   }
 }
 </style>

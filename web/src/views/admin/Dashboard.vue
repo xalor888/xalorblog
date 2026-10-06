@@ -262,7 +262,7 @@ const counts = computed(() => dashboard.value.counts || {});
 function formatNum(n) {
   const v = Number(n) || 0;
   if (v >= 1e8) return `${(v / 1e8).toFixed(1).replace(/\.0$/, '')}亿`;
-  if (v >= 1e4) return `${(v / 1e4).toFixed(1).replace(/\.0$/, '')}w`;
+  if (v >= 1e4) return `${(v / 1e4).toFixed(1).replace(/\.0$/, '')}万`;
   return String(v);
 }
 

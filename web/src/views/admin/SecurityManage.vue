@@ -12,7 +12,7 @@
           <XIcon name="ShieldCheck" :size="20" />
         </div>
         <div>
-          <p class="sc-label">反爬闸门</p>
+          <p class="sc-label">反爬防护</p>
           <p class="sc-value" :class="{ ok: passValid }">{{ passValid ? '通行证有效' : '票据异常' }}</p>
         </div>
       </div>
@@ -92,11 +92,11 @@
       </div>
       <el-table v-else :data="stats.banned" size="small" class="sec-table">
         <el-table-column prop="ip" label="IP 地址" width="140" />
-        <el-table-column prop="reason" label="封禁原因" min-width="200" show-overflow-tooltip />
-        <el-table-column label="累计违规" width="90">
+        <el-table-column prop="reason" label="封禁原因" v-if="!isMobile" min-width="200" show-overflow-tooltip />
+        <el-table-column label="累计违规" v-if="!isMobile" width="90">
           <template #default="{ row }">{{ row.strikes }} 次</template>
         </el-table-column>
-        <el-table-column label="封禁轮次" width="90">
+        <el-table-column label="封禁轮次" v-if="!isMobile" width="90">
           <template #default="{ row }">{{ row.banCount }} 轮</template>
         </el-table-column>
         <el-table-column label="剩余时间" width="120">
@@ -125,9 +125,9 @@
       <el-table v-else :data="auditLogs" size="small" class="sec-table">
         <el-table-column prop="username" label="操作者" width="100" />
         <el-table-column prop="action" label="操作" min-width="200" />
-        <el-table-column prop="detail" label="摘要" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="ip" label="IP" width="130" />
-        <el-table-column label="时间" width="160">
+        <el-table-column prop="detail" label="摘要" v-if="!isMobile" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="ip" label="IP" v-if="!isMobile" width="130" />
+        <el-table-column label="时间" v-if="!isMobile" width="160">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
       </el-table>
@@ -148,7 +148,7 @@
         <p>暂无会话记录</p>
       </div>
       <el-table v-else :data="sessions" size="small" class="sec-table">
-        <el-table-column label="设备指纹" min-width="180">
+        <el-table-column label="设备指纹" v-if="!isMobile" min-width="180">
           <template #default="{ row }">
             <span class="fp mono">{{ row.fp || '—' }}</span>
           </template>
@@ -249,7 +249,7 @@
       <!-- 规则测试器 -->
       <div class="cfg-tester">
         <p class="cfg-title">规则测试器</p>
-        <p class="cfg-hint">试跑不拦截、不记分</p>
+        <p class="cfg-hint">测试模式：不拦截、不记分</p>
         <div class="test-row">
           <el-input v-model="testText" type="textarea" :rows="2" maxlength="4000"
             placeholder="例如：union select 1,2,3 或 select the color from the palette" class="test-input" />
@@ -259,7 +259,7 @@
           <el-tag v-if="!testResult.hits.length" type="success" effect="light">未命中任何规则（正常文本）</el-tag>
           <template v-else>
             <el-tag v-for="h in testResult.hits" :key="h.id" type="danger" effect="light" class="test-hit">
-              {{ h.id }}（{{ GROUP_LABELS[h.group] || h.group }} · {{ h.note }} · 命中面 {{ h.scope === 'query' ? '查询串' : '请求体' }}）
+              {{ h.id }}（{{ GROUP_LABELS[h.group] || h.group }} · {{ h.note }} · 命中位置 {{ h.scope === 'query' ? '查询串' : '请求体' }}）
             </el-tag>
           </template>
         </div>
@@ -275,6 +275,9 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { securityApi, authApi } from '@/api';
 import { formatDateTime } from '@/utils/format';
+import { useIsMobile } from '@/composables/useMedia';
+
+const isMobile = useIsMobile();
 
 const stats = ref({ banned: [], events: [], event_total: 0, type_counts: {} });
 const events = computed(() => stats.value.events || []);
@@ -285,6 +288,7 @@ const loadError = ref(false);
 
 const TYPE_LABELS = {
   waf: 'WAF 拦截',
+  'waf-mon': 'WAF 监控',
   rate: '高频请求',
   auth: '认证失败',
   ban: '自动封禁',
@@ -739,6 +743,17 @@ onUnmounted(() => {
   padding: 9px 4px;
   border-bottom: 1px dashed var(--border);
   font-size: 0.86rem;
+}
+
+@media (max-width: 820px) {
+  .event-row {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .event-detail {
+    max-width: 100%;
+  }
 }
 
 .event-row:last-child {

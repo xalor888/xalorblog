@@ -10,8 +10,8 @@
 
     <!-- 未配置模型：一键直达设置页 -->
     <div v-if="aiReady === false" class="ai-notice">
-      <p class="ai-notice-title">还没配置模型</p>
-      <button class="ai-go" @click="goSettings">去配置</button>
+      <p class="ai-notice-title">尚未配置模型</p>
+      <button class="ai-go" @click="goSettings">前往配置</button>
     </div>
 
     <template v-else>
@@ -33,7 +33,7 @@
 
               <!-- 图片卡片 -->
               <div v-if="m.images" class="ai-imgs">
-                <div v-if="!m.images.items.length" class="ai-imgs-empty">没搜到合适的图，换个词试试</div>
+                <div v-if="!m.images.items.length" class="ai-imgs-empty">未找到匹配图片，请更换关键词后重试</div>
                 <div v-for="(img, j) in m.images.items" :key="j" class="ai-img-card" :class="{ saving: img.saving }">
                   <img :src="img.thumb" :alt="img.title" loading="lazy" referrerpolicy="no-referrer" />
                   <div class="ai-img-meta">
@@ -53,7 +53,7 @@
                   v-for="(a, j) in m.articleList.slice(0, 8)"
                   :key="j"
                   class="ai-art"
-                  @click="draft = `读一下《${a.title}》（slug: ${a.slug}）`"
+                  @click="draft = `请阅读《${a.title}》（slug: ${a.slug}）`"
                 >
                   <span class="ai-art-title">{{ a.title }}</span>
                   <span class="ai-art-slug">{{ a.slug }}</span>
@@ -63,6 +63,22 @@
               <!-- 已读文章提示（read_article 结果） -->
               <div v-if="m.articleRead" class="ai-read">
                 已读《{{ m.articleRead.title }}》
+              </div>
+
+              <!-- 网页搜索结果（search_web） -->
+              <div v-if="m.webResults" class="ai-arts">
+                <div v-if="!m.webResults.items.length" class="ai-imgs-empty">未搜索到结果，建议更换关键词后重试</div>
+                <a
+                  v-for="(r, j) in m.webResults.items.slice(0, 6)"
+                  :key="j"
+                  class="ai-art web"
+                  :href="r.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span class="ai-art-title">{{ r.title }}</span>
+                  <span class="ai-art-slug">{{ r.snippet || r.url }}</span>
+                </a>
               </div>
 
               <!-- 已执行的动作 + 撤销 -->
@@ -97,7 +113,7 @@
           class="ai-chip"
           :class="{ off: q.disabled }"
           :disabled="q.disabled || pending"
-          :title="q.disabled ? '先在正文里选中一段文字' : ''"
+          :title="q.disabled ? '请先在正文中选中一段文字' : ''"
           @click="send(q.prompt)"
         >
           {{ q.label }}<span v-if="q.key === 'polish' && hasSelection" class="ai-dot"></span>
@@ -109,7 +125,7 @@
           v-model="draft"
           class="ai-textarea"
           rows="2"
-          placeholder="让它写、改、润色、搜图…（Enter 发送）"
+          placeholder="输入写作指令，支持润色、续写、搜图（Enter 发送）"
           :disabled="pending"
           @keydown.enter.exact.prevent="send()"
         />
@@ -164,19 +180,19 @@ const quickActions = computed(() => {
   return [
     {
       key: 'polish',
-      label: '润色选中',
+      label: '润色所选',
       disabled: !hasSelection.value,
       prompt: '润色我选中的这段文本：保持原意、提升表达、去掉废话，然后调用 replace_selection 替换它。',
     },
     { key: 'continue', label: '续写', prompt: '基于文章现有内容和语气自然续写 2-3 段，调用 append_content 追加。' },
     {
       key: 'titles',
-      label: '起标题',
+      label: '生成标题',
       prompt: '给这篇文章起 5 个标题候选，各配一句理由，然后用 set_title 应用你最推荐的那个。',
     },
     { key: 'summary', label: '摘要', prompt: '给这篇文章写一段 80-120 字的摘要，调用 set_summary 应用。' },
     { key: 'tags', label: '标签', prompt: '优先从已有标签里选，给这篇文章设 2-5 个标签，调用 set_tags 应用。' },
-    { key: 'cover', label: '搜封面', prompt: '根据文章主题选合适的英文关键词，调用 search_images 帮我搜封面图。' },
+    { key: 'cover', label: '搜索封面', prompt: '根据文章主题选合适的英文关键词，调用 search_images 帮我搜封面图。' },
   ];
 });
 
@@ -273,7 +289,19 @@ async function handleTool(ev, reply) {
     reply.images = { query: q, items: items.map((x) => ({ ...x, saving: false })) };
     result = items.length
       ? { images: items.slice(0, 6).map((i) => ({ url: i.url, title: i.title, license: i.license })) }
-      : { images: [], note: '没有搜到结果，建议更换更简单的英文关键词' };
+      : { images: [], note: '未搜索到结果，建议更换更简单的英文关键词' };
+  } else if (name === 'search_web') {
+    const q = String(args.query || '').trim();
+    const json = q ? await apiJson(`${adminUrl('/ai/web-search')}?q=${encodeURIComponent(q)}`) : {};
+    if (json.code !== 0) {
+      result = { ok: false, note: json.message || '搜索失败' };
+    } else {
+      reply.webResults = { query: q, items: Array.isArray(json.data?.results) ? json.data.results : [] };
+      result = {
+        ok: true,
+        results: reply.webResults.items.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
+      };
+    }
   } else if (name === 'list_articles') {
     const kw = String(args.keyword || '').trim();
     const json = await apiJson(`${adminUrl('/ai/articles')}?keyword=${encodeURIComponent(kw)}&limit=10`);
@@ -357,7 +385,7 @@ async function streamOnce(reply) {
         }
       }
     }
-    if (!reply.content && !reply.applied.length && !reply.images && !reply.articleList && !reply.articleRead) {
+    if (!reply.content && !reply.applied.length && !reply.images && !reply.articleList && !reply.articleRead && !reply.webResults) {
       reply.content = '（没有返回内容）';
     }
     return true;
@@ -377,6 +405,7 @@ async function runTurn() {
       images: null,
       articleList: null,
       articleRead: null,
+      webResults: null,
       tool_calls: [],
       tool_results: [],
       streaming: true,
@@ -432,7 +461,7 @@ async function useAsCover(msg, img) {
       msg.applied.push({ label: applied.label, snapshotId: applied.snapshotId, undone: false });
       ElMessage.success('已设为封面');
     } else {
-      ElMessage.warning('当前页面不能设封面，去文章编辑页操作');
+      ElMessage.warning('当前页面不支持设置封面，请前往文章编辑页操作');
     }
   } finally {
     img.saving = false;
@@ -446,7 +475,7 @@ async function insertImage(msg, img) {
     msg.applied.push({ label: applied.label, snapshotId: applied.snapshotId, undone: false });
     ElMessage.success('已插入正文');
   } else {
-    ElMessage.warning('当前页面不能插图，去文章编辑页操作');
+    ElMessage.warning('当前页面不支持插入图片，请前往文章编辑页操作');
   }
 }
 
@@ -783,6 +812,23 @@ defineExpose({
 
 .ai-art:hover {
   border-color: var(--accent);
+}
+
+/* 网页搜索结果变体：外链形态，标题与摘要纵向堆叠，摘要单行截断 */
+.ai-art.web {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  color: inherit;
+}
+
+.ai-art.web .ai-art-slug {
+  max-width: none;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .ai-art-title {

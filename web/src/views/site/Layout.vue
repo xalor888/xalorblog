@@ -186,30 +186,30 @@
          避免与文章页的互动按钮、问 AI 各自 fixed 定位互相压住 -->
     <Teleport to="#float-dock">
       <div class="side-tools-group">
-      <button class="tool-btn theme-tool" :title="theme.isDark ? '切换亮色' : '切换暗色'" @click="theme.toggleTheme">
+      <button class="dock-btn tool-btn theme-tool" :title="theme.isDark ? '切换亮色' : '切换暗色'" @click="theme.toggleTheme">
         <XIcon :name="theme.isDark ? 'Sun' : 'Moon'" :size="18" />
       </button>
-      <button class="tool-btn" title="搜索" @click="openSearch">
+      <button class="dock-btn tool-btn" title="搜索" @click="openSearch">
         <XIcon name="Search" :size="17" />
       </button>
-      <a class="tool-btn" href="/api/rss.xml" target="_blank" rel="noopener noreferrer" title="RSS">
+      <a class="dock-btn tool-btn" href="/api/rss.xml" target="_blank" rel="noopener noreferrer" title="RSS">
         <XIcon name="Rss" :size="17" />
       </a>
       <transition name="pop">
         <!-- 阅读进度绕在按钮外圈：SVG 画在固定尺寸的 wrapper 上，严格同心 -->
         <div v-if="showTop" class="back-top-wrap">
-          <svg class="back-ring" viewBox="0 0 46 46" aria-hidden="true">
-            <circle class="ring-track" cx="23" cy="23" r="22" />
+          <svg class="back-ring" viewBox="0 0 40 40" aria-hidden="true">
+            <circle class="ring-track" cx="20" cy="20" r="18.5" />
             <circle
               class="ring-fill"
-              cx="23"
-              cy="23"
-              r="22"
+              cx="20"
+              cy="20"
+              r="18.5"
               :stroke-dasharray="RING_C"
               :stroke-dashoffset="ringOffset"
             />
           </svg>
-          <button class="tool-btn back-top" @click="scrollTop" title="回到顶部" aria-label="回到顶部">
+          <button class="dock-btn tool-btn back-top" @click="scrollTop" title="回到顶部" aria-label="回到顶部">
             <XIcon name="ArrowUp" :size="18" />
           </button>
         </div>
@@ -324,8 +324,8 @@ function closeAnnouncement() {
   } catch (e) { /* 隐私模式忽略 */ }
 }
 
-// 进度环：外沿只比按钮大 1px，环心线正好压在按钮轮廓上（不再套一圈在外头）
-const RING_R = 22;
+// 进度环：环心线正好压在按钮轮廓上（40 viewBox 里 r=18.5，直径 37 = 按钮 40 - 边框）
+const RING_R = 18.5;
 const RING_C = 2 * Math.PI * RING_R;
 const ringOffset = computed(() => RING_C * (1 - scrollPercent.value / 100));
 
@@ -1078,24 +1078,7 @@ onUnmounted(() => {
   gap: 10px;
 }
 
-.tool-btn {
-  width: 44px;
-  height: 44px;
-  /* 与文章页按钮、问 AI 同一个圆形玻璃语言 */
-  border-radius: 50%;
-  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
-  border: 1px solid var(--sg-edge);
-  color: var(--text-2);
-  box-shadow: var(--sg-shadow), var(--sg-inner);
-  backdrop-filter: var(--sg-blur-soft);
-  -webkit-backdrop-filter: var(--sg-blur-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease), transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
-}
-
+/* 基础几何与玻璃材质来自全局 .dock-btn（main.css），这里只保留工具钮的差异态 */
 .tool-btn:hover {
   color: #fff;
   background: var(--accent);
@@ -1113,22 +1096,22 @@ onUnmounted(() => {
   transform: translateY(-3px);
 }
 
-/* 阅读进度环：绕在按钮外圈的 SVG 环。
-   容器与其它按钮同为 44×44（不然这一格比别家宽 8px，整列看着不齐）；
-   环靠 inset 负值向外扩，绝对定位不占布局，所以不影响对齐也不算大 */
+/* 阅读进度环：绕在按钮轮廓上的 SVG 环。
+   容器与 .dock-btn 同为 40×40（移动端 36 随共享类一起缩）；
+   环与按钮同尺寸、inset 归零，不再比别家宽出一截 */
 .back-top-wrap {
   position: relative;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .back-ring {
-  /* 只比按钮大 1px：46 viewBox 里 r=22（直径 44）与按钮同径，加 1px 的边 */
+  /* 与按钮完全同心同径：viewBox 40、r=18.5（环心线压在按钮边框上） */
   position: absolute;
-  inset: -1px;
+  inset: 0;
   /* 让进度从 12 点方向起步 */
   transform: rotate(-90deg);
   pointer-events: none;
@@ -1147,11 +1130,6 @@ onUnmounted(() => {
   stroke-linecap: round;
   /* 不加过渡：滚动时每帧刷新，过渡被反复打断会显得发飘/卡顿 */
   transition: none;
-}
-
-.back-top-wrap .tool-btn {
-  width: 44px;
-  height: 44px;
 }
 
 .pop-enter-active,
@@ -1311,10 +1289,6 @@ onUnmounted(() => {
 @media (max-width: 560px) {
   .brand-text {
     display: none;
-  }
-  .tool-btn {
-    width: 40px;
-    height: 40px;
   }
   .footer-grid {
     grid-template-columns: 1fr;

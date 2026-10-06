@@ -209,19 +209,23 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForRe
     // 是否进入待审：站点开启「评论审核」后新评论默认 pending
     const { getAllSettings } = require('../utils/settings');
     const settings = await getAllSettings();
-    let status = settings.comment_moderation ? 'pending' : 'approved';
 
-    // AI 审核：本地规则 + 可选 LLM 二判
-    // rejected → 直接拒绝并计 spam 信誉；pending → 强制进入待审；approved → 交审核开关
+    // AI 审核：本地规则 + LLM 二判
+    // 拒绝 → 静默隔离（入库 status='rejected'，前台只查 approved，发帖人收到
+    // 与普通提交一致的响应——不给探测空间，后台可回看恢复）；pending → 强制待审
     const { moderateComment } = require('../utils/aiModeration');
     const verdict = await moderateComment(cleanContent, cleanNickname, cleanWebsite);
     if (verdict.action === 'rejected') {
       // 垃圾评论计 spam 信誉（累计触发 IP 封禁）
       report(req.ip, 'spam', `AI-REJECT ${verdict.reason}`);
-      return fail(res, '评论内容包含广告或违规信息，请修改后重试', 400);
     }
-    if (verdict.action === 'pending') {
+    let status;
+    if (verdict.action === 'rejected') {
+      status = 'rejected';
+    } else if (verdict.action === 'pending') {
       status = 'pending';
+    } else {
+      status = settings.comment_moderation ? 'pending' : 'approved';
     }
     // AI 标记原因入库（后台可见，辅助人工复核）
     const aiReason = verdict.action === 'approved' ? '' : String(verdict.reason || '').slice(0, 120);
@@ -238,13 +242,22 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForRe
       ai_reason: aiReason,
     });
 
+    // 自动审核决定写入审计日志
+    const { logSystemAction } = require('../middleware/audit');
+    logSystemAction(
+      'AI-MODERATION 评论',
+      `verdict=${verdict.action} score=${verdict.score} article=${numericArticleId} reason=${verdict.reason}`,
+      req.ip || '',
+      cleanNickname
+    );
+
     const row = await db('comments')
       .where('id', id[0])
       .select('id', 'parent_id', 'nickname', 'website', 'content', 'likes', 'created_at')
       .first();
     row.is_admin = admins.has(String(row.nickname || '').trim().toLowerCase());
-    // 审核开关状态随响应下发：前端据此提示（避免提示"成功"但内容未显示）
-    row.moderated = status === 'pending';
+    // 审核状态随响应下发：前端据此提示（避免提示"成功"但内容未显示）
+    row.moderated = status !== 'approved';
 
     // 异步通知站长（不阻塞响应；未配置 SMTP 时静默跳过；正文截断防超长邮件）
     const notifyText = cleanContent.length > 300 ? `${cleanContent.slice(0, 300)}…` : cleanContent;

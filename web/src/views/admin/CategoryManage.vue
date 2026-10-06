@@ -5,7 +5,7 @@
       <h3 class="card-title">新建分类</h3>
       <div class="create-row">
         <el-input v-model="newCat.name" placeholder="分类名称 *" maxlength="50" @keyup.enter="create" />
-        <el-input v-model="newCat.description" placeholder="一句话描述" maxlength="255" @keyup.enter="create" />
+        <el-input v-model="newCat.description" placeholder="分类描述" maxlength="255" @keyup.enter="create" />
         <el-color-picker v-model="newCat.color" :predefine="PREDEFINED_COLORS" title="主题色" />
         <el-button type="primary" :loading="creating" @click="create">创建</el-button>
       </div>
@@ -34,8 +34,8 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="描述" min-width="240" show-overflow-tooltip />
-        <el-table-column label="文章数" width="100" align="center">
+        <el-table-column prop="description" label="描述" v-if="!isMobile" min-width="240" show-overflow-tooltip />
+        <el-table-column label="文章数" v-if="!isMobile" width="100" align="center">
           <template #default="{ row }">
             <el-tag size="small" effect="plain">{{ row.article_count }}</el-tag>
           </template>
@@ -43,10 +43,10 @@
         <el-table-column label="排序" width="120" align="center">
           <template #default="{ row }">
             <el-input-number v-model="row.sort" :min="0" :max="100" size="small" controls-position="right"
-              title="越小越靠前（前台展示顺序）" @change="(v) => updateSort(row, v)" />
+              title="数值越小排序越靠前" @change="(v) => updateSort(row, v)" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" :width="isMobile ? 110 : 180" :fixed="!isMobile ? 'right' : false">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button size="small" link type="danger" @click="remove(row)">删除</el-button>
@@ -84,6 +84,9 @@ import { ref, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { categoryApi } from '@/api';
+import { useIsMobile } from '@/composables/useMedia';
+
+const isMobile = useIsMobile();
 
 const PREDEFINED_COLORS = ['#e4573d', '#c9900f', '#217a5e', '#2f6fb3', '#c24b5e', '#6d5bb8', '#0f8f8f', '#8b5fb0'];
 
@@ -135,7 +138,7 @@ function openEdit(row) {
   dialogVisible.value = true;
 }
 
-/** 行内排序即时保存（sort 0-100，越小越靠前） */
+/** 行内排序即时保存（sort 0-100，数值越小排序越靠前） */
 async function updateSort(row, sort) {
   if (sort == null) return;
   try {

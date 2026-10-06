@@ -14,10 +14,10 @@ const { authRequired } = require('../middleware/auth');
 const { localDateTimeStr } = require('../utils/datetime');
 const { plainText } = require('../utils/markdownText');
 const { cleanText, cleanLine, cleanMarkdown, safeUrl, safeEmail, escapeLike, safeCover } = require('../utils/sanitize');
-const { securityStats, unban } = require('../middleware/ipGuard');
+const { securityStats, ban, unban } = require('../middleware/ipGuard');
 const { verifyTicket } = require('../middleware/gate');
 const { getConfig, saveConfig, isValidIpOrCidr } = require('../utils/securitySettings');
-const { RULE_INDEX, scanText } = require('../middleware/waf');
+const { RULE_INDEX, scanText, scanAll } = require('../middleware/waf');
 const { saveSettings, getAllSettings, ALLOWED_KEYS } = require('../utils/settings');
 
 const router = express.Router();
@@ -1141,16 +1141,31 @@ router.put('/messages/:id/reply', async (req, res) => {
   }
 });
 
-/** 全部通过（留言审核提速）：当前待审留言一键通过（上限 1000） */
+/** 全部通过（留言审核提速）：当前待审留言一键通过（上限 1000）。
+ *  带 AI 标记的留言不随「全部通过」放行——被引擎怀疑过的内容应逐条人工判断 */
 router.post('/messages/approve-all', async (req, res) => {
   try {
     const pendingIds = await db('messages')
       .where('status', 'pending')
       .limit(1000)
       .pluck('id');
-    if (!pendingIds.length) return ok(res, { affected: 0 }, '暂无待审留言');
-    const affected = await db('messages').whereIn('id', pendingIds).update({ status: 'approved' });
-    return ok(res, { affected }, `已通过 ${affected} 条待审留言`);
+    if (!pendingIds.length) return ok(res, { affected: 0, skipped: 0 }, '暂无待审留言');
+    const flagged = await db('messages')
+      .whereIn('id', pendingIds)
+      .whereNotNull('ai_reason')
+      .where('ai_reason', '!=', '')
+      .pluck('id');
+    const allowIds = pendingIds.filter((id) => !flagged.includes(id));
+    const affected = allowIds.length
+      ? await db('messages').whereIn('id', allowIds).update({ status: 'approved' })
+      : 0;
+    return ok(
+      res,
+      { affected, skipped: flagged.length },
+      affected
+        ? `已通过 ${affected} 条，跳过 AI 标记 ${flagged.length} 条`
+        : `无可直接通过的留言（AI 标记 ${flagged.length} 条需逐条处理）`
+    );
   } catch (e) {
     return fail(res, '操作失败', 500);
   }
@@ -1374,11 +1389,11 @@ router.put('/settings', async (req, res) => {
 });
 
 /** 设置导出（备份/迁移）：全量 JSON 下载
- *  剔除 ai_api_key：备份文件常被随手放进网盘/仓库，密钥不该跟着走 */
+ *  剔除 ai_api_key / websearch_api_key：备份文件常被随手放进网盘/仓库，密钥不该跟着走 */
 router.get('/settings/export', async (req, res) => {
   try {
     const settings = await getAllSettings();
-    const { ai_api_key: _key, ai_system_prompt: _prompt, ...safe } = settings;
+    const { ai_api_key: _k1, websearch_api_key: _k2, ai_system_prompt: _prompt, ...safe } = settings;
     res.set('Content-Disposition', 'attachment; filename="settings-backup.json"');
     return res.send(JSON.stringify(safe, null, 2));
   } catch (e) {
@@ -1724,6 +1739,22 @@ router.post('/security/unban', async (req, res) => {
   return ok(res, null, '已解封');
 });
 
+/** 手动封禁 IP（留言管理/安全中心联动）：默认 30 天，上限 1 年，审计中间件自动记录 */
+router.post('/security/ban', async (req, res) => {
+  const ip = cleanLine(req.body?.ip, 64);
+  const minutes = Math.min(Math.max(Number(req.body?.minutes) || 30 * 24 * 60, 5), 365 * 24 * 60);
+  const reason = cleanLine(req.body?.reason, 120);
+  if (!ip || require('net').isIP(ip) === 0) return fail(res, 'IP 地址格式不正确');
+  const durText = minutes >= 1440
+    ? `${Math.round((minutes / 1440) * 10) / 10} 天`
+    : minutes >= 60
+      ? `${Math.round((minutes / 60) * 10) / 10} 小时`
+      : `${minutes} 分钟`;
+  const okBan = ban(ip, minutes, reason || '管理员手动封禁');
+  if (!okBan) return fail(res, '封禁失败：可信白名单或本机地址不可封禁');
+  return ok(res, { ip, minutes }, `已封禁 ${ip}（${durText}）`);
+});
+
 /** 管理员操作审计日志（近 100 条） */
 router.get('/security/audit', async (req, res) => {
   try {
@@ -1772,7 +1803,7 @@ router.put('/security/config', async (req, res) => {
   }
 });
 
-/** 规则测试器（dry-run）：粘贴文本返回命中的规则，不记分不拦截
+/** 规则测试器（dry-run）：粘贴文本返回命中的规则与异常分，不记分不拦截
  * 文本经 base64 传输 —— 测试器必须能接收攻击载荷本身，绕过全局 WAF 的 body 扫描 */
 router.post('/security/test', (req, res) => {
   const raw = String(req.body?.text_b64 || '');
@@ -1784,14 +1815,17 @@ router.post('/security/test', (req, res) => {
   if (text.length > 4000) return fail(res, '文本过长（最多 4000 字符）');
   const hits = [];
   const seen = new Set();
+  let score = 0;
   for (const scope of ['query', 'body']) {
-    const h = scanText(text, scope);
-    if (h && !seen.has(h.id)) {
+    const { hits: scopeHits, score: s } = scanAll(text, scope);
+    score = Math.max(score, s);
+    for (const h of scopeHits) {
+      if (seen.has(h.id)) continue;
       seen.add(h.id);
-      hits.push({ id: h.id, group: h.group, scope, note: RULE_INDEX[h.id]?.note || '' });
+      hits.push({ id: h.id, group: h.group, scope, note: h.note || RULE_INDEX[h.id]?.note || '', sev: h.sev, score: h.score });
     }
   }
-  return ok(res, { hits, blocked: hits.length > 0 });
+  return ok(res, { hits, blocked: hits.length > 0, score, threshold: Number(getConfig().anomalyThreshold) || 5 });
 });
 
 /* ============================================================
@@ -1944,11 +1978,23 @@ const AI_TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'list_articles',
-      description: '列出站内文章（标题 + slug + 状态），用于找参考文章',
+      name: 'search_web',
+      description: '联网搜索公开网页（返回标题/链接/摘要）。写文章需要查证事实、找资料或了解较新的信息时用',
       parameters: {
         type: 'object',
-        properties: { keyword: { type: 'string', description: '标题关键词，留空列出最近的' } },
+        properties: { query: { type: 'string', description: '搜索关键词' } },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_articles',
+      description: '检索站内文章（标题 + slug + 状态），匹配范围含标题/摘要/标签，用于找参考文章',
+      parameters: {
+        type: 'object',
+        properties: { keyword: { type: 'string', description: '关键词，留空列出最近的' } },
       },
     },
   },
@@ -2314,9 +2360,33 @@ router.get('/ai/articles', async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 20);
   const q = db('articles').orderBy('updated_at', 'desc').limit(limit)
     .select('id', 'slug', 'title', 'status', 'published_at');
-  if (keyword) q.where('title', 'like', `%${escapeLike(keyword)}%`);
+  if (keyword) {
+    // 检索范围：标题 + 摘要 + 标签（此前仅标题，AI 找参考文章经常扑空）
+    const like = `%${escapeLike(keyword)}%`;
+    q.andWhere((b) => {
+      b.where('title', 'like', like)
+        .orWhere('summary', 'like', like)
+        .orWhereIn('id', db('articles as a2')
+          .join('article_tags as at2', 'at2.article_id', 'a2.id')
+          .join('tags as t2', 't2.id', 'at2.tag_id')
+          .where('t2.name', 'like', like)
+          .select('a2.id'));
+    });
+  }
   const rows = await q;
   return ok(res, { articles: rows });
+});
+
+/** 网页搜索（供 search_web 工具，浏览器端执行）：后台开关 + Key 双重门控 */
+router.get('/ai/web-search', async (req, res) => {
+  const query = String(req.query.q || '').trim().slice(0, 400);
+  if (!query) return fail(res, '缺少搜索词', 400);
+  const settings = await getAllSettings();
+  if (settings.websearch_enabled !== true) return fail(res, '网页搜索未开启（站点设置）', 400);
+  const { searchWeb } = require('../utils/webSearch');
+  const r = await searchWeb(query, { apiKey: settings.websearch_api_key });
+  if (!r.ok) return fail(res, r.error || '搜索失败', 502);
+  return ok(res, { results: r.results, cached: !!r.cached });
 });
 
 router.get('/ai/article', async (req, res) => {

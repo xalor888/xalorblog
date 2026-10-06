@@ -14,7 +14,7 @@
         placeholder="搜索昵称/内容"
         size="small"
         clearable
-        style="width: 200px"
+        class="search-input"
         @keyup.enter="load(1)"
         @clear="load(1)"
       />
@@ -59,10 +59,10 @@
             <span class="ip-mono">{{ row.ip || '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="时间" width="160">
+        <el-table-column label="时间" v-if="!isMobile" width="160">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
+        <el-table-column label="操作" :width="isMobile ? 140 : 320" :fixed="!isMobile ? 'right' : false">
           <template #default="{ row }">
             <el-button v-if="row.status !== 'approved'" size="small" link type="success" @click="setStatus(row, 'approved')">通过</el-button>
             <el-button v-if="row.status !== 'rejected'" size="small" link type="warning" @click="setStatus(row, 'rejected')">拒绝</el-button>
@@ -71,6 +71,7 @@
               {{ row.reply ? '编辑回复' : '回复' }}
             </el-button>
             <el-button size="small" link type="danger" @click="remove(row)">删除</el-button>
+            <el-button v-if="!isMobile" size="small" link type="danger" @click="banIp(row)">封禁 IP</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -98,14 +99,14 @@
     </div>
 
     <!-- 站长回复弹窗 -->
-    <el-dialog v-model="replyDialog" title="回复留言" width="520" :close-on-click-modal="false">
+    <el-dialog v-model="replyDialog" title="回复留言" width="min(520px, 92vw)" :close-on-click-modal="false">
       <el-input
         v-model="replyForm.content"
         type="textarea"
         :rows="5"
         maxlength="2000"
         show-word-limit
-        placeholder="写下你的回复…"
+        placeholder="输入回复内容…"
       />
       <template #footer>
         <el-button v-if="replyForm.hasExisting" type="danger" plain :loading="replying" @click="clearReply">清空回复</el-button>
@@ -120,14 +121,16 @@
 import { ref, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
-import { messageApi } from '@/api';
+import { messageApi, securityApi } from '@/api';
 import { useAdminStore } from '@/stores/admin';
 import { getCachedAdminPath } from '@/utils/adminPath';
 import { ensurePass } from '@/utils/pass';
 import { signedFetch } from '@/utils/signedFetch';
 import { formatDateTime } from '@/utils/format';
+import { useIsMobile } from '@/composables/useMedia';
 
 const adminStore = useAdminStore();
+const isMobile = useIsMobile();
 
 const list = ref([]);
 const loading = ref(false);
@@ -191,23 +194,23 @@ async function reAi(row) {
   }
 }
 
-/** 一键全部通过：全部待审留言直接通过（上限 1000 条），确认后执行 */
+/** 一键全部通过：全部待审留言直接通过（上限 1000 条）；带 AI 标记的会被跳过 */
 const approving = ref(false);
 async function approveAll() {
   if (approving.value) return;
   try {
-    await ElMessageBox.confirm('将全部待审核留言一次性通过（上限 1000 条），确定继续吗？', '全部通过', {
-      type: 'warning',
-      confirmButtonText: '全部通过',
-      cancelButtonText: '取消',
-    });
+    await ElMessageBox.confirm(
+      '将全部待审核留言一次性通过（上限 1000 条）。带 AI 标记的留言不会自动通过，需逐条判断。确定继续吗？',
+      '全部通过',
+      { type: 'warning', confirmButtonText: '全部通过', cancelButtonText: '取消' }
+    );
   } catch (e) {
     return; /* 取消 */
   }
   approving.value = true;
   try {
     const res = await messageApi.approveAll();
-    if (!res.affected) ElMessage.info('当前没有待审核留言');
+    if (!res.affected && !res.skipped) ElMessage.info(res?.message || '当前没有待审核留言');
     else ElMessage.success(res?.message || '已全部通过');
     adminStore.fetchPending();
     load(1);
@@ -340,12 +343,28 @@ async function batchSetStatus(s) {
   }
 }
 
-/** 批量 AI 复核：对选中留言逐条重跑审核引擎（误拒批量恢复） */
+/** 批量 AI 复核：对选中留言逐条重跑审核引擎。
+ *  复核按 AI 结论直接更新状态——待审中的留言若被判通过会立即公开展示，需显式确认 */
 async function batchReAi() {
+  const pendingCount = selection.value.filter((r) => r.status === 'pending').length;
+  const rejectedCount = selection.value.filter((r) => r.status === 'rejected').length;
+  try {
+    await ElMessageBox.confirm(
+      `将对选中的 ${selection.value.length} 条留言执行 AI 复核（待审 ${pendingCount} 条、已拒 ${rejectedCount} 条），并按 AI 结论直接更新状态：判定通过的留言会立即公开展示。确定继续吗？`,
+      '批量 AI 复核',
+      { type: 'warning', confirmButtonText: '开始复核', cancelButtonText: '取消' }
+    );
+  } catch (e) {
+    return; /* 取消 */
+  }
   batchLoading.value = true;
   try {
-    await Promise.all(selection.value.map((row) => messageApi.reAi(row.id)));
-    ElMessage.success(`已复核 ${selection.value.length} 条留言`);
+    const results = await Promise.all(selection.value.map((row) => messageApi.reAi(row.id)));
+    const tally = { approved: 0, pending: 0, rejected: 0 };
+    for (const r of results) {
+      if (r?.status && tally[r.status] !== undefined) tally[r.status] += 1;
+    }
+    ElMessage.success(`复核完成：通过 ${tally.approved} 条，转人工 ${tally.pending} 条，拒绝 ${tally.rejected} 条`);
     adminStore.fetchPending();
     selection.value = [];
     load();
@@ -353,6 +372,29 @@ async function batchReAi() {
     /* 拦截器已提示 */
   } finally {
     batchLoading.value = false;
+  }
+}
+
+/** 封禁该留言来源 IP（默认 30 天，安全中心可解封） */
+async function banIp(row) {
+  if (!row.ip) {
+    ElMessage.warning('该留言没有记录 IP，无法封禁');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定封禁来源 IP ${row.ip} 吗？默认封禁 30 天，期间该 IP 无法访问站点（安全中心可提前解封）。`,
+      '封禁 IP',
+      { type: 'warning', confirmButtonText: '封禁', cancelButtonText: '取消' }
+    );
+  } catch (e) {
+    return; /* 取消 */
+  }
+  try {
+    const res = await securityApi.ban(row.ip);
+    ElMessage.success(res?.message || '已封禁');
+  } catch (e) {
+    /* 拦截器已提示 */
   }
 }
 
@@ -397,6 +439,10 @@ onMounted(load);
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.search-input {
+  width: min(200px, 100%);
 }
 
 /* 批量操作栏 */

@@ -131,4 +131,8 @@ module.exports = {
     rejectScore: Number(process.env.AI_REJECT_SCORE || 60),
     pendingScore: Number(process.env.AI_PENDING_SCORE || 30),
   },
+  // 网页搜索（Tavily，可选）：后台设置的 websearch_api_key 留空时回落此值
+  websearch: {
+    apiKey: process.env.WEBSEARCH_API_KEY || '',
+  },
 };

@@ -26,6 +26,11 @@ const DEFAULT_CONFIG = {
   scan404Enabled: true,
   // 404 扫描阈值：30 秒窗口内 ≥N 次 404 判定扫描
   scanThreshold: 12,
+  // WAF 偏执等级：规则按误杀风险标 pl1/pl2/pl3，仅启用 ≤ 本等级的规则（1-3）
+  paranoiaLevel: 1,
+  // WAF 异常分阻断阈值：命中按严重度加权累计（critical=5/error=4/warning=3），
+  // 请求总分 ≥ 阈值才 403；低分命中只进监控日志（waf-mon 事件），不记信誉分
+  anomalyThreshold: 5,
   // 信誉系统：触发封禁的积分阈值与各行为权重
   banScore: 10,
   weights: { honeypot: 6, waf: 3, auth: 3, rate: 2, spam: 1 },
@@ -49,6 +54,8 @@ const DEFAULT_CONFIG = {
 /** 各数值字段的合法区间 [min, max] */
 const NUMERIC_RANGES = {
   scanThreshold: [3, 100],
+  paranoiaLevel: [1, 3],
+  anomalyThreshold: [3, 20],
   banScore: [5, 100],
   'weights.honeypot': [1, 20],
   'weights.waf': [1, 20],
@@ -233,7 +240,7 @@ function mergeValid(base, patch) {
   for (const boolKey of ['scannerUaBlock', 'honeypotEnabled', 'scan404Enabled']) {
     if (typeof patch[boolKey] === 'boolean') out[boolKey] = patch[boolKey];
   }
-  for (const numKey of ['scanThreshold', 'banScore', 'baseBanMinutes', 'maxBanHours', 'banCountResetDays']) {
+  for (const numKey of ['scanThreshold', 'paranoiaLevel', 'anomalyThreshold', 'banScore', 'baseBanMinutes', 'maxBanHours', 'banCountResetDays']) {
     if (patch[numKey] !== undefined) {
       const v = Number(patch[numKey]);
       const [min, max] = NUMERIC_RANGES[numKey];
@@ -287,10 +294,17 @@ function getCustomWords() {
   return getConfig().customSensitiveWords;
 }
 
+/** 测试专用：直接覆写内存配置（不落库、不失效其他进程）；仅测试套件使用 */
+function setConfigForTest(patch) {
+  cache = mergeValid(cache, patch || {});
+  return cache;
+}
+
 module.exports = {
   getConfig,
   saveConfig,
   reload,
+  setConfigForTest,
   isTrustedIp,
   isAllowedText,
   getCustomWords,

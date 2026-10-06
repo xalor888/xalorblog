@@ -68,12 +68,12 @@
             <el-tag :type="statusType(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="点赞" width="80" align="center">
+        <el-table-column label="点赞" v-if="!isMobile" width="80" align="center">
           <template #default="{ row }">
             <span class="like-cell"><XIcon name="Heart" :size="13" :fill="(row.likes || 0) > 0" /> {{ row.likes || 0 }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="AI 标记" width="160">
+        <el-table-column label="AI 标记" v-if="!isMobile" width="160">
           <template #default="{ row }">
             <el-tooltip v-if="row.ai_reason" :content="`AI 审核原因：${row.ai_reason}`" placement="top">
               <el-tag type="warning" size="small" effect="light" class="ai-tag">
@@ -83,15 +83,15 @@
             <span v-else class="ai-none">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="IP" width="130">
+        <el-table-column label="IP" v-if="!isMobile" width="130">
           <template #default="{ row }">
             <span class="ip-mono">{{ row.ip || '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="时间" width="160">
+        <el-table-column label="时间" v-if="!isMobile" width="160">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="290" fixed="right">
+        <el-table-column label="操作" :width="isMobile ? 130 : 290" :fixed="!isMobile ? 'right' : false">
           <template #default="{ row }">
             <template v-if="row.status !== 'approved'">
               <el-button size="small" link type="success" @click="setStatus(row, 'approved')">通过</el-button>
@@ -142,8 +142,10 @@ import { getCachedAdminPath } from '@/utils/adminPath';
 import { ensurePass } from '@/utils/pass';
 import { signedFetch } from '@/utils/signedFetch';
 import { formatDateTime } from '@/utils/format';
+import { useIsMobile } from '@/composables/useMedia';
 
 const adminStore = useAdminStore();
+const isMobile = useIsMobile();
 
 const list = ref([]);
 const loading = ref(false);

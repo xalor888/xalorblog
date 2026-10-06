@@ -20,11 +20,14 @@ router.get('/', async (req, res) => {
     // 模型配置优先级与 aiModeration 保持一致：后台设置 > 服务器 .env
     const aiKey = settings.ai_api_key || config.ai?.apiKey || '';
     const aiBase = settings.ai_base_url || config.ai?.baseUrl || '';
-    const { ai_api_key: _key, ...safe } = settings;
+    // 安全：含密钥的键（AI / 网页搜索）必须在展开前剔除，否则会随公开接口下发
+    const { ai_api_key: _k1, websearch_api_key: _k2, ...safe } = settings;
+    const webKey = settings.websearch_api_key || config.websearch?.apiKey || '';
     return ok(res, {
       ...safe,
       mail_notify: smtpReady(),
       ai_llm_ready: !!(aiKey && /^https:\/\//i.test(String(aiBase || ''))),
+      websearch_ready: !!webKey,
       server_tz_offset_min: new Date().getTimezoneOffset(),
     });
   } catch (e) {

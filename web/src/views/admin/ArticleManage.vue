@@ -69,37 +69,37 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="分类" width="110">
+        <el-table-column label="分类" v-if="!isMobile" width="110">
           <template #default="{ row }">
             <span v-if="row.category_name" class="cat-cell">{{ row.category_name }}</span>
             <span v-else class="muted">未分类</span>
           </template>
         </el-table-column>
-        <el-table-column prop="views" label="阅读" width="80" align="center" />
-        <el-table-column prop="likes" label="点赞" width="80" align="center" />
-        <el-table-column label="评论" width="80" align="center">
+        <el-table-column prop="views" label="阅读" v-if="!isMobile" width="80" align="center" />
+        <el-table-column prop="likes" label="点赞" v-if="!isMobile" width="80" align="center" />
+        <el-table-column label="评论" v-if="!isMobile" width="80" align="center">
           <template #default="{ row }">{{ row.comment_count }}</template>
         </el-table-column>
-        <el-table-column label="发布时间" width="150">
+        <el-table-column label="发布时间" v-if="!isMobile" width="150">
           <template #default="{ row }">
             {{ row.published_at ? formatDate(row.published_at) : '—' }}
           </template>
         </el-table-column>
-        <el-table-column label="更新时间" width="150">
+        <el-table-column label="更新时间" v-if="!isMobile" width="150">
           <template #default="{ row }">
             <span :class="{ 'upd-stale': row.updated_at && row.published_at && String(row.updated_at).slice(0, 10) > String(row.published_at).slice(0, 10) }">
               {{ row.updated_at ? formatDate(row.updated_at) : '—' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
+        <el-table-column label="操作" :width="isMobile ? 150 : 320" :fixed="!isMobile ? 'right' : false">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="edit(row)">编辑</el-button>
             <el-button v-if="row.status === 'draft'" size="small" link type="success" @click="publish(row)">发布</el-button>
-            <el-button size="small" link type="warning" :title="row.is_top ? '取消置顶' : '置顶'" @click="toggleTop(row)">
+            <el-button v-if="!isMobile" size="small" link type="warning" :title="row.is_top ? '取消置顶' : '置顶'" @click="toggleTop(row)">
               {{ row.is_top ? '取消置顶' : '置顶' }}
             </el-button>
-            <el-button size="small" link :loading="duplicatingId === row.id" :title="'复制为新草稿'" @click="duplicate(row)">复制</el-button>
+            <el-button v-if="!isMobile" size="small" link :loading="duplicatingId === row.id" :title="'复制为新草稿'" @click="duplicate(row)">复制</el-button>
             <el-button size="small" link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -144,8 +144,10 @@ import { adminHref } from '@/utils/adminPath';
 import { getCachedAdminPath } from '@/utils/adminPath';
 import { ensurePass } from '@/utils/pass';
 import { signedFetch } from '@/utils/signedFetch';
+import { useIsMobile } from '@/composables/useMedia';
 
 const router = useRouter();
+const isMobile = useIsMobile();
 
 const list = ref([]);
 const loading = ref(false);
@@ -571,7 +573,7 @@ onMounted(async () => {
 }
 
 .status-select {
-  width: 130px;
+  width: min(130px, 100%);
 }
 
 .table-card {

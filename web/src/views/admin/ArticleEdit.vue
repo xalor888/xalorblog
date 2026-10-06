@@ -69,7 +69,7 @@
               :rows="22"
               resize="none"
               class="md-editor"
-              placeholder="用 Markdown 写作，Ctrl+V 可粘贴截图"
+              placeholder="支持 Markdown，Ctrl+V 可直接粘贴截图"
               @paste="onEditorPaste"
             />
           </div>
@@ -125,7 +125,7 @@
         <section class="ed-panel">
           <h4 class="ed-panel-title">封面</h4>
           <div class="cover-field">
-            <el-input v-model="form.cover" placeholder="图片 URL，或点右侧上传" />
+            <el-input v-model="form.cover" placeholder="输入图片 URL，或使用右侧上传" />
             <el-upload :show-file-list="false" :http-request="doUpload" accept="image/*">
               <el-button :loading="uploading">
                 <template #icon><XIcon name="Upload" :size="15" /></template>
@@ -499,7 +499,7 @@ async function publish({ skipConfirm = false } = {}) {
       await ElMessageBox.confirm('发布后文章将对访客可见，确定发布吗？', '发布确认', {
         type: 'warning',
         confirmButtonText: '发布',
-        cancelButtonText: '再检查一下',
+        cancelButtonText: '继续编辑',
       });
     } catch (e) {
       return; // 取消发布

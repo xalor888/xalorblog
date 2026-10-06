@@ -47,4 +47,18 @@ function audit(req, res, next) {
   next();
 }
 
-module.exports = { audit };
+/** 系统自动决策审计（无登录态：AI 审核判定、自动封禁等），失败静默 */
+function logSystemAction(action, detail = '', ip = '', username = 'system') {
+  return db('audit_logs')
+    .insert({
+      user_id: 0,
+      username: String(username || 'system').slice(0, 50),
+      action: String(action || '').slice(0, 120),
+      detail: String(detail || '').slice(0, 160),
+      ip: String(ip || '').slice(0, 64),
+      fp: '',
+    })
+    .catch(() => {});
+}
+
+module.exports = { audit, logSystemAction };

@@ -97,6 +97,22 @@ sudo systemctl reload nginx
 
 若自定义了 `API_PREFIX`，必须同步修改 Nginx 的 `/api/` location。
 
+## 前置 CDN（阿里云 / 腾讯云）
+
+站点安全（PoW 通行证、请求签名、限流、IP 信誉封禁）全部在应用层自建，不依赖任何 CDN 厂商，
+Cloudflare、阿里云 DCDN、腾讯 EdgeOne 均可替换。接入时按 `nginx.conf.example` 顶部的
+接入要点核对，最容易出事故的两条：
+
+- **真实 IP 还原**：不配 `set_real_ip_from` + `real_ip_header` 时，所有访客共享 CDN
+  回源节点 IP——刮取窗/限流误伤正常读者，且一条垃圾留言能把整个边缘节点封禁，
+  节点后所有访客全站 403。厂商回源网段以其官方文档为准（会更新，定期同步）。
+- **缓存键保留查询串**：`/theme-init.js`、`/anti-debug.js` 靠 `?v=` 换版本，
+  CDN 若忽略参数，改版后老访客会继续执行旧脚本。
+
+其余：`/api/*` 全部动态回源不缓存（`/api/ai/ask` 是 SSE 流式，纯静态 CDN 会缓冲整段响应，
+需全站加速类产品或让 API 直连源站）；带哈希的 `/assets/*` 长缓存；回源 HTTPS + SNI；
+域名需已完成 ICP 备案。
+
 容器中确需监听所有接口时，可设置 `LISTEN_HOST=0.0.0.0`，但必须用宿主机防火墙或容器网络
 禁止客户端直连 3000 端口，并把 `TRUST_PROXY` 写成专用反代网络的真实 CIDR，例如
 `TRUST_PROXY=172.30.0.0/24`（按实际网络替换）。仍禁止使用代理跳数 `1` 或 `true`。

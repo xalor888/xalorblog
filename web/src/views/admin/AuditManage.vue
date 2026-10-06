@@ -25,7 +25,7 @@
     <!-- 日志表格 -->
     <div class="table-card card">
       <el-table :data="list" v-loading="loading && !list.length" stripe>
-        <el-table-column prop="id" label="ID" width="70" align="center" />
+        <el-table-column prop="id" label="ID" v-if="!isMobile" width="70" align="center" />
         <el-table-column label="操作者" width="140">
           <template #default="{ row }">
             <span class="op-user">{{ row.username || '—' }}</span>
@@ -37,16 +37,16 @@
             <span class="op-path">{{ row.action.replace(/^\w+\s/, '') }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="详情" min-width="220" show-overflow-tooltip>
+        <el-table-column label="详情" v-if="!isMobile" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">{{ row.detail || '—' }}</template>
         </el-table-column>
-        <el-table-column prop="ip" label="IP" width="130" show-overflow-tooltip />
-        <el-table-column label="设备指纹" width="140" show-overflow-tooltip>
+        <el-table-column prop="ip" label="IP" v-if="!isMobile" width="130" show-overflow-tooltip />
+        <el-table-column label="设备指纹" v-if="!isMobile" width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="muted">{{ row.fp ? row.fp.slice(0, 16) + '…' : '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="时间" width="170">
+        <el-table-column label="时间" v-if="!isMobile" width="170">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
       </el-table>
@@ -75,7 +75,9 @@ import { formatDateTime } from '@/utils/format';
 import { getCachedAdminPath } from '@/utils/adminPath';
 import { ensurePass } from '@/utils/pass';
 import { signedFetch } from '@/utils/signedFetch';
+import { useIsMobile } from '@/composables/useMedia';
 
+const isMobile = useIsMobile();
 const list = ref([]);
 const loading = ref(false);
 const clearing = ref(false);

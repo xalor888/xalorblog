@@ -3,7 +3,7 @@
     <!-- 基本设置 -->
     <div class="setting-card card">
       <h3 class="card-title">基本设置</h3>
-      <el-form :model="form" label-width="110px" class="setting-form">
+      <el-form :model="form" :label-position="isMobile ? 'top' : 'right'" :label-width="isMobile ? undefined : 110" class="setting-form">
         <el-form-item label="站点名称">
           <el-input v-model="form.site_name" maxlength="50" />
         </el-form-item>
@@ -44,7 +44,7 @@
     <!-- 社交链接 -->
     <div class="setting-card card">
       <h3 class="card-title">社交链接</h3>
-      <el-form :model="form" label-width="110px" class="setting-form">
+      <el-form :model="form" :label-position="isMobile ? 'top' : 'right'" :label-width="isMobile ? undefined : 110" class="setting-form">
         <el-form-item label="GitHub">
           <el-input v-model="form.social_github" placeholder="https://github.com/你的账号" />
         </el-form-item>
@@ -60,17 +60,17 @@
     <!-- 内容审核 -->
     <div class="setting-card card">
       <h3 class="card-title">评论与留言</h3>
-      <el-form label-width="150px" class="setting-form">
+      <el-form :label-position="isMobile ? 'top' : 'right'" :label-width="isMobile ? undefined : 150" class="setting-form">
         <el-form-item label="评论先审后发">
           <el-switch v-model="form.comment_moderation" />
         </el-form-item>
         <el-form-item label="留言先审后发">
           <el-switch v-model="form.message_moderation" />
         </el-form-item>
-        <el-form-item label="AI 自动拦垃圾">
+        <el-form-item label="AI 自动过滤垃圾内容">
           <el-switch v-model="form.ai_moderation" />
         </el-form-item>
-        <el-form-item label="拿不准再问 AI">
+        <el-form-item label="不确定时交由 AI 复核">
           <el-switch v-model="form.ai_llm_moderation" :disabled="!form.ai_moderation" />
           <span class="ai-status" :class="{ on: form.ai_llm_ready }">
             {{ form.ai_llm_ready ? '已配置模型' : '未配置模型' }}
@@ -78,11 +78,11 @@
         </el-form-item>
         <el-form-item label="AI 模型配置">
           <div class="ai-config">
-            <!-- 快捷预设：选服务商自动填接口+模型，只留 API Key 要填 -->
+            <!-- 快捷预设：选择服务商自动填充接口与模型，仅需补填 API Key -->
             <div class="ai-config-row">
               <el-select
                 :model-value="presetPick"
-                placeholder="快捷预设：选服务商自动填"
+                placeholder="快捷预设：选择服务商快速填充"
                 clearable
                 class="ai-preset"
                 @update:model-value="applyPreset"
@@ -102,20 +102,37 @@
               <el-input v-model="form.ai_max_tokens" placeholder="单次回复上限 256-8192，默认 4096" />
             </div>
             <div class="ai-config-row">
-              <el-input v-model="form.ai_ctx_chars" placeholder="AI 读多长的正文 1000-100000，默认 20000 字" />
-              <el-input v-model="form.ai_ctx_turns" placeholder="AI 记住多少轮对话 6-200，默认 48" />
+              <el-input v-model="form.ai_ctx_chars" placeholder="正文字数上限 1000-100000，默认 20000" />
+              <el-input v-model="form.ai_ctx_turns" placeholder="保留对话轮数 6-200，默认 48" />
             </div>
             <el-input
               v-model="form.ai_system_prompt"
               type="textarea"
               :rows="3"
               maxlength="3000"
-              placeholder="自定义 AI 人设与文风（留空用内置写作助手）"
+              placeholder="自定义 AI 角色设定与文风（留空使用内置写作助手）"
             />
           </div>
         </el-form-item>
-        <el-form-item label="对话太长自动总结">
+        <el-form-item label="对话过长时自动总结">
           <el-switch v-model="form.ai_ctx_compress" />
+        </el-form-item>
+        <el-form-item label="网页搜索">
+          <div class="ai-config">
+            <div class="ai-config-row">
+              <el-switch v-model="form.websearch_enabled" />
+              <span class="ai-status" :class="{ on: websearchReady }">
+                {{ websearchReady ? '已配置搜索服务' : '未配置搜索服务' }}
+              </span>
+            </div>
+            <el-input
+              v-model="form.websearch_api_key"
+              type="password"
+              show-password
+              placeholder="Tavily API Key（tavily.com 免费申请，留空表示不修改）"
+            />
+            <p class="field-hint">开启后，前台「问这篇」与后台写作助手可在需要时联网搜索（消耗 Tavily 配额）</p>
+          </div>
         </el-form-item>
         <el-form-item label="友链审核">
           <el-switch :model-value="true" disabled />
@@ -142,7 +159,7 @@
     <!-- 阅读与复制 -->
     <div class="setting-card card">
       <h3 class="card-title">阅读与复制</h3>
-      <el-form label-width="130px" class="setting-form">
+      <el-form :label-position="isMobile ? 'top' : 'right'" :label-width="isMobile ? undefined : 130" class="setting-form">
         <el-form-item label="允许复制">
           <el-switch v-model="form.allow_copy" />
         </el-form-item>
@@ -170,7 +187,7 @@
     <!-- 修改密码 -->
     <div class="setting-card card">
       <h3 class="card-title">修改密码</h3>
-      <el-form :model="pwdForm" label-width="110px" class="setting-form">
+      <el-form :model="pwdForm" :label-position="isMobile ? 'top' : 'right'" :label-width="isMobile ? undefined : 110" class="setting-form">
         <el-form-item label="旧密码">
           <el-input v-model="pwdForm.oldPassword" type="password" show-password />
         </el-form-item>
@@ -300,7 +317,7 @@
               :loading="revokingJti === s.jti"
               @click="revokeOne(s.jti)"
             >
-              踢出
+              强制下线
             </el-button>
           </div>
         </div>
@@ -346,10 +363,16 @@ import { ensurePass } from '@/utils/pass';
 import { signedFetch } from '@/utils/signedFetch';
 import { useAuthStore } from '@/stores/auth';
 import { useSiteStore } from '@/stores/site';
+import { useIsMobile } from '@/composables/useMedia';
 
 const router = useRouter();
 const auth = useAuthStore();
 const form = ref({});
+const isMobile = useIsMobile();
+
+/** 网页搜索是否可用：后台 settings 接口下发 websearch_ready（含 env 回落判定），
+ *  本次会话刚填过 Key 时也算就绪（Key 不回显，保存前无法从服务端确认） */
+const websearchReady = computed(() => !!(form.value.websearch_ready || form.value.websearch_api_key));
 
 /** 快捷预设：选服务商 → 自动填接口地址和模型名（API Key 仍需自己填） */
 const AI_PRESETS = [
@@ -428,7 +451,7 @@ async function revokeOne(jti) {
   revokingJti.value = jti;
   try {
     await authApi.revokeSession(jti);
-    ElMessage.success('已踢出该设备');
+    ElMessage.success('已强制该设备下线');
     await loadSessions();
   } catch (e) {
     /* 拦截器已提示 */
@@ -606,6 +629,7 @@ async function save() {
     await settingsApi.save(form.value);
     // 密钥不回显：保存后立刻清掉表单里的明文，避免残留在内存里被再次提交
     if (form.value.ai_api_key) form.value.ai_api_key = '';
+    if (form.value.websearch_api_key) form.value.websearch_api_key = '';
     // 前台站点数据有 60s 缓存：保存后主动失效并刷新，前台立即生效
     const site = useSiteStore();
     site.loaded = false;
@@ -968,6 +992,14 @@ onMounted(async () => {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
+/* 表单项下的弱化提示文字 */
+.field-hint {
+  grid-column: 1 / -1;
+  font-size: 0.74rem;
+  color: var(--text-3);
+  line-height: 1.5;
+}
+
 /* AI 模型配置：接口/模型+密钥/温度+输出 纵排，自定义提示词垫底 */
 .ai-config {
   display: flex;
@@ -988,6 +1020,12 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+@media (max-width: 820px) {
+  .ai-config-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ai-preset {

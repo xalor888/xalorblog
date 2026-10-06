@@ -3,7 +3,7 @@
        fixed 浮层会被关进该上下文集内，z-index 再高也压不住外面的回到顶部工具条 -->
   <!-- 按钮并进右下角浮层栈（和点赞/评论/回顶那排按钮同一列，永不互相压住） -->
   <Teleport :to="dockTarget">
-    <button v-if="!open" class="ask-fab" type="button" title="问 AI" aria-label="问 AI" @click="toggle">
+    <button v-if="!open" class="dock-btn ask-fab" type="button" title="问 AI" aria-label="问 AI" @click="toggle">
       <XIcon name="Sparkles" :size="18" />
     </button>
   </Teleport>
@@ -32,6 +32,7 @@
             <!-- 流式期间渲染纯文本：markdown 是块级元素，会把光标挤到下一行（看着像错位） -->
             <div v-if="m.role === 'assistant'" class="ask-bubble">
               <template v-if="m.streaming"
+                ><span v-if="m.status && !m.content" class="ask-status">{{ m.status }}</span
                 ><span class="ask-raw">{{ m.content }}</span
                 ><span class="ask-cursor"></span
               ></template>
@@ -203,9 +204,15 @@ async function send(preset) {
           continue;
         }
         if (ev.type === 'text') {
+          reply.status = ''; // 收到正文即清除检索状态提示
           reply.content += ev.text;
           scrollToEnd();
+        } else if (ev.type === 'status') {
+          // 服务端工具执行中（检索站内文章 / 搜索网页）：临时状态行
+          reply.status = String(ev.text || '');
+          scrollToEnd();
         } else if (ev.type === 'error') {
+          reply.status = '';
           reply.content = reply.content || ev.message || '回答失败';
         }
       }
@@ -252,21 +259,10 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 按钮已 teleport 进 #float-dock（与那排按钮同列），尺寸与它们对齐 */
+/* 基础几何与玻璃材质来自全局 .dock-btn（main.css），这里只保留差异态 */
 .ask-fab {
-  width: 44px;
-  height: 44px;
   flex-shrink: 0;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   color: var(--accent);
-  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
-  border: 1px solid var(--sg-edge);
-  box-shadow: var(--sg-shadow), var(--sg-inner);
-  backdrop-filter: var(--sg-blur-soft);
-  -webkit-backdrop-filter: var(--sg-blur-soft);
   transition: transform var(--dur) var(--ease);
 }
 
@@ -477,6 +473,12 @@ onUnmounted(() => {
 .ask-raw {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 工具执行中的状态行（检索站内文章 / 搜索网页）：弱化显示，正文到达即被替换 */
+.ask-status {
+  color: var(--text-3);
+  font-size: 0.85em;
 }
 
 @keyframes ask-blink {

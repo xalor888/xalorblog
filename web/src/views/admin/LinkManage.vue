@@ -13,7 +13,7 @@
         placeholder="搜索名称/网址/简介"
         size="small"
         clearable
-        style="width: 200px"
+        class="search-input"
         @keyup.enter="load"
         @clear="load"
       />
@@ -43,19 +43,19 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="介绍" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="description" label="介绍" v-if="!isMobile" min-width="180" show-overflow-tooltip />
         <el-table-column label="状态" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="排序" width="80" align="center">
+        <el-table-column label="排序" v-if="!isMobile" width="80" align="center">
           <template #default="{ row }">
             <el-input-number v-model="row.sort" :min="0" :max="100" size="small" controls-position="right"
               @change="(v) => updateSort(row, v)" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" :width="isMobile ? 130 : 200" :fixed="!isMobile ? 'right' : false">
           <template #default="{ row }">
             <el-button v-if="row.status === 'pending'" size="small" link type="success" @click="setStatus(row, 'approved')">通过</el-button>
             <el-button v-if="row.status !== 'rejected'" size="small" link type="warning" @click="setStatus(row, 'rejected')">拒绝</el-button>
@@ -83,8 +83,10 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { linkApi } from '@/api';
 import { useAdminStore } from '@/stores/admin';
+import { useIsMobile } from '@/composables/useMedia';
 
 const adminStore = useAdminStore();
+const isMobile = useIsMobile();
 
 const list = ref([]);
 const loading = ref(false);
@@ -261,6 +263,14 @@ onMounted(load);
 
 .toolbar {
   padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.search-input {
+  width: min(200px, 100%);
 }
 
 /* 批量操作栏 */

@@ -344,6 +344,7 @@ export const securityApi = {
   overview: () => adminGet('/security'),
   audit: () => adminGet('/security/audit'),
   unban: (ip) => adminPost('/security/unban', { ip }),
+  ban: (ip, minutes, reason) => adminPost('/security/ban', { ip, minutes, reason }),
   getConfig: () => adminGet('/security/config'),
   saveConfig: (data) => adminPut('/security/config', data),
   // 测试文本 base64 传输：测试器必须能接收攻击载荷本身（绕过全局 WAF body 扫描）

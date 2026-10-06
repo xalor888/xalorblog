@@ -63,6 +63,21 @@ const ATTACK_KEYWORDS = [
 /** 广告词命中数：拉丁词按词边界匹配（method 不命中 eth），中文词按子串 */
 const LATIN_WORD_RE = /^[a-z0-9+]+$/i;
 
+/**
+ * 垃圾检测归一化：抓变体逃逸。
+ * 垃圾内容常用 全角（ｖｘ）、插空格（加 微 信）、同形字符（ⅴ/ν/√）、
+ * 零宽字符断词 等手段绕过关键词匹配。仅在评分时折叠，不影响入库原文。
+ * 顺序：小写 → 去零宽 → 全角折半角 → v 同形折叠 → 去全部空白。
+ */
+function normalizeForSpam(text) {
+  let s = String(text || '').toLowerCase();
+  s = s.replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '');
+  s = s.replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  s = s.replace(/[√∨νⅴ]/g, 'v');
+  s = s.replace(/\s+/g, '');
+  return s;
+}
+
 function countHits(text, words) {
   const lower = String(text).toLowerCase();
   let n = 0;
@@ -86,34 +101,46 @@ function localModeration(content, nickname = '', website = '') {
   const text = String(content || '');
   const nick = String(nickname || '');
   const web = String(website || '');
+  // 归一化副本：全角/插空格/同形字符/零宽断词变体全部折叠后再做关键词与联系方式匹配
+  const norm = normalizeForSpam(text);
+  const normNick = normalizeForSpam(nick);
 
-  // 1. 关键词
-  const ad = countHits(text, AD_KEYWORDS) + countHits(nick, AD_KEYWORDS);
+  // 1. 关键词（归一化匹配）
+  const ad = countHits(norm, AD_KEYWORDS) + countHits(normNick, AD_KEYWORDS);
   if (ad > 0) { score += ad * 20; reasons.push(`广告词×${ad}`); }
-  const abuse = countHits(text, ABUSE_KEYWORDS) + countHits(nick, ABUSE_KEYWORDS);
+  const abuse = countHits(norm, ABUSE_KEYWORDS) + countHits(normNick, ABUSE_KEYWORDS);
   // 辱骂词单个即 30 分（必进待审人工复核）：明确辱骂词无技术语境误伤，
   // 自动放行（旧权重 15）会让单条辱骂评论直接展示
   if (abuse > 0) { score += abuse * 30; reasons.push(`辱骂词×${abuse}`); }
-  const porn = countHits(text, PORN_KEYWORDS);
+  const porn = countHits(norm, PORN_KEYWORDS);
   if (porn > 0) { score += porn * 25; reasons.push(`敏感词×${porn}`); }
   // 攻击意图（求攻击/渗透协助）：计 30 分必进待审（技术讨论与攻击求助
   // 界限模糊，交人工判断而非直接拒绝；明显攻击指令配合其他特征可累积拒绝）
-  const attack = countHits(text, ATTACK_KEYWORDS) + countHits(nick, ATTACK_KEYWORDS);
+  const attack = countHits(norm, ATTACK_KEYWORDS) + countHits(normNick, ATTACK_KEYWORDS);
   if (attack > 0) { score += attack * 30; reasons.push(`攻击意图×${attack}`); }
 
-  // 2. 链接密度（Markdown 链接与裸 URL）
+  // 2. 链接密度（Markdown 链接与裸 URL，用原文保留结构）
   const links = (text.match(/https?:\/\/[^\s)'"<>]+/gi) || []).length;
   // ≥2 条外链 = 经典垃圾模式（引流/推广），直接计 30 分必进待审；
   // 单条引用链接（技术讨论常引用出处）仅低分
   if (links > 1) { score += links * 15; reasons.push(`外链×${links}`); }
   else if (links === 1) { score += 5; }
-  // 裸域名（无协议，如 www.example.com）
-  const bareDomains = (text.match(/(?:^|\s)(?:www\.)?[a-z0-9-]+\.(?:com|net|cn|xyz|top|vip|cc)(?:\/\S*)?/gi) || []).length;
+  // 裸域名：不再限定 TLD 白名单（.org/.info/.shop 曾是免费通道），任意域名同权计分
+  const bareDomains = (text.match(/(?:^|[\s(（"'])(?:www\.)?[a-z0-9-]{2,}\.[a-z]{2,24}(?:\/[^\s)'"<>]*)?(?=$|[\s)（"'，。,.;；!?！？])/gim) || []).length;
   if (bareDomains > 0) { score += bareDomains * 10; reasons.push(`裸域名×${bareDomains}`); }
 
-  // 3. 联系方式（手机号 / QQ 号）
-  if (/(?<!\d)1[3-9]\d{9}(?!\d)/.test(text)) { score += 15; reasons.push('手机号'); }
-  if (/(?<!\d)[1-9]\d{4,10}(?!\d)/.test(text) && text.length < 60) { score += 10; reasons.push('疑似QQ号'); }
+  // 3. 联系方式（手机号 / QQ 号，归一化后连写逃逸失效）
+  if (/(?<!\d)1[3-9]\d{9}(?!\d)/.test(norm)) { score += 20; reasons.push('手机号'); }
+  if (/(?<!\d)[1-9]\d{4,10}(?!\d)/.test(norm) && text.length < 60) { score += 10; reasons.push('疑似QQ号'); }
+
+  // 3b. 引流联系方式变体：动词+联系方式（加V/私我vx/搜索薇信）、联系方式+号码、
+  //     电报/飞机、@社交手柄 —— 本地词库永远追不全话术，命中即送 LLM/人工复核
+  if (/(?:加|添加|搜索|搜|私|联系|联|扣)(?:我|系|下|一下|信)?(?:微信|薇信|威信|vx|v信|qq|企鹅)/.test(norm) ||
+      /(?:微信|薇信|威信|vx|v信|weixin|wx|qq|tg|电报|飞机)[号:：]\s*[a-z0-9_-]{4,}/.test(norm) ||
+      /@[a-z0-9_]{4,}/.test(norm)) {
+    score += 20;
+    reasons.push('联系方式引流');
+  }
 
   // 4. 乱码/无意义字符（连续 8+ 非字母数字非空白）
   if (/[^\w\u4e00-\u9fa5\s]{8,}/.test(text)) { score += 15; reasons.push('乱码串'); }
@@ -249,40 +276,60 @@ async function llmModeration(text, ai) {
  * 综合审核入口
  *
  * 开关（后台「设置 → 内容审核」可改，默认值来自环境变量）：
- *   - settings.ai_moderation === false      → 整个 AI 层不介入，一律放行，
- *                                             评论/留言只由人工审核开关决定
+ *   - settings.ai_moderation === false      → 本地规则引擎与 LLM 均不介入；
+ *                                             评论交由 comment_moderation 开关；
+ *                                             留言（failClosed）转人工待审，
+ *                                             不存在"零审核直接发布"路径
  *   - settings.ai_llm_moderation === false  → 跳过 LLM 二判（本地规则仍生效）
  *
+ * @param {object} opts
+ *   - forceLlm: true 时所有非拒绝内容都过 LLM（留言量小、垃圾占比高，
+ *               旧的「低分免检直批」是变体垃圾直发的漏洞）
+ *   - failClosed: true 时 AI 层整体关闭改为 pending（留言用）
  * @returns {Promise<{action: 'approved'|'pending'|'rejected', reason: string, score: number}>}
  */
-async function moderateComment(content, nickname = '', website = '') {
+async function moderateComment(content, nickname = '', website = '', opts = {}) {
   // 放在函数内 require：避免 settings ← → aiModeration 之间出现静态环
   const { getAllSettings } = require('./settings');
   const settings = await getAllSettings();
   if (settings.ai_moderation === false) {
+    if (opts.failClosed) {
+      return { action: 'pending', reason: 'AI 审核未启用，转入人工待审', score: 0 };
+    }
     return { action: 'approved', reason: 'AI 审核已关闭（后台设置）', score: 0 };
   }
 
   const { score, reasons } = localModeration(content, nickname, website);
-  // 低分：直接放行（交审核开关）
-  if (score < PENDING_SCORE) {
-    return { action: 'approved', reason: '规则通过', score };
-  }
   // 高分：明确违规，直接拒绝
   if (score >= REJECT_SCORE) {
     return { action: 'rejected', reason: `AI 拦截：${reasons.join('、')}`, score };
   }
-  // 中分：LLM 二判（未配置 LLM 时降级为待审）
-  // 模型配置优先级：后台设置 > 服务器 .env（后台留空即回落）
-  const aiCfg = {
-    apiKey: settings.ai_api_key || config.ai?.apiKey || '',
-    baseUrl: settings.ai_base_url || config.ai?.baseUrl || '',
-    model: settings.ai_model || config.ai?.model || '',
-  };
-  const llm = settings.ai_llm_moderation === false ? null : await llmModeration(content, aiCfg);
-  if (llm === 'APPROVED') return { action: 'approved', reason: 'LLM 判定正常', score };
-  if (llm === 'REJECTED') return { action: 'rejected', reason: 'LLM 判定违规', score };
-  return { action: 'pending', reason: `AI 标记可疑：${reasons.join('、')}`, score };
+  // LLM 复核：中分必判；forceLlm（留言）时低分也过一遍——
+  // 变体垃圾的本地分经常 <30，靠 LLM 兜底
+  if (score >= PENDING_SCORE || opts.forceLlm === true) {
+    // 模型配置优先级：后台设置 > 服务器 .env（后台留空即回落）
+    const aiCfg = {
+      apiKey: settings.ai_api_key || config.ai?.apiKey || '',
+      baseUrl: settings.ai_base_url || config.ai?.baseUrl || '',
+      model: settings.ai_model || config.ai?.model || '',
+    };
+    const llm = settings.ai_llm_moderation === false ? null : await llmModeration(content, aiCfg);
+    if (llm === 'APPROVED') return { action: 'approved', reason: 'AI 审核通过', score };
+    if (llm === 'REJECTED') return { action: 'rejected', reason: 'LLM 判定违规', score };
+    if (llm === 'PENDING') {
+      return { action: 'pending', reason: `AI 标记可疑：${reasons.join('、') || '模型不确定'}`, score };
+    }
+    // null：未配置 / 超时 / 超限 / LLM 二判被关 —— 全部 fail-closed 转人工
+    return {
+      action: 'pending',
+      reason: settings.ai_llm_moderation === false
+        ? `规则标记可疑：${reasons.join('、')}`
+        : 'AI 复核不可用，转人工待审',
+      score,
+    };
+  }
+  // 低分且未要求强制 LLM：放行（交审核开关）
+  return { action: 'approved', reason: '规则通过', score };
 }
 
-module.exports = { moderateComment, localModeration, REJECT_SCORE, PENDING_SCORE };
+module.exports = { moderateComment, localModeration, normalizeForSpam, REJECT_SCORE, PENDING_SCORE };

@@ -310,33 +310,47 @@ html {
 
 body {
   font-family: var(--font-sans);
-  /* 多层彩色渐变底：液态玻璃需要底下有"颜色"可折射。
-     暖珊瑚 / 冷青蓝 / 琥珀三层光源交错，让玻璃在页面各处呈现不同的色温，
-     这正是"真液态玻璃"和"贴一层白磨砂"的分水岭。 */
+  /* 纯色兜底：真正的"彩色底"在 body::before 固定层（见下）。
+     滚动时该层不参与重绘，玻璃的 backdrop-filter 采样的是已合成的稳定层。 */
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+/* 多层彩色渐变底：液态玻璃需要底下有"颜色"可折射。
+   暖珊瑚 / 冷青蓝 / 琥珀三层光源交错，让玻璃在页面各处呈现不同的色温，
+   这正是"真液态玻璃"和"贴一层白磨砂"的分水岭。
+
+   为什么是 position:fixed 层而不是 background-attachment:fixed：
+   后者在 WebKit（尤其 iOS Safari）下是多重渐变的模拟实现，滚动与重绘时
+   平铺错位、玻璃 backdrop-filter 重采样时出现棋盘格马赛克；
+   真实固定层只合成一次，且主题切换时作为整体交叉淡化，不再单帧硬切。 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background:
     radial-gradient(1500px 820px at 4% -16%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 62%),
     radial-gradient(1150px 720px at 100% 8%, color-mix(in srgb, #2f6fb3 27%, transparent), transparent 58%),
     radial-gradient(900px 640px at 88% 78%, color-mix(in srgb, #6d5bb8 16%, transparent), transparent 58%),
     radial-gradient(1400px 920px at 48% 116%, color-mix(in srgb, #c9900f 22%, transparent), transparent 64%),
     var(--bg);
-  background-attachment: fixed; /* 滚动时背景不动，玻璃像真的浮在一张彩色底上 */
-  color: var(--text);
-  font-size: 16px;
-  line-height: 1.75;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
 /* 暗色背景：同样的光源更浓——暗色玻璃折射出的彩色才是"夺目"的灵魂 */
-[data-theme='dark'] body {
+[data-theme='dark'] body::before {
   background:
     radial-gradient(1500px 820px at 4% -16%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 62%),
     radial-gradient(1150px 720px at 100% 8%, color-mix(in srgb, #2f6fb3 32%, transparent), transparent 58%),
     radial-gradient(900px 640px at 88% 78%, color-mix(in srgb, #6d5bb8 26%, transparent), transparent 58%),
     radial-gradient(1400px 920px at 48% 116%, color-mix(in srgb, #c9900f 22%, transparent), transparent 64%),
     var(--bg);
-  background-attachment: fixed;
 }
 
 ::selection {
@@ -344,13 +358,24 @@ body {
   color: #fff;
 }
 
-/* 主题/强调色切换时的全局柔和过渡（仅切换瞬间启用，450ms 后移除） */
+/* 主题/强调色切换：优先 View Transitions 整页交叉淡化（theme.js 探测支持后启用）。
+   快照级过渡不逐元素重绘，渐变、玻璃、画布一起淡入淡出。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.3s;
+  animation-timing-function: ease;
+}
+
+/* 降级路径：无 View Transitions 的浏览器套类过渡（仅切换瞬间启用，450ms 后移除）。
+   注意：不加 box-shadow（纯绘制属性，全页强制重绘正是闪动来源）、
+   不加 background-image（多数浏览器不可插值，加了也是跳变）；
+   filter 让图片的暗色压暗跟随过渡而不是单帧弹跳。 */
 .theme-transition,
 .theme-transition *,
 .theme-transition *::before,
 .theme-transition *::after {
   transition: background-color 0.35s ease, color 0.35s ease,
-    border-color 0.35s ease, box-shadow 0.35s ease, fill 0.35s ease !important;
+    border-color 0.35s ease, filter 0.35s ease, fill 0.35s ease !important;
 }
 
 a {
@@ -545,6 +570,35 @@ input:-webkit-autofill:focus {
   .float-dock {
     right: 12px;
     bottom: 18px;
+  }
+}
+
+/* 浮层栈内圆形按钮的统一规格：
+   site Layout 工具钮 / 文章页互动钮 / 问 AI 入口共用同一材质与尺寸。
+   历史上这三处各手抄一份 44px 定义、移动端只有一处缩放，导致浮钮栏
+   40/44 混排、进度环还比别家宽 2px——收敛到这里，改一处全站生效。 */
+.dock-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border: 1px solid var(--sg-edge);
+  color: var(--text-2);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease), transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+/* 与容器断点对齐：640px 一起缩，不再另立 560px */
+@media (max-width: 640px) {
+  .dock-btn {
+    width: 36px;
+    height: 36px;
   }
 }
 
@@ -999,6 +1053,22 @@ input:-webkit-autofill:focus {
   background-color: color-mix(in srgb, var(--card) 62%, transparent) !important;
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
+}
+
+/* ============================================================
+   管理后台窄屏工具（≤820px，断点与 composables/useMedia.js 一致）
+   ============================================================ */
+
+/* 表格操作按钮：窄屏收紧内边距，操作列才能收窄 */
+@media (max-width: 820px) {
+  .el-table .cell .el-button.is-link,
+  .el-table .cell .el-button--small {
+    padding: 4px 6px;
+  }
+
+  .el-table .el-table__cell {
+    padding: 6px 0;
+  }
 }
 
 /* 数字用衬线等宽，阅读更舒服 */

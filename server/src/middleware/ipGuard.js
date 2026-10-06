@@ -310,6 +310,31 @@ function report(ip, type, path = '') {
   return false;
 }
 
+/** 手动封禁（管理员操作：安全中心 / 留言管理一键封禁）：
+ *  不走信誉积分累积，直接进入封禁态并持久化；可信白名单与本机地址拒绝封禁 */
+function ban(ip, minutes = 30 * 24 * 60, reason = '') {
+  if (!ip) return false;
+  if (securitySettings.isTrustedIp(ip)) return false;
+  if (isLoopbackIp(ip)) return false;
+  const key = reputationKey(ip);
+  if (!key) return false;
+  const now = Date.now();
+  let rec = records.get(key);
+  if (!rec) {
+    rec = { score: 0, updatedAt: now, strikes: 0, banUntil: 0, banCount: 0, lastBanUntil: 0 };
+    records.set(key, rec);
+  }
+  const duration = Math.max(60 * 1000, minutes * 60 * 1000);
+  rec.banCount += 1;
+  rec.banUntil = now + duration;
+  rec.lastBanUntil = rec.banUntil;
+  rec.score = 0;
+  rec.lastBanReason = String(reason || '管理员手动封禁').slice(0, 120);
+  logEvent('ban', key, 'manual', `手动封禁 ${Math.round(duration / 60000)} 分钟：${rec.lastBanReason}`);
+  persistBan(key, rec.banUntil, rec.banCount, rec.lastBanReason);
+  return true;
+}
+
 /** 当前是否被封禁 */
 function isBanned(ip) {
   if (!ip) return false;
@@ -446,6 +471,7 @@ module.exports = {
   ipGuard,
   securityStats,
   logEvent,
+  ban,
   unban,
   loadPersistedBans,
   reputationKey,

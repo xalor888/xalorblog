@@ -32,30 +32,56 @@ export const useThemeStore = defineStore('theme', () => {
   function apply() {
     const root = document.documentElement;
     root.dataset.theme = isDark.value ? 'dark' : 'light';
-    root.style.setProperty('--accent', accent.value);
+    // 深色强调色：与 CSS 约定对齐（[data-theme='dark'] --accent = --accent-deep）。
+    // 内联变量优先级高于样式表，必须在 JS 侧直接给出深色取值，否则深色永远用浅色主色。
+    const base = isDark.value ? shade(accent.value, 0.28) : accent.value;
+    root.style.setProperty('--accent', base);
     // 主题色自动生成浅/深变体
-    root.style.setProperty('--accent-soft', mix(accent.value, isDark.value ? '#ffffff' : '#ffffff', isDark.value ? 0.06 : 0.9));
+    root.style.setProperty('--accent-soft', mix(accent.value, '#ffffff', isDark.value ? 0.06 : 0.9));
     root.style.setProperty('--accent-deep', shade(accent.value, 0.28));
-    // 同步 Element Plus 主色
-    root.style.setProperty('--el-color-primary', accent.value);
-    root.style.setProperty('--el-color-primary-dark-2', shade(accent.value, 0.25));
-    root.style.setProperty('--el-color-primary-light-3', mix(accent.value, '#ffffff', 0.55));
-    root.style.setProperty('--el-color-primary-light-5', mix(accent.value, '#ffffff', 0.7));
-    root.style.setProperty('--el-color-primary-light-7', mix(accent.value, '#ffffff', 0.85));
-    root.style.setProperty('--el-color-primary-light-8', mix(accent.value, '#ffffff', 0.9));
-    root.style.setProperty('--el-color-primary-light-9', mix(accent.value, '#ffffff', isDark.value ? 0.82 : 0.95));
-    // 移动端浏览器地址栏配色跟随主题
+    // 同步 Element Plus 主色（深色下主色提亮、light-N 朝深底压暗，镜像样式表深色色板的配方）
+    const brightBase = isDark.value ? mix(accent.value, '#ffffff', 0.1) : accent.value;
+    root.style.setProperty('--el-color-primary', brightBase);
+    root.style.setProperty('--el-color-primary-dark-2', isDark.value
+      ? mix(accent.value, '#ffffff', 0.12)
+      : shade(accent.value, 0.25));
+    root.style.setProperty('--el-color-primary-light-3', isDark.value ? mix(brightBase, '#12110f', 0.3) : mix(accent.value, '#ffffff', 0.55));
+    root.style.setProperty('--el-color-primary-light-5', isDark.value ? mix(brightBase, '#12110f', 0.55) : mix(accent.value, '#ffffff', 0.7));
+    root.style.setProperty('--el-color-primary-light-7', isDark.value ? mix(brightBase, '#12110f', 0.8) : mix(accent.value, '#ffffff', 0.85));
+    root.style.setProperty('--el-color-primary-light-8', isDark.value ? mix(brightBase, '#12110f', 0.88) : mix(accent.value, '#ffffff', 0.9));
+    root.style.setProperty('--el-color-primary-light-9', isDark.value ? mix(brightBase, '#12110f', 0.9) : mix(accent.value, '#ffffff', 0.95));
+    // 移动端浏览器地址栏配色跟随主题（深色值与 --bg-dark 一致）
     const themeColor = document.querySelector('meta[name="theme-color"]');
-    if (themeColor) themeColor.setAttribute('content', isDark.value ? '#171512' : accent.value);
+    if (themeColor) themeColor.setAttribute('content', isDark.value ? '#12110f' : accent.value);
   }
 
-  /** 主题/强调色切换时短暂启用全局过渡，实现柔和渐变（首屏不触发） */
+  /** 主题/强调色切换时短暂启用全局过渡，实现柔和渐变（首屏不触发）。
+      仅作 View Transitions 不可用时的降级路径。 */
   let transitionTimer = null;
   function flashTransition() {
     const root = document.documentElement;
     root.classList.add('theme-transition');
     clearTimeout(transitionTimer);
     transitionTimer = setTimeout(() => root.classList.remove('theme-transition'), 450);
+  }
+
+  const prefersReducedMotion = () =>
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+
+  /** 切换过渡：优先 View Transitions 整页快照交叉淡化——渐变背景、玻璃材质、
+      粒子画布作为一个整体淡入淡出，避免逐元素过渡引发的重绘风暴与
+      backdrop-filter 重采样马赛克。降级/减少动态时直接套类过渡或直切。 */
+  function withTransition(mutate) {
+    if (prefersReducedMotion()) {
+      mutate();
+      return;
+    }
+    if (typeof document.startViewTransition === 'function') {
+      document.startViewTransition(() => mutate());
+      return;
+    }
+    flashTransition();
+    mutate();
   }
 
   /** 循环切换：auto → light → dark → auto */
@@ -68,16 +94,14 @@ export const useThemeStore = defineStore('theme', () => {
   function setMode(m) {
     mode.value = m;
     try { localStorage.setItem('xalor_theme', m); } catch (e) { /* 隐私模式忽略 */ }
-    flashTransition();
-    apply();
+    withTransition(apply);
   }
 
   function setAccent(color) {
     if (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) return; // 非法值忽略
     accent.value = color;
     try { localStorage.setItem('xalor_accent', color); } catch (e) { /* 隐私模式忽略 */ }
-    flashTransition();
-    apply();
+    withTransition(apply);
   }
 
   watchEffect(apply);
@@ -86,8 +110,7 @@ export const useThemeStore = defineStore('theme', () => {
   const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
   mq?.addEventListener?.('change', (e) => {
     systemDark.value = e.matches;
-    flashTransition();
-    apply();
+    withTransition(apply);
   });
 
   return { isDark, mode, accent, apply, toggleTheme, setMode, setAccent };

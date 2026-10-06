@@ -139,9 +139,9 @@ async function submit() {
       safeRemove('xalor_remember_user');
     }
     if (data.is_default_pwd) {
-      ElMessage.warning('当前仍在使用初始密码 admin123，请尽快修改！');
+      ElMessage.warning('当前仍在使用初始密码，请尽快修改');
     } else {
-      ElMessage.success('欢迎回来！');
+      ElMessage.success('欢迎回来');
     }
     // 确保秘钥路径已加载，再跳转仪表盘
     const key = await getAdminPath();
