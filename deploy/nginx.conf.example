@@ -1,25 +1,46 @@
 # 最小生产示例。安装前替换 server_name、root 和证书/TLS 配置。
 #
-# ── 前置 CDN（阿里云 DCDN / 腾讯 EdgeOne 等）接入要点 ──────────────────────
-# 1. 套 CDN 后 Nginx 的 TCP 对端是回源节点，必须先用 real_ip 还原访客真实 IP，
-#    否则限流/IP 信誉封禁全部打在 CDN 节点上：一个垃圾提交可封掉整个边缘节点，
-#    该节点后面所有访客全站 403。CDN 厂商回源网段见其官方文档（会更新，需定期同步）：
+# ── 阿里云 ESA（边缘安全加速）前置要点 ─────────────────────────────────────
+# 站点安全（PoW 通行证、请求签名、限流、IP 信誉封禁）全部在应用层自建，
+# 不依赖任何 CDN 厂商；但接入边缘加速后有两条会「整片打死」的坑，务必先看：
 #
-#     # 以厂商文档的实际网段为准，逐段列出（示例占位，勿直接照抄）：
-#     # set_real_ip_from 203.0.113.0/24;
-#     # set_real_ip_from 2001:db8::/32;
-#     # real_ip_header X-Forwarded-For;
-#     # real_ip_recursive on;
+# 1. 真实 IP 还原（必做，不是优化）
+#    Nginx 的 TCP 对端会变成 ESA 回源节点。不还原则限流/刮取窗/信誉封禁全部
+#    打在节点 IP 上 —— 一个访客的垃圾提交会封掉整个回源节点，该节点后面所有
+#    访客全站 403。落地见 deploy/nginx-realip-esa.conf（含自检日志与验证步骤）。
 #
-#    还原后 $remote_addr 即真实访客 IP，下方「覆盖式 X-Forwarded-For」无需改动，
-#    后端 TRUST_PROXY=loopback 亦不变。
-# 2. /api/ai/ask 为 SSE 流式响应：应用已发送 X-Accel-Buffering: no（Nginx 按响应豁免
-#    缓冲）；CDN 侧必须对该路径配置动态回源不缓存，并确认厂商支持流式透传
-#    （纯静态 CDN 可能整段缓冲，AI 对话会卡到最后一次性输出）。
-# 3. CDN 缓存键必须保留全部查询串：/theme-init.js 与 /anti-debug.js 靠 ?v= 换版本。
-# 4. 缓存规则建议：/assets/*（带内容哈希）长缓存；/uploads/* 次之；
-#    /api/* 与 index.html 一律回源不缓存（rss.xml 缓存会让订阅器拉到旧文）。
-# 5. 回源走 HTTPS + SNI 校验，证书用厂商免费 DV 或自有证书（CF 源站证书不可复用）。
+# 2. 源站禁止直连（必做，否则前面的防护形同虚设）
+#    源站 IP 一旦暴露，攻击者绕过 ESA 直连即可跳过边缘 WAF/CC，而应用层的
+#    IP 维度防护只作用在他自己的连接上。安全组只放行 ESA 回源网段到 80/443；
+#    退而求其次用 nginx-locations.inc 顶部的「源站校验头」。
+#
+# 3. 缓存与压缩
+#    - /api/*（含 SSE 的 /api/ai/ask）、/sitemap.xml、/rss.xml、/robots.txt、
+#      /health*、/index.html、/home.html 一律不缓存；/assets/* 长缓存；
+#      /uploads/* 与 /theme-init.js 等「遵循源站」即可 —— 应用已为每类资源
+#      下发正确的 Cache-Control，全局默认选「遵循源站」比手写一堆规则更稳。
+#    - 缓存键必须保留全部查询串：/theme-init.js 与 /anti-debug.js 靠 ?v= 换版本，
+#      忽略参数会让改版后的老访客继续执行旧脚本。
+#    - 源站已 gzip；ESA 开智能压缩后确认响应只有一层 Content-Encoding。
+#    - /api/ai/ask 是 SSE 流式响应（应用已发 X-Accel-Buffering: no），边缘侧
+#      必须动态回源不缓存并支持流式透传，否则 AI 对话会卡到结束才一次性输出。
+#
+# 4. 自定义头必须透传（接完立刻验证）
+#    请求向：X-Pass / X-Sig / X-Nonce / X-Timestamp / X-Fp / X-Hp-Field
+#    响应向：X-Request-Id / Vary（Vary 丢失会让边缘按 URL 串域名缓存）
+#    任一被边缘吞掉，通行证+签名链路直接失效，站点表现为「一直加载失败」。
+#
+# 5. 回源 Host 必须是加速的域名本身（ESA 默认如此）
+#    应用按 Host 派发 SEO 路由并校验 ALLOWED_HOSTS；被改写成别的值会 403。
+#
+# 6. 把 ESA 回源网段加进应用白名单
+#    安全中心 → WAF 防护设置（或 .env 的 TRUSTED_IPS）。白名单 IP 不记信誉分、
+#    不会被自动封禁 —— ESA 自身的健康检查/漏洞扫描也会回源，不加白名单有可能
+#    把边缘节点打成封禁。中国大陆加速还要求域名已完成 ICP 备案。
+#
+# 7. 边缘 WAF / CC / Bot 建议先「观察模式」跑 24 小时再加拦截，
+#    并把 /api/ 从激进规则里排除：应用层已有异常评分 WAF + 闸门签名，
+#    两层同时拦截会让排障变困难。
 # ─────────────────────────────────────────────────────────────────────────────
 # ── 双站部署 ────────────────────────────────────────────────────────────────
 # 同一个后端（127.0.0.1:3000）+ 同一份前端产物（web/dist，Vite 双入口）：
@@ -27,6 +48,9 @@
 #   xalor.example.com → web/dist/home.html（个人主页入口，hash 路由）
 # 两个域名共用 deploy/nginx-locations.inc 里的反代片段（含 /api 与 /uploads）。
 # ────────────────────────────────────────────────────────────────────────────
+
+# ESA 真实 IP 还原 + 接入自检日志（http 上下文；不需要 ESA 时整行注释掉即可）
+include /path/to/xalorblog/deploy/nginx-realip-esa.conf;
 
 server {
     listen 80;

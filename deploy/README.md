@@ -128,21 +128,79 @@ curl -s  https://blog.xalor.cn/sitemap.xml | grep -c '#/notes'  # 应为 0
 ```
 
 
-## 前置 CDN（阿里云 / 腾讯云）
+## 前置 CDN / 边缘加速（以阿里云 ESA 为例）
 
-站点安全（PoW 通行证、请求签名、限流、IP 信誉封禁）全部在应用层自建，不依赖任何 CDN 厂商，
-Cloudflare、阿里云 DCDN、腾讯 EdgeOne 均可替换。接入时按 `nginx.conf.example` 顶部的
-接入要点核对，最容易出事故的两条：
+站点安全（PoW 通行证、请求签名、限流、IP 信誉封禁）全部在应用层自建，不依赖任何厂商；
+Cloudflare、阿里云 ESA/DCDN、腾讯 EdgeOne 都可替换。接入前请先看 `nginx.conf.example`
+顶部的要点，其中两条不配会「整片打死」：
 
-- **真实 IP 还原**：不配 `set_real_ip_from` + `real_ip_header` 时，所有访客共享 CDN
-  回源节点 IP——刮取窗/限流误伤正常读者，且一条垃圾留言能把整个边缘节点封禁，
-  节点后所有访客全站 403。厂商回源网段以其官方文档为准（会更新，定期同步）。
-- **缓存键保留查询串**：`/theme-init.js`、`/anti-debug.js` 靠 `?v=` 换版本，
-  CDN 若忽略参数，改版后老访客会继续执行旧脚本。
+### A. 源站侧（本仓库，两步）
 
-其余：`/api/*` 全部动态回源不缓存（`/api/ai/ask` 是 SSE 流式，纯静态 CDN 会缓冲整段响应，
-需全站加速类产品或让 API 直连源站）；带哈希的 `/assets/*` 长缓存；回源 HTTPS + SNI；
-域名需已完成 ICP 备案。
+**1. 还原真实客户端 IP —— `deploy/nginx-realip-esa.conf`**
+
+`nginx.conf.example` 已在 http 上下文 `include` 了它。需要你做的只是把 ESA 控制台的
+「回源 IP 段」逐段填进 `set_real_ip_from`（文件内有占位行）。**没填 = 不生效**（站点不会
+坏，但会造成下面的误伤），所以接完必须做 C 节验证。
+
+不还原会怎样：Nginx 的对端是 ESA 回源节点，而本应用的票据绑定、限流、刮取窗、点赞防刷、
+信誉分与自动封禁全部以 `req.ip` 为维度 —— 结果是一个访客的垃圾提交会封掉**整个回源节点**，
+该节点后面所有访客全站 403。
+
+**2. 源站禁止直连 —— 安全组优先，校验头兜底**
+
+`set_real_ip_from` 只信任所列网段，所以直连源站无法伪造 XFF；但源站 IP 一旦暴露，
+攻击者绕过 ESA 直连就能跳过边缘 WAF/CC，而应用层基于 IP 的防护只作用在他自己的连接上。
+
+- 首选：云安全组入方向 `80/443` 只放行 ESA 回源网段，`22` 只放行你的办公/跳板 IP。
+- 兜底：无法改安全组时，用 `nginx-locations.inc` 顶部的「源站校验头」（默认注释）——
+  让 ESA 回源时追加 `X-Origin-Verify`，Nginx 校验失败直接 `444`。
+
+**3. 把 ESA 回源网段加进应用白名单**
+
+安全中心 → WAF 防护设置（或 `.env` 的 `TRUSTED_IPS`，支持 CIDR）。白名单 IP **不记信誉分、
+不会被自动封禁** —— ESA 自身的健康检查与漏洞扫描也会回源，不加白名单有可能把边缘节点
+打成封禁，进而整片 403。
+
+### B. ESA 控制台配置清单
+
+| 项 | 配置 |
+|---|---|
+| 加速域名 | `xalor.cn` 与 `blog.xalor.cn` 都要（可分别建站点） |
+| 源站 / 回源 Host | **必须保持为加速的域名本身**（ESA 默认即如此）。应用按 Host 派发 SEO 路由并校验 `ALLOWED_HOSTS`，被改写会 403 |
+| 回源协议 | 推荐 HTTPS 回源（回源证书用你自己的；用 HTTP 回源时应用不会下发 HSTS） |
+| 缓存：`/api/*` | **不缓存**（含 SSE 的 `/api/ai/ask`；带 `\.well-known` 也别缓存） |
+| 缓存：`/sitemap.xml` `/rss.xml` `/robots.txt` `/health*` | **不缓存**（内容按 Host 派发，且源站已有 30s 缓存） |
+| 缓存：`/index.html` `/home.html` `/` | **不缓存**（部署即生效） |
+| 缓存：`/assets/*` | 长缓存（文件名带内容哈希，可 1 年 + immutable） |
+| 缓存：`/uploads/*`、`/theme-init.js`、`/anti-debug.js` | **遵循源站**（应用已下发 `Cache-Control`；`?v=` 换版本靠源站头） |
+| 全局缓存策略 | 默认选「遵循源站缓存头」。应用已为每类资源下发正确的 `Cache-Control`，比在边缘手写一堆规则更不容易漏 |
+| 缓存键 | **必须保留全部查询串**，否则 `/theme-init.js?v=`、`/anti-debug.js?v=` 换版本失效，老访客继续跑旧脚本 |
+| 压缩 | 源站已 gzip。开智能压缩后确认响应只有**一层** `Content-Encoding`（见 C-3） |
+| 请求头透传 | 必须原样透传 `X-Pass` `X-Sig` `X-Nonce` `X-Timestamp` `X-Fp` `X-Hp-Field`；响应向不得吞掉 `X-Request-Id`、`Vary` |
+| WAF / CC / Bot | 先「观察模式」跑 24h 再加拦截；把 `/api/` 从激进规则排除（应用层已有异常评分 WAF + 闸门签名，两层同时拦会难以排障） |
+| 备案 | 中国大陆加速要求域名已完成 ICP 备案 |
+
+### C. 接完的自检（三条，缺一不可）
+
+```bash
+# 1) 真实 IP 是否还原：观察自检日志的 remote_addr 与 peer
+#    peer 是 ESA 节点、remote_addr 是你的访客 IP → 生效
+#    两者相同且都是 ESA 段 → 网段没填对
+tail -f /var/log/nginx/xalor-access.log
+
+# 2) 自定义头是否透传（不通 = 通行证+签名链路失效，站点会一直加载失败）
+cd server && TEST_BASE=https://<你的域名> node test/run.js journey.test.js
+
+# 3) 压缩单层 + 动态不缓存
+curl -sI -H 'Accept-Encoding: gzip' https://<你的域名>/assets/<带哈希的 js> | grep -ci content-encoding   # 期望 1
+curl -sI https://<你的域名>/api/health/live | grep -i 'x-cache\|age'                                     # 期望不缓存
+```
+
+### D. 回滚
+
+`nginx-realip-esa.conf` 是向后兼容的：网段留空不生效、请求不来自受信网段不生效。
+所以回滚只需在 ESA 侧把域名解析指回源站（或暂停加速），**源站 nginx 一行都不用改**，
+行为自动回到接入前。
 
 容器中确需监听所有接口时，可设置 `LISTEN_HOST=0.0.0.0`，但必须用宿主机防火墙或容器网络
 禁止客户端直连 3000 端口，并把 `TRUST_PROXY` 写成专用反代网络的真实 CIDR，例如
