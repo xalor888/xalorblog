@@ -125,7 +125,12 @@ function runGroupRules(rules, ctx, scope, skipGroups) {
     if (rule.zones && !rule.zones.includes(scope)) continue; // 扫描面过滤
     if (rule.pl > pl) continue; // 偏执门控：高于当前等级的规则不参与
     if (disabled && disabled.has(rule.id)) continue;
-    if (skipGroups && skipGroups.some((p) => rule.id.startsWith(`${p}-`))) continue;
+    // 参数豁免按**规则所属组**判断，不能拿规则 ID 前缀当组名：
+    // TRAVERSAL 组的规则 ID 是 TRV-xx、MISC 组是 MSC-xx，前缀与组名不一致，
+    // 用 ID 前缀判断会让这两组的豁免静默失效 —— 表现为「正文里写 ../../etc/passwd
+    // 或 __proto__ 这类技术讨论被 403」，与 PARAM_EXEMPT_GROUPS 的声明相反。
+    // 组的权威来源是 RULE_INDEX（RULE_INDEX 覆盖全部规则，见 test/waf-fixtures.test.js 的覆盖率门禁）。
+    if (skipGroups && skipGroups.includes(RULE_INDEX[rule.id]?.group)) continue;
     for (const v of variants) {
       if (rule.re.test(v)) {
         hits.push({

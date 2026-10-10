@@ -1,39 +1,235 @@
 {
-  "comment": "WAF 良性语料：真实用户内容必须放行。verdict 语义——clean=零命中；monitor=有低分命中但 score<阈值（新引擎下不拦截、只记 waf-mon 事件；旧引擎这些样本全部 403）。带 key 的条目走 scanRequestBody 验证参数×规则组作用域豁免。",
+  "comment": "WAF 良性语料：真实用户内容必须放行。verdict 语义——clean=零命中；monitor=有低分命中但 score<阈值（新引擎下不拦截、只记 waf-mon 事件；旧引擎这些样本全部 403）。带 key 的条目走 scanRequestBody 验证参数×规则组作用域豁免。另含参数豁免（TRAVERSAL/MISC 组）的历史误杀回归。",
   "cases": [
-    { "name": "昵称 JavaScript 冒号（历史误杀）", "scope": "body", "key": "nickname", "value": "JavaScript:从入门到放弃", "verdict": "clean" },
-    { "name": "模板字符串 ${name}（昵称）", "scope": "body", "key": "nickname", "value": "how to use ${name} in vue template", "verdict": "clean" },
-    { "name": "网站字段带端口", "scope": "body", "key": "site", "value": "https://blog.example.com:8443/about", "verdict": "clean" },
-    { "name": "科学计数法文本", "scope": "query", "value": "质量约为 1e5=100000 倍", "verdict": "clean" },
-    { "name": "十六进制颜色值", "scope": "query", "value": "#4a90d9 是主题色", "verdict": "clean" },
-    { "name": "英文散文含 select/from（经典误杀回归）", "scope": "query", "value": "select the color from the palette", "verdict": "clean" },
-    { "name": "query 参数 online=1", "scope": "query", "value": "在线模式 online=1", "verdict": "clean" },
-    { "name": "ORDER BY 排序讨论（旧版误杀，pl2 规则）", "scope": "query", "value": "文章 order by 5 排序", "verdict": "clean" },
-    { "name": "alert() 函数讨论（旧版误杀，pl2 规则）", "scope": "query", "value": "alert(1) 弹窗函数怎么用", "verdict": "clean" },
-    { "name": "eval() 讨论（旧版误杀，pl2 规则）", "scope": "query", "value": "eval( 函数与 Function 构造器", "verdict": "clean" },
-    { "name": "document.cookie 概念（pl2 规则）", "scope": "query", "value": "document.cookie 是什么", "verdict": "clean" },
-    { "name": "CSS @import 用法（pl2 规则）", "scope": "query", "value": "css @import 用法", "verdict": "clean" },
-    { "name": "HTML 实体讲解（pl2 规则）", "scope": "query", "value": "HTML 实体 &lt; 是什么", "verdict": "clean" },
-    { "name": "正文里提内网 IP（body 非 URL 字段不查 SSRF）", "scope": "body", "key": "note", "value": "我的服务器是 192.168.1.50", "verdict": "clean" },
-    { "name": "keyword 搜索内网 IP（SSRF 组豁免）", "scope": "query", "value": "搜索：192.168.1.50 配置说明", "keyword": true, "verdict": "clean" },
-    { "name": "正文讲 sqlmap 原理（工具名只拦 UA）", "scope": "query", "value": "sqlmap 原理分析", "verdict": "clean" },
-    { "name": "Windows 路径不含上跳", "scope": "query", "value": "C:\\Users\\test", "verdict": "clean" },
-    { "name": "正常文章路径", "scope": "path", "value": "/articles/vue3-tutorial", "verdict": "clean" },
-    { "name": "正常 referer 头", "scope": "header", "value": "https://blog.example.com/", "verdict": "clean" },
-    { "name": "本地 referer 不查 SSRF（header 面无 SSRF，历史回归）", "scope": "header", "value": "http://localhost:5173/", "verdict": "clean" },
-    { "name": "代理链 XFF 含内网地址不查 SSRF", "scope": "header", "value": "10.0.0.5, 192.168.1.1", "verdict": "clean" },
-    { "name": "公网 URL 字段", "scope": "body", "key": "site", "value": "http://example.com/", "verdict": "clean" },
-    { "name": "WAITFOR 单词不构成盲注", "scope": "query", "value": "waitfor 是 SQL Server 的关键字", "verdict": "clean" },
-
-    { "name": "引号后注释符（旧版 403 → 监控）", "scope": "query", "value": "admin'--", "verdict": "monitor" },
-    { "name": "CSS 注释形态（旧版 403 → 监控）", "scope": "query", "value": "css /* 注释 */ 语法", "verdict": "monitor" },
-    { "name": "SSTI 算术提问（旧版 403 → 监控）", "scope": "query", "value": "{{7*7}} 是多少", "verdict": "monitor" },
-    { "name": "原型链构造器讨论（旧版 403 → 监控）", "scope": "query", "value": "constructor.constructor 链", "verdict": "monitor" },
-    { "name": "query 里的模板字符串（旧版 403 → 监控）", "scope": "query", "value": "模板字符串 ${user.name} 用法", "verdict": "monitor" },
-
-    { "name": "豁免键 content 携带注入载荷（输出层清洗兜底）", "scope": "body", "key": "content", "value": "1' OR '1'='1 UNION SELECT password FROM users--", "verdict": "clean" },
-    { "name": "豁免键 title 携带 script 文本", "scope": "body", "key": "title", "value": "<script> 标签转义讨论", "verdict": "clean" },
-    { "name": "豁免键 ip 携带 IPv6 回环（历史误杀）", "scope": "body", "key": "ip", "value": "::1", "verdict": "clean" },
-    { "name": "豁免键 color 十六进制色", "scope": "body", "key": "color", "value": "#4a90d9", "verdict": "clean" }
+    {
+      "name": "昵称 JavaScript 冒号（历史误杀）",
+      "scope": "body",
+      "key": "nickname",
+      "value": "JavaScript:从入门到放弃",
+      "verdict": "clean"
+    },
+    {
+      "name": "模板字符串 ${name}（昵称）",
+      "scope": "body",
+      "key": "nickname",
+      "value": "how to use ${name} in vue template",
+      "verdict": "clean"
+    },
+    {
+      "name": "网站字段带端口",
+      "scope": "body",
+      "key": "site",
+      "value": "https://blog.example.com:8443/about",
+      "verdict": "clean"
+    },
+    {
+      "name": "科学计数法文本",
+      "scope": "query",
+      "value": "质量约为 1e5=100000 倍",
+      "verdict": "clean"
+    },
+    {
+      "name": "十六进制颜色值",
+      "scope": "query",
+      "value": "#4a90d9 是主题色",
+      "verdict": "clean"
+    },
+    {
+      "name": "英文散文含 select/from（经典误杀回归）",
+      "scope": "query",
+      "value": "select the color from the palette",
+      "verdict": "clean"
+    },
+    {
+      "name": "query 参数 online=1",
+      "scope": "query",
+      "value": "在线模式 online=1",
+      "verdict": "clean"
+    },
+    {
+      "name": "ORDER BY 排序讨论（旧版误杀，pl2 规则）",
+      "scope": "query",
+      "value": "文章 order by 5 排序",
+      "verdict": "clean"
+    },
+    {
+      "name": "alert() 函数讨论（旧版误杀，pl2 规则）",
+      "scope": "query",
+      "value": "alert(1) 弹窗函数怎么用",
+      "verdict": "clean"
+    },
+    {
+      "name": "eval() 讨论（旧版误杀，pl2 规则）",
+      "scope": "query",
+      "value": "eval( 函数与 Function 构造器",
+      "verdict": "clean"
+    },
+    {
+      "name": "document.cookie 概念（pl2 规则）",
+      "scope": "query",
+      "value": "document.cookie 是什么",
+      "verdict": "clean"
+    },
+    {
+      "name": "CSS @import 用法（pl2 规则）",
+      "scope": "query",
+      "value": "css @import 用法",
+      "verdict": "clean"
+    },
+    {
+      "name": "HTML 实体讲解（pl2 规则）",
+      "scope": "query",
+      "value": "HTML 实体 &lt; 是什么",
+      "verdict": "clean"
+    },
+    {
+      "name": "正文里提内网 IP（body 非 URL 字段不查 SSRF）",
+      "scope": "body",
+      "key": "note",
+      "value": "我的服务器是 192.168.1.50",
+      "verdict": "clean"
+    },
+    {
+      "name": "keyword 搜索内网 IP（SSRF 组豁免）",
+      "scope": "query",
+      "value": "搜索：192.168.1.50 配置说明",
+      "keyword": true,
+      "verdict": "clean"
+    },
+    {
+      "name": "正文讲 sqlmap 原理（工具名只拦 UA）",
+      "scope": "query",
+      "value": "sqlmap 原理分析",
+      "verdict": "clean"
+    },
+    {
+      "name": "Windows 路径不含上跳",
+      "scope": "query",
+      "value": "C:\\Users\\test",
+      "verdict": "clean"
+    },
+    {
+      "name": "正常文章路径",
+      "scope": "path",
+      "value": "/articles/vue3-tutorial",
+      "verdict": "clean"
+    },
+    {
+      "name": "正常 referer 头",
+      "scope": "header",
+      "value": "https://blog.example.com/",
+      "verdict": "clean"
+    },
+    {
+      "name": "本地 referer 不查 SSRF（header 面无 SSRF，历史回归）",
+      "scope": "header",
+      "value": "http://localhost:5173/",
+      "verdict": "clean"
+    },
+    {
+      "name": "代理链 XFF 含内网地址不查 SSRF",
+      "scope": "header",
+      "value": "10.0.0.5, 192.168.1.1",
+      "verdict": "clean"
+    },
+    {
+      "name": "公网 URL 字段",
+      "scope": "body",
+      "key": "site",
+      "value": "http://example.com/",
+      "verdict": "clean"
+    },
+    {
+      "name": "WAITFOR 单词不构成盲注",
+      "scope": "query",
+      "value": "waitfor 是 SQL Server 的关键字",
+      "verdict": "clean"
+    },
+    {
+      "name": "引号后注释符（旧版 403 → 监控）",
+      "scope": "query",
+      "value": "admin'--",
+      "verdict": "monitor"
+    },
+    {
+      "name": "CSS 注释形态（旧版 403 → 监控）",
+      "scope": "query",
+      "value": "css /* 注释 */ 语法",
+      "verdict": "monitor"
+    },
+    {
+      "name": "SSTI 算术提问（旧版 403 → 监控）",
+      "scope": "query",
+      "value": "{{7*7}} 是多少",
+      "verdict": "monitor"
+    },
+    {
+      "name": "原型链构造器讨论（旧版 403 → 监控）",
+      "scope": "query",
+      "value": "constructor.constructor 链",
+      "verdict": "monitor"
+    },
+    {
+      "name": "query 里的模板字符串（旧版 403 → 监控）",
+      "scope": "query",
+      "value": "模板字符串 ${user.name} 用法",
+      "verdict": "monitor"
+    },
+    {
+      "name": "豁免键 content 携带注入载荷（输出层清洗兜底）",
+      "scope": "body",
+      "key": "content",
+      "value": "1' OR '1'='1 UNION SELECT password FROM users--",
+      "verdict": "clean"
+    },
+    {
+      "name": "豁免键 title 携带 script 文本",
+      "scope": "body",
+      "key": "title",
+      "value": "<script> 标签转义讨论",
+      "verdict": "clean"
+    },
+    {
+      "name": "豁免键 ip 携带 IPv6 回环（历史误杀）",
+      "scope": "body",
+      "key": "ip",
+      "value": "::1",
+      "verdict": "clean"
+    },
+    {
+      "name": "豁免键 color 十六进制色",
+      "scope": "body",
+      "key": "color",
+      "value": "#4a90d9",
+      "verdict": "clean"
+    },
+    {
+      "name": "正文讲路径穿越（content 豁免 TRAVERSAL，历史误杀）",
+      "scope": "body",
+      "key": "content",
+      "value": "curl http://x/../../etc/passwd 演示",
+      "verdict": "clean"
+    },
+    {
+      "name": "文章摘要含上跳路径（summary 豁免 TRAVERSAL）",
+      "scope": "body",
+      "key": "summary",
+      "value": "../../etc/passwd 的成因",
+      "verdict": "clean"
+    },
+    {
+      "name": "正文讲原型污染 __proto__（content 豁免 MISC，历史误杀）",
+      "scope": "body",
+      "key": "content",
+      "value": "聊聊原型污染：obj.__proto__ 被改写",
+      "verdict": "clean"
+    },
+    {
+      "name": "手记正文引用 OGNL 表达式（content 豁免 MISC）",
+      "scope": "body",
+      "key": "content",
+      "value": "Struts2 的 OGNL 表达式注入怎么防？",
+      "verdict": "clean"
+    }
   ]
 }
