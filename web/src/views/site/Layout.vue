@@ -12,9 +12,18 @@
         </router-link>
 
         <nav class="nav-links">
-          <router-link v-for="item in navItems" :key="item.to" :to="item.to" class="nav-link" :class="{ active: isActive(item) }">
-            {{ item.short }}
-          </router-link>
+          <!-- 跨站项（个人主页）走 <a>：两个站点不同域名，router-link 会当成站内路径 -->
+          <template v-for="item in navItems" :key="item.to || item.href">
+            <a
+              v-if="item.external"
+              :href="item.href"
+              class="nav-link external"
+              rel="noopener"
+            >{{ item.short }}</a>
+            <router-link v-else :to="item.to" class="nav-link" :class="{ active: isActive(item) }">
+              {{ item.short }}
+            </router-link>
+          </template>
         </nav>
 
         <!-- 移动端菜单 -->
@@ -69,17 +78,28 @@
     </transition>
     <transition name="drawer">
       <nav v-if="mobileOpen" class="mobile-menu">
-        <router-link
-          v-for="item in navItems"
-          :key="item.to"
-          :to="item.to"
-          class="mobile-link"
-          :class="{ active: isActive(item) }"
-          @click="mobileOpen = false"
-        >
-          <span>{{ item.short }}</span>
-          <span class="mobile-zh">{{ item.label }}</span>
-        </router-link>
+        <template v-for="item in navItems" :key="item.to || item.href">
+          <a
+            v-if="item.external"
+            :href="item.href"
+            class="mobile-link external"
+            rel="noopener"
+            @click="mobileOpen = false"
+          >
+            <span>{{ item.short }}</span>
+            <span class="mobile-zh">{{ item.label }}</span>
+          </a>
+          <router-link
+            v-else
+            :to="item.to"
+            class="mobile-link"
+            :class="{ active: isActive(item) }"
+            @click="mobileOpen = false"
+          >
+            <span>{{ item.short }}</span>
+            <span class="mobile-zh">{{ item.label }}</span>
+          </router-link>
+        </template>
         <div class="mobile-actions">
           <button class="mobile-action" @click="openSearch">
             <XIcon name="Search" :size="16" /> 搜索
@@ -234,6 +254,7 @@ import ShortcutHelp from '@/components/ui/ShortcutHelp.vue';
 import AmbientParticles from '@/components/site/AmbientParticles.vue';
 import { useThemeStore, THEME_COLORS } from '@/stores/theme';
 import { useSiteStore } from '@/stores/site';
+import { homeUrl } from '@/utils/siteLinks';
 import { statsApi } from '@/api';
 import { formatNumber } from '@/utils/format';
 
@@ -330,6 +351,8 @@ const RING_C = 2 * Math.PI * RING_R;
 const ringOffset = computed(() => RING_C * (1 - scrollPercent.value / 100));
 
 const navItems = [
+  // 跨站入口：个人主页（xalor.cn）—— 与本站同属一个站点体系，后台也是同一套
+  { href: homeUrl(''), label: '主页', short: 'MAIN', external: true },
   { to: '/', label: '首页', short: 'HOME', exact: true },
   { to: '/articles', label: '文章', short: 'POSTS' },
   { to: '/archive', label: '归档', short: 'ARCHIVE' },
@@ -353,6 +376,7 @@ const mailHref = computed(() => {
 });
 
 function isActive(item) {
+  if (item.external) return false; // 跨站项永不显示为当前页
   if (item.exact) return route.path === '/';
   if (item.to === '/articles') {
     return route.path === '/articles' || route.path.startsWith('/article/');
@@ -544,6 +568,36 @@ onUnmounted(() => {
 .site-nav.overlay .nav-link.active {
   color: #fff;
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* 跨站入口（个人主页）：观感与站内项一致，末尾带一个外链角标 */
+.nav-link.external {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-3);
+  text-decoration: none;
+}
+.nav-link.external::after {
+  content: '↗';
+  font-size: 10px;
+  margin-left: 2px;
+  opacity: 0.7;
+}
+.site-nav.overlay .nav-link.external {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* 移动端抽屉里的跨站项：与站内项同样的排版 */
+.mobile-link.external {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-decoration: none;
+}
+.mobile-link.external::after {
+  content: '↗';
+  font-size: 13px;
+  opacity: 0.6;
 }
 
 .site-nav.overlay .nav-link.active::after {

@@ -13,18 +13,24 @@
       </router-link>
 
       <nav class="side-nav">
-        <router-link
-          v-for="item in menus"
-          :key="item.path"
-          :to="adminHref(item.path)"
-          class="side-link"
-          active-class="active"
-          :title="collapsed && !isMobile ? item.title : undefined"
-        >
-          <XIcon :name="item.icon" :size="17" />
-          <span v-show="!collapsed || isMobile">{{ item.title }}</span>
-          <span v-if="badgeFor(item)" class="side-badge" :class="{ hide: collapsed && !isMobile }">{{ badgeFor(item) }}</span>
-        </router-link>
+        <template v-for="(item, idx) in menus" :key="item.path">
+          <!-- 分组标题：只在进入新分组的第一项前渲染一次 -->
+          <p
+            v-if="item.group && (idx === 0 || menus[idx - 1].group !== item.group)"
+            class="side-group"
+            :class="{ hide: collapsed && !isMobile }"
+          >{{ item.group }}</p>
+          <router-link
+            :to="adminHref(item.path)"
+            class="side-link"
+            active-class="active"
+            :title="collapsed && !isMobile ? item.title : undefined"
+          >
+            <XIcon :name="item.icon" :size="17" />
+            <span v-show="!collapsed || isMobile">{{ item.title }}</span>
+            <span v-if="badgeFor(item)" class="side-badge" :class="{ hide: collapsed && !isMobile }">{{ badgeFor(item) }}</span>
+          </router-link>
+        </template>
       </nav>
 
       <div class="side-bottom">
@@ -139,19 +145,23 @@ watch(collapsed, (v) => {
 });
 const accentOpen = ref(false);
 
+// 统一后台：同一个后台同时管理博客与个人主页（分组只是视觉分层，权限与路由完全一致）
 const menus = [
   { path: 'dashboard', title: '仪表盘', icon: 'LayoutDashboard' },
-  { path: 'articles', title: '文章管理', icon: 'FileText' },
-  { path: 'articles/new', title: '写文章', icon: 'SquarePen' },
-  { path: 'categories', title: '分类管理', icon: 'FolderOpen' },
-  { path: 'tags', title: '标签管理', icon: 'Tags' },
-  { path: 'comments', title: '评论管理', icon: 'MessagesSquare' },
-  { path: 'links', title: '友链管理', icon: 'Link2' },
-  { path: 'messages', title: '留言管理', icon: 'MailOpen' },
-  { path: 'images', title: '图片管理', icon: 'Image' },
-  { path: 'security', title: '安全中心', icon: 'ShieldCheck' },
-  { path: 'audit', title: '审计日志', icon: 'History' },
-  { path: 'settings', title: '站点设置', icon: 'Settings2' },
+  { path: 'notes', title: '手记管理', icon: 'Feather', group: '个人主页' },
+  { path: 'notes/new', title: '写手记', icon: 'SquarePen', group: '个人主页' },
+  { path: 'home-settings', title: '主页设置', icon: 'Sparkles', group: '个人主页' },
+  { path: 'articles', title: '文章管理', icon: 'FileText', group: '博客' },
+  { path: 'articles/new', title: '写文章', icon: 'SquarePen', group: '博客' },
+  { path: 'categories', title: '分类管理', icon: 'FolderOpen', group: '博客' },
+  { path: 'tags', title: '标签管理', icon: 'Tags', group: '博客' },
+  { path: 'comments', title: '评论管理', icon: 'MessagesSquare', group: '博客' },
+  { path: 'links', title: '友链管理', icon: 'Link2', group: '博客' },
+  { path: 'messages', title: '留言管理', icon: 'MailOpen', group: '博客' },
+  { path: 'images', title: '图片管理', icon: 'Image', group: '博客' },
+  { path: 'security', title: '安全中心', icon: 'ShieldCheck', group: '系统' },
+  { path: 'audit', title: '审计日志', icon: 'History', group: '系统' },
+  { path: 'settings', title: '站点设置', icon: 'Settings2', group: '系统' },
 ];
 
 const currentTitle = computed(() => route.meta.title || '管理后台');
@@ -263,6 +273,18 @@ async function logout() {
   gap: 3px;
   overflow-y: auto;
 }
+
+/* 分组标题：折叠时隐藏（只剩图标，标题会变成孤立文字） */
+.side-group {
+  margin: 14px 12px 6px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+.side-group:first-child { margin-top: 4px; }
+.side-group.hide { display: none; }
 
 .side-link {
   display: flex;

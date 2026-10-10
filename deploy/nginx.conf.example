@@ -21,6 +21,13 @@
 #    /api/* 与 index.html 一律回源不缓存（rss.xml 缓存会让订阅器拉到旧文）。
 # 5. 回源走 HTTPS + SNI 校验，证书用厂商免费 DV 或自有证书（CF 源站证书不可复用）。
 # ─────────────────────────────────────────────────────────────────────────────
+# ── 双站部署 ────────────────────────────────────────────────────────────────
+# 同一个后端（127.0.0.1:3000）+ 同一份前端产物（web/dist，Vite 双入口）：
+#   blog.example.com → web/dist/index.html（博客入口，hash 路由）
+#   xalor.example.com → web/dist/home.html（个人主页入口，hash 路由）
+# 两个域名共用 deploy/nginx-locations.inc 里的反代片段（含 /api 与 /uploads）。
+# ────────────────────────────────────────────────────────────────────────────
+
 server {
     listen 80;
     listen [::]:80;
@@ -38,40 +45,9 @@ server {
 
     client_max_body_size 6m;
 
-    # 若修改 API_PREFIX，请同步修改此 location。
-    location ^~ /api/ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        # 覆盖而不是追加客户端提供的转发头，防止伪造来源 IP/协议。
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host "";
-        proxy_set_header Forwarded "";
-        proxy_set_header Connection "";
-    }
+    include /path/to/xalorblog/deploy/nginx-locations.inc;
 
-    # 搜索引擎与通用订阅器标准根路径，直接反代给后端
-    location ~* ^/(robots\.txt|sitemap\.xml|rss\.xml|health)$ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # 上传文件由后端执行访问控制与安全响应头。
-    location ^~ /uploads/ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host "";
-        proxy_set_header Forwarded "";
-        proxy_set_header Connection "";
-    }
-
+    # 博客入口：/ 与所有未知路径都落到 index.html
     location = /index.html {
         add_header Cache-Control "no-store";
         add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://v1.hitokoto.cn; font-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
@@ -82,5 +58,37 @@ server {
 
     location / {
         try_files $uri $uri/ /index.html;
+    }
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name xalor.example.com;
+
+    root /path/to/xalorblog/web/dist;
+    # 个人主页入口是 home.html：默认文档与 SPA 兜底都要指向它
+    index home.html;
+    server_tokens off;
+
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://v1.hitokoto.cn; font-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    client_max_body_size 6m;
+
+    include /path/to/xalorblog/deploy/nginx-locations.inc;
+
+    location = /home.html {
+        add_header Cache-Control "no-store";
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://v1.hitokoto.cn; font-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    }
+
+    location / {
+        try_files $uri $uri/ /home.html;
     }
 }

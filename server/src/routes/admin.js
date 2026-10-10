@@ -19,6 +19,7 @@ const { verifyTicket } = require('../middleware/gate');
 const { getConfig, saveConfig, isValidIpOrCidr } = require('../utils/securitySettings');
 const { RULE_INDEX, scanText, scanAll } = require('../middleware/waf');
 const { saveSettings, getAllSettings, ALLOWED_KEYS } = require('../utils/settings');
+const { parseImages, serializeImages, buildExcerpt, noteSummary } = require('../utils/notes');
 
 const router = express.Router();
 
@@ -564,6 +565,194 @@ router.post('/articles/admin/import', async (req, res) => {
     return ok(res, { imported, skipped }, `导入完成：新增 ${imported} 篇，跳过 ${skipped} 篇`);
   } catch (e) {
     return fail(res, '导入失败', 500);
+  }
+});
+
+// ============ 手记（个人主页） ============
+
+/** 后台手记列表（含草稿，可筛选状态/关键词） */
+router.get('/notes/admin/list', async (req, res) => {
+  try {
+    const page = Math.min(10000, Math.max(1, parseInt(req.query.page) || 1));
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 10));
+    const { keyword, status, sort } = req.query;
+    const base = db('notes').modify((b) => {
+      if (status && status !== 'all') b.where('status', status);
+      if (keyword) {
+        const kw = escapeLike(String(keyword).slice(0, 50));
+        b.where((q) => q.where('content', 'like', `%${kw}%`).orWhere('excerpt', 'like', `%${kw}%`));
+      }
+    });
+    const countRow = await base.clone().count('* as cnt').first();
+    const total = Number(countRow?.cnt || 0);
+    const orderBy =
+      sort === 'oldest'
+        ? [{ column: 'created_at', order: 'asc' }, { column: 'id', order: 'asc' }]
+        : [{ column: 'is_pinned', order: 'desc' }, { column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }];
+    const rows = await base
+      .clone()
+      .select(
+        'id', 'content', 'images', 'excerpt', 'mood', 'location',
+        'likes', 'is_pinned', 'status', 'published_at', 'created_at', 'updated_at'
+      )
+      .orderBy(orderBy)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+    // 列表仍走 noteSummary 白名单（含摘要），仅额外附带正文供后台预览/编辑；
+    // 后台整体在鉴权 + 秘钥路径之内，与前台免票接口的暴露面无关
+    return ok(res, {
+      list: rows.map((r) => ({ ...noteSummary(r), content: r.content })),
+      pagination: { page, pageSize, total },
+    });
+  } catch (e) {
+    return fail(res, '获取手记列表失败', 500);
+  }
+});
+
+/** 后台手记详情（正文按篇加密下发，前端解密后编辑） */
+router.get('/notes/admin/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
+    const row = await db('notes').where('id', id).first();
+    if (!row) return notFound(res, '手记不存在');
+    const { encryptPayload } = require('../utils/crypto');
+    const { noteContentKey } = require('./notes');
+    const pass = String(req.headers['x-pass'] || '');
+    const contentKey = noteContentKey(id);
+    const encrypted = pass ? encryptPayload(row.content, pass, contentKey) : '';
+    return ok(res, {
+      ...row,
+      images: parseImages(row.images),
+      content: encrypted,
+      content_enc: !!encrypted,
+      content_key: contentKey,
+    });
+  } catch (e) {
+    return fail(res, '获取手记失败', 500);
+  }
+});
+
+/** 创建手记 */
+router.post('/notes', async (req, res) => {
+  try {
+    const { content, images = [], mood = '', location = '', excerpt = '', status = 'draft', is_pinned = false } = req.body || {};
+    const cleanContent = cleanMarkdown(content, 20000);
+    if (!cleanContent) return fail(res, '手记内容不能为空');
+    const cleanStatus = status === 'published' ? 'published' : 'draft';
+    const [id] = await db('notes').insert({
+      content: cleanContent,
+      images: serializeImages(images),
+      excerpt: cleanText(excerpt, 500) || buildExcerpt(cleanContent),
+      mood: cleanLine(mood, 40),
+      location: cleanLine(location, 80),
+      likes: 0,
+      is_pinned: toBool(is_pinned, false),
+      status: cleanStatus,
+      published_at: cleanStatus === 'published' ? localDateTimeStr() : null,
+    });
+    return ok(res, { id }, '手记已创建');
+  } catch (e) {
+    return fail(res, '创建手记失败', 500);
+  }
+});
+
+/** 更新手记 */
+router.put('/notes/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
+    const row = await db('notes').where('id', id).first();
+    if (!row) return notFound(res, '手记不存在');
+
+    const { content, images, mood, location, excerpt, status, is_pinned } = req.body || {};
+    const patch = { updated_at: db.fn.now() };
+    if (content !== undefined) {
+      const cleanContent = cleanMarkdown(content, 20000);
+      if (!cleanContent) return fail(res, '手记内容不能为空');
+      patch.content = cleanContent;
+      if (excerpt === undefined) patch.excerpt = buildExcerpt(cleanContent);
+    }
+    if (images !== undefined) patch.images = serializeImages(images);
+    if (excerpt !== undefined) patch.excerpt = cleanText(excerpt, 500);
+    if (mood !== undefined) patch.mood = cleanLine(mood, 40);
+    if (location !== undefined) patch.location = cleanLine(location, 80);
+    if (is_pinned !== undefined) patch.is_pinned = toBool(is_pinned, false);
+    if (status !== undefined) {
+      const cleanStatus = status === 'published' ? 'published' : 'draft';
+      patch.status = cleanStatus;
+      // 首次发布才补发布时间，避免编辑既有已发布手记时把时间刷新到当下
+      if (cleanStatus === 'published' && !row.published_at) patch.published_at = localDateTimeStr();
+    }
+    await db('notes').where('id', id).update(patch);
+    return ok(res, null, '手记已更新');
+  } catch (e) {
+    return fail(res, '更新手记失败', 500);
+  }
+});
+
+/** 删除手记 */
+router.delete('/notes/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
+    await db('notes').where('id', id).del();
+    return ok(res, null, '手记已删除');
+  } catch (e) {
+    return fail(res, '删除手记失败', 500);
+  }
+});
+
+/** 批量删除手记 */
+router.post('/notes/batch-delete', async (req, res) => {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length) return fail(res, '请选择要删除的手记');
+    if (ids.length > 500) return fail(res, '单次最多操作 500 条');
+    const safeIds = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    if (!safeIds.length) return fail(res, '参数不合法');
+    await db('notes').whereIn('id', safeIds).del();
+    return ok(res, { deleted: safeIds.length }, `已删除 ${safeIds.length} 条手记`);
+  } catch (e) {
+    return fail(res, '批量删除失败', 500);
+  }
+});
+
+/** 批量操作：发布/草稿/置顶/取消置顶 */
+router.post('/notes/batch-update', async (req, res) => {
+  try {
+    const { ids, action } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length) return fail(res, '请选择手记');
+    if (ids.length > 500) return fail(res, '单次最多操作 500 条');
+    const safeIds = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    if (!safeIds.length) return fail(res, '参数不合法');
+
+    if (action === 'pin' || action === 'unpin') {
+      await db('notes').whereIn('id', safeIds).update({ is_pinned: action === 'pin', updated_at: db.fn.now() });
+      return ok(res, null, action === 'pin' ? '已置顶' : '已取消置顶');
+    }
+    if (action !== 'publish' && action !== 'draft') return fail(res, '不支持的操作');
+
+    if (action === 'publish') {
+      // 事务：补发布时间与状态更新原子生效（与文章批量发布同一语义）
+      const trx = await db.transaction();
+      try {
+        const needDate = await trx('notes').whereIn('id', safeIds).whereNull('published_at').pluck('id');
+        if (needDate.length) {
+          await trx('notes').whereIn('id', needDate).update({ published_at: localDateTimeStr() });
+        }
+        await trx('notes').whereIn('id', safeIds).update({ status: 'published', updated_at: trx.fn.now() });
+        await trx.commit();
+      } catch (e) {
+        await trx.rollback();
+        throw e;
+      }
+    } else {
+      await db('notes').whereIn('id', safeIds).update({ status: 'draft', updated_at: db.fn.now() });
+    }
+    return ok(res, null, action === 'publish' ? '已发布' : '已转为草稿');
+  } catch (e) {
+    return fail(res, '批量操作失败', 500);
   }
 });
 

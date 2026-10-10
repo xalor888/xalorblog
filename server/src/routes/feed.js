@@ -4,6 +4,8 @@ const db = require('../db');
 const config = require('../config');
 const { getAllSettings } = require('../utils/settings');
 const { plainText } = require('../utils/markdownText');
+const { isHomeHost, resolveBaseUrl } = require('../utils/siteHost');
+const { noteSummary } = require('../utils/notes');
 const sanitizeHtml = require('sanitize-html');
 
 const router = express.Router();
@@ -20,6 +22,11 @@ function conditionalSend(req, res, content, type) {
   const etag = '"' + crypto.createHash('sha1').update(content).digest('hex').slice(0, 24) + '"';
   res.set('ETag', etag);
   res.set('Cache-Control', 'public, max-age=30');
+  // 同一个 URL（/sitemap.xml、/rss.xml）按 Host 返回主页版或博客版：
+  // 必须声明 Vary: Host，否则共享缓存（CDN/中间代理）会按 URL 把其中一个域的
+  // 版本喂给另一个域。用 append 而不是 set —— 全局 gzip 中间件已写入
+  // Vary: Accept-Encoding，set 会把它覆盖掉。
+  res.append('Vary', 'Host');
   if (req.headers['if-none-match'] === etag) {
     return res.status(304).end();
   }
@@ -52,13 +59,18 @@ function esc(str = '') {
     .replace(/"/g, '&quot;');
 }
 
-/** 站点基础 URL：优先使用设置中的 site_url（防 Nginx 终止 TLS 时协议推导为 http） */
+/**
+ * 站点基础 URL：优先使用设置中的显式 URL（防 Nginx 终止 TLS 时协议推导为 http）。
+ * 同一后端服务两个域名 —— 主页域（HOME_SITE_HOST）取 home_site_url，
+ * 其余取博客的 site_url，保证各自的 RSS/Sitemap 里是本站链接。
+ */
 async function baseSiteUrl(req) {
   try {
     const settings = await getAllSettings();
-    if (settings.site_url) return String(settings.site_url).replace(/\/+$/, '');
+    const configured = isHomeHost(req) ? settings.home_site_url : settings.site_url;
+    if (configured) return resolveBaseUrl(req, configured);
   } catch (e) { /* 忽略 */ }
-  return req.protocol + '://' + req.get('host');
+  return resolveBaseUrl(req, '');
 }
 
 /** 本地时间字符串(YYYY-MM-DD HH:mm:ss) → UTC RFC 822（RSS 规范）
@@ -170,6 +182,21 @@ function sanitizeRssHtml(html) {
 
 async function robotsTxt(req) {
   const siteUrl = await baseSiteUrl(req);
+  // 个人主页域：hash 路由的 SPA，可收录的入口只有主页与手记时间线
+  if (isHomeHost(req)) {
+    return `# Xalor 的个人主页 robots.txt
+User-agent: *
+Disallow: ${apiPrefix}/
+Disallow: /uploads/
+
+# 放行：订阅源、站点地图与首屏摘要（真实内容，利于收录与社交预览）
+Allow: ${apiPrefix}/rss.xml
+Allow: ${apiPrefix}/sitemap.xml
+Allow: ${apiPrefix}/home/summary
+
+Sitemap: ${siteUrl}${apiPrefix}/sitemap.xml
+`;
+  }
   return `# Xalor的小站 robots.txt
 User-agent: *
 Disallow: ${apiPrefix}/
@@ -189,13 +216,58 @@ Sitemap: ${siteUrl}${apiPrefix}/sitemap.xml
 router.get('/robots.txt', async (req, res) => {
   res.set('Content-Type', 'text/plain; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=3600');
+  res.append('Vary', 'Host'); // 同上：按 Host 分派主页版/博客版
   return res.send(await robotsTxt(req));
 });
 
-/** RSS 2.0 订阅源 */
+/**
+ * 个人主页版 RSS：只出「手记」摘要（正文仍受闸门 + AES-GCM 保护，不进订阅源）。
+ * 与博客版共用 /rss.xml 路径，按请求 Host 分派，缓存键也必须分开。
+ */
+async function homeRssXml(req) {
+  const settings = await getAllSettings();
+  const siteUrl = await baseSiteUrl(req);
+  const notes = await db('notes')
+    .where('status', 'published')
+    .orderBy([{ column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }])
+    .limit(20)
+    .select('id', 'content', 'images', 'excerpt', 'published_at', 'created_at', 'mood', 'location', 'likes');
+
+  const items = notes
+    .map((n) => {
+      const s = noteSummary(n);
+      const link = `${esc(siteUrl)}/#/notes/${n.id}`;
+      const date = String(s.published_at || s.created_at || '').slice(0, 10);
+      return `    <item>
+      <title>${esc(`手记 · ${date}`)}</title>
+      <link>${link}</link>
+      <guid isPermaLink="false">${link}</guid>
+      <pubDate>${toRfc822(s.published_at || s.created_at)}</pubDate>
+      <description>${esc(s.excerpt)}</description>
+    </item>`;
+    })
+    .join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>${esc(settings.site_name)} · 手记</title>
+    <link>${esc(siteUrl)}/</link>
+    <description>${esc(settings.site_desc)}</description>
+    <language>zh-cn</language>
+    <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
+${channelImageFor(settings.avatar, siteUrl, settings.site_name)}
+${items}
+  </channel>
+</rss>`;
+}
+
+/** RSS 2.0 订阅源（按 Host 分派：主页域出手记，博客域出文章） */
 router.get('/rss.xml', async (req, res) => {
   try {
-    const xml = await cached('rss', async () => {
+    const home = isHomeHost(req);
+    const xml = await cached(home ? 'rss:home' : 'rss', async () => {
+      if (home) return homeRssXml(req);
       const settings = await getAllSettings();
       const siteUrl = await baseSiteUrl(req);
       const articles = await db('articles')
@@ -264,10 +336,48 @@ ${items}
   }
 });
 
-/** sitemap.xml */
+/** 个人主页版 sitemap：主页 + 手记时间线 + 每条已发布手记详情 */
+async function homeSitemapXml(req) {
+  const siteUrl = await baseSiteUrl(req);
+  const notes = await db('notes')
+    .where('status', 'published')
+    .orderBy([{ column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }])
+    .select('id', 'published_at', 'updated_at');
+
+  const staticPages = [
+    { path: '', priority: '1.0' },
+    { path: 'notes', priority: '0.8' },
+  ]
+    .map((p) => `  <url>
+    <loc>${esc(siteUrl)}/#/${p.path}</loc>
+    <priority>${p.priority}</priority>
+  </url>`)
+    .join('\n');
+
+  const noteUrls = notes
+    .map((n) => {
+      const lastmod = String(n.updated_at || n.published_at || '').slice(0, 10);
+      return `  <url>
+    <loc>${esc(siteUrl)}/#/notes/${n.id}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <priority>0.6</priority>
+  </url>`;
+    })
+    .join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${staticPages}
+${noteUrls}
+</urlset>`;
+}
+
+/** sitemap.xml（按 Host 分派：主页域出手记，博客域出文章） */
 router.get('/sitemap.xml', async (req, res) => {
   try {
-    const xml = await cached('sitemap', async () => {
+    const home = isHomeHost(req);
+    const xml = await cached(home ? 'sitemap:home' : 'sitemap', async () => {
+      if (home) return homeSitemapXml(req);
       const siteUrl = await baseSiteUrl(req);
       const [articles, categories] = await Promise.all([
         db('articles')

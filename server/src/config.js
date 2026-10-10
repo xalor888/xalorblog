@@ -83,6 +83,12 @@ module.exports = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+  // 个人主页域名（如 xalor.cn）：SEO 路由据此派发主页版 robots/sitemap/rss，
+  // 与博客域（site_url / blog.xalor.cn）区分。留空表示不启用派发（一律按博客版返回）。
+  homeSiteHost: String(process.env.HOME_SITE_HOST || '')
+    .trim()
+    .replace(/^\[|\]$/g, '')
+    .toLowerCase(),
   // CORS 允许的来源：默认本地开发端口；生产部署可用 CORS_ORIGINS 显式指定
   // （逗号分隔；与 ALLOWED_HOSTS 独立，两者各司其职：Host 校验防投毒，CORS 放行浏览器跨域）
   corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://[::1]:5173,http://localhost:4173,http://127.0.0.1:4173,http://[::1]:4173')

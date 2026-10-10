@@ -345,6 +345,62 @@ async function migrate() {
     }
   });
 
+  // ---------- 手记（个人主页的「朋友圈」短文时间线） ----------
+  // 与 articles 平行的一张内容表：content 为 Markdown 原文（传输层加密与文章同一套），
+  // images 为 JSON 数组（最多 9 张，站内 /uploads 或外链），excerpt 供列表与 RSS 用。
+  await db.schema.hasTable('notes').then(async (exists) => {
+    if (!exists) {
+      await db.schema.createTable('notes', (t) => {
+        t.increments('id').primary();
+        t.mediumtext('content').notNullable(); // Markdown 原文
+        t.text('images'); // JSON 数组字符串（图片 URL）
+        t.string('excerpt', 500).defaultTo(''); // 列表摘要（纯文本）
+        t.string('mood', 40).defaultTo(''); // 心情标签
+        t.string('location', 80).defaultTo(''); // 地点
+        t.integer('likes').defaultTo(0); // 点赞数（IP 维度防刷在应用层）
+        t.boolean('is_pinned').defaultTo(false); // 置顶
+        t.enum('status', ['draft', 'published']).defaultTo('draft');
+        t.timestamp('published_at').nullable();
+        t.timestamp('created_at').defaultTo(db.fn.now());
+        t.timestamp('updated_at').defaultTo(db.fn.now());
+      });
+      console.log('[migrate] notes 表已创建');
+    } else {
+      // 老库升级：逐列补齐，保证幂等可重复执行
+      const cols = await db('notes').columnInfo();
+      const added = [];
+      if (!cols.images) {
+        await db.schema.alterTable('notes', (t) => t.text('images'));
+        added.push('images');
+      }
+      if (!cols.excerpt) {
+        await db.schema.alterTable('notes', (t) => t.string('excerpt', 500).defaultTo(''));
+        added.push('excerpt');
+      }
+      if (!cols.mood) {
+        await db.schema.alterTable('notes', (t) => t.string('mood', 40).defaultTo(''));
+        added.push('mood');
+      }
+      if (!cols.location) {
+        await db.schema.alterTable('notes', (t) => t.string('location', 80).defaultTo(''));
+        added.push('location');
+      }
+      if (!cols.likes) {
+        await db.schema.alterTable('notes', (t) => t.integer('likes').defaultTo(0));
+        added.push('likes');
+      }
+      if (!cols.is_pinned) {
+        await db.schema.alterTable('notes', (t) => t.boolean('is_pinned').defaultTo(false));
+        added.push('is_pinned');
+      }
+      if (!cols.published_at) {
+        await db.schema.alterTable('notes', (t) => t.timestamp('published_at').nullable());
+        added.push('published_at');
+      }
+      if (added.length) console.log(`[migrate] notes 列已补齐: ${added.join(', ')}`);
+    }
+  });
+
   // ---------- 索引优化（幂等：仅在缺失时创建） ----------
   async function ensureIndex(table, indexName, columns) {
     const exists = await db.schema.hasTable(table);
@@ -376,6 +432,8 @@ async function migrate() {
   await ensureIndex('messages', 'idx_messages_status_created', ['status', 'created_at']);
   // 友链状态筛选
   await ensureIndex('links', 'idx_links_status_sort', ['status', 'sort']);
+  // 手记时间线：前台按状态 + 发布时间倒序翻页
+  await ensureIndex('notes', 'idx_notes_status_published_at', ['status', 'published_at']);
   // 审计日志按时间与用户筛选
   await ensureIndex('audit_logs', 'idx_audit_logs_created', ['created_at']);
 

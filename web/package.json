@@ -6,8 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "node scripts/check-script-order.mjs && vite build",
+    "preview": "vite preview",
+    "check:script-order": "node scripts/check-script-order.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

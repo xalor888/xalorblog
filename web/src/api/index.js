@@ -370,3 +370,20 @@ export const imagesApi = {
   remove: (name) => adminDelete(`/uploads/${encodeURIComponent(name)}`),
   cleanupOrphans: () => adminPost('/uploads/cleanup-orphans'),
 };
+
+/* ============ 个人主页（xalor.cn） ============ */
+
+/** 手记：与文章同级防护（票据 + X-Sig；正文按条 AES-GCM，由响应拦截器自动解密） */
+export const noteApi = {
+  list: (params) => request.get('/notes', { params }),
+  detail: (id) => request.get(`/notes/${id}`),
+  like: (id) => request.post(`/notes/${id}/like`),
+  // 后台接口（秘钥路径下）
+  adminList: (params) => adminGet('/notes/admin/list', params),
+  adminDetail: (id) => adminGet(`/notes/admin/${id}`),
+  create: (data) => adminPost('/notes', data),
+  update: (id, data) => adminPut(`/notes/${id}`, data),
+  remove: (id) => adminDelete(`/notes/${id}`),
+  batchDelete: (ids) => adminPost('/notes/batch-delete', { ids }),
+  batchUpdate: (ids, action) => adminPost('/notes/batch-update', { ids, action }),
+};

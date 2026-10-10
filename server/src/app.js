@@ -18,6 +18,8 @@ const statsRouter = require('./routes/stats');
 const settingsRouter = require('./routes/settings');
 const feedRouter = require('./routes/feed');
 const shareRouter = require('./routes/share');
+const homeRouter = require('./routes/home');
+const notesRouter = require('./routes/notes');
 const antiRouter = require('./routes/anti');
 const hitokotoRouter = require('./routes/hitokoto');
 const aiRouter = require('./routes/ai');
@@ -259,7 +261,9 @@ app.use(api, fetchMetaGuard);
  * - 搜索引擎爬虫在只读接口上放行（利于收录）—— 但须通过反向 DNS 核验，
  *   自称 Googlebot 等却来自不相关 IP 的请求视为伪造，直接拒绝
  */
-const GATE_SKIP = ['/anti', '/health', '/rss.xml', '/sitemap.xml', '/robots.txt', '/share/'];
+// /home/summary 是唯一有意放行的免票读接口（主页首屏名片/友链/关于/最近文章标题）：
+// 字段为固定白名单，且自带独立限流 + antiBot；手记与文章接口防护强度不变。
+const GATE_SKIP = ['/anti', '/health', '/rss.xml', '/sitemap.xml', '/robots.txt', '/share/', '/home/summary'];
 app.use(api, async (req, res, next) => {
   try {
     if (GATE_SKIP.some((p) => req.path.startsWith(p))) return next();
@@ -303,6 +307,10 @@ app.use(api, (req, res, next) => {
 app.get('/robots.txt', async (req, res) => {
   res.set('Content-Type', 'text/plain; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=3600');
+  // 同一 URL 按 Host 返回主页版/博客版：必须声明 Vary: Host，
+  // 否则共享缓存（CDN）会按 URL 把其中一个域的版本喂给另一个域。
+  // 注意这里走的是 robotsTxt() 函数而不是 feed 路由 —— 根路径的 Vary 只能在此处设置。
+  res.append('Vary', 'Host');
   try {
     return res.send(await robotsTxt(req));
   } catch (e) {
@@ -344,6 +352,10 @@ app.use(`${api}/health`, healthRouter);
 app.use(`${api}/anti`, antiRouter);
 app.use(`${api}/auth`, strictLimiter, authRouter);
 app.use(`${api}/articles`, antiBot, readLimiter, articlesRouter);
+// 个人主页首屏摘要：免闸门（见 GATE_SKIP），自带限流 + antiBot
+app.use(`${api}/home`, homeRouter);
+// 手记：与文章同级防护（闸门票据 + X-Sig 签名；正文按篇 AES-GCM）
+app.use(`${api}/notes`, antiBot, readLimiter, notesRouter);
 app.use(`${api}/categories`, antiBot, categoriesRouter);
 app.use(`${api}/tags`, antiBot, tagsRouter);
 app.use(`${api}/comments`, commentsRouter);

@@ -104,6 +104,13 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       chunkSizeWarningLimit: 600,
       rollupOptions: {
+        // 双入口多页：index.html = 博客（blog.xalor.cn），home.html = 个人主页（xalor.cn）。
+        // 两者共用同一份 assets（后台 chunk 只构建一份，两边引用），
+        // 部署时由 nginx 按域名决定根文件（见 deploy/nginx.conf.example）。
+        input: {
+          index: fileURLToPath(new URL('./index.html', import.meta.url)),
+          home: fileURLToPath(new URL('./home.html', import.meta.url)),
+        },
         output: {
           manualChunks: {
             vendor: ['vue', 'vue-router', 'pinia'],

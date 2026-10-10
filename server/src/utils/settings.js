@@ -57,6 +57,24 @@ const DEFAULT_SETTINGS = {
   copyright_text: '',
   // ICP 备案号（页脚展示；留空不显示）
   icp: '',
+
+  // ---------- 个人主页（xalor.cn） ----------
+  // 主页站点完整 URL（如 https://xalor.cn）：主页版 RSS/Sitemap/分享链接优先使用，
+  // 与博客的 site_url 分开维护，因为两者是不同的域名。
+  home_site_url: '',
+  // Hero 文案
+  home_hero_greeting: "Hi, I'm",
+  home_hero_role: '',
+  home_hero_quote: '',
+  // 在线状态：online | busy | away | offline
+  home_status: 'online',
+  // 站点起始日期（YYYY-MM-DD），用于计算「运行 N 天」；留空回落到 2024-01-01
+  home_since_date: '',
+  // 额外社交链接（JSON 数组：[{"label":"Bilibili","url":"https://..."}]）。
+  // GitHub / 微博 / 邮箱沿用博客已有的 social_github / social_weibo / social_email。
+  home_social_extra: '[]',
+  // 主页「关于」卡片摘要（纯文本；留空则自动截取 about_content 前 200 字）
+  home_about_excerpt: '',
 };
 
 /** 允许保存的键白名单（防止任意键注入） */
@@ -109,8 +127,13 @@ async function getAllSettings() {
 async function saveSettings(entries) {
   const writes = []; // 待执行的 upsert
   const clears = []; // 待执行的删除（密钥 __CLEAR__）
-  for (const [key, value] of Object.entries(entries)) {
+  for (let [key, value] of Object.entries(entries)) {
     if (!ALLOWED_KEYS.has(key)) continue; // 忽略未知键
+    // null 视为「清空」而不是「忽略」：el-date-picker 等控件清空后提交的是 null，
+    // 若按「忽略」处理，后台会提示「设置已保存」而值纹丝不动（静默失效）。
+    // 布尔键不受影响 —— 下面 BOOL_KEYS 分支本来就把 null 判为 false。
+    // 密钥类键仍保持「空值=不修改」的约定（见各自的 continue 分支）。
+    if (value === null) value = '';
     const raw = String(value ?? '');
     // URL 字段协议校验（纵深）：防止 javascript:/data: 等注入型值进入
     // 展示链路（<a href> / <img src> / OG 分享图 / RSS 链接）
@@ -119,6 +142,41 @@ async function saveSettings(entries) {
       if (!parsed) continue;
       const u = new URL(parsed);
       if (u.search || u.hash) continue;
+    }
+    // 主页站点 URL：与 site_url 同一套约束（协议白名单 + 拒带 query/hash）
+    if (key === 'home_site_url' && value) {
+      const parsed = safeUrl(raw, 500);
+      if (!parsed) continue;
+      const u = new URL(parsed);
+      if (u.search || u.hash) continue;
+    }
+    // 主页在线状态：枚举钳制，非法值丢弃（保持原值）
+    if (key === 'home_status' && !['online', 'busy', 'away', 'offline'].includes(String(raw).trim())) continue;
+    // 起始日期：严格 YYYY-MM-DD，否则丢弃（前端用 new Date() 解析，脏值会产生 NaN 天数）
+    if (key === 'home_since_date' && raw) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) continue;
+    }
+    // 额外社交链接：必须是 JSON 数组，逐项校验 label 与 http(s) URL，最多 8 条。
+    // 校验后重新序列化，避免把非法项原样带进公开接口。
+    if (key === 'home_social_extra') {
+      let list;
+      try {
+        list = JSON.parse(raw || '[]');
+      } catch (e) {
+        continue;
+      }
+      if (list === null || list === undefined) list = [];
+      if (!Array.isArray(list) || list.length > 8) continue;
+      const cleaned = [];
+      for (const item of list) {
+        if (!item || typeof item !== 'object') continue;
+        const label = String(item.label ?? '').trim().slice(0, 30);
+        const u = safeUrl(String(item.url ?? ''), 300);
+        if (!label || !u) continue;
+        cleaned.push({ label, url: u });
+      }
+      value = JSON.stringify(cleaned);
+      // 落到下面的通用分支继续走长度截断与写库
     }
     // avatar 与封面同一白名单：/logo.png、/uploads/<随机文件名> 或 http(s)
     if (key === 'avatar' && value) {

@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "Xalor 的个人主页",
+  "short_name": "Xalor",
+  "description": "手记、日常和朋友。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f4f1",
+  "theme_color": "#e4573d",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

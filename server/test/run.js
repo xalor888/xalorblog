@@ -34,6 +34,8 @@ const RESET_SQL = [
   "DELETE FROM comments WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1')",
   "DELETE FROM messages WHERE ip IN ('::1', '127.0.0.1', '::ffff:127.0.0.1')",
   "DELETE FROM links WHERE url = 'https://example.com'",
+  // 手记：notes 套件会自建自删，这里兜底清掉异常中断留下的测试数据
+  "DELETE FROM notes WHERE content LIKE '%[NOTETEST]%'",
 ].join('; ');
 
 function run(cmd) {
@@ -125,7 +127,7 @@ async function runTests() {
   // 传参可指定单个文件：node test/run.js security.test.js
   const suites = process.argv[2]
     ? [process.argv[2]]
-    : ['admin.test.js', '2fa.test.js', 'session.test.js', 'lockout.test.js', 'journey.test.js', 'waf.test.js', 'falsePositive.test.js', 'requestGuard.test.js', 'likeGuard.test.js', 'sanitize.test.js', 'feed.test.js', 'scrapeGuard.test.js', 'contentCrypto.test.js', 'browserCrypto.test.js', 'security.test.js'];
+    : ['admin.test.js', '2fa.test.js', 'session.test.js', 'lockout.test.js', 'journey.test.js', 'waf.test.js', 'falsePositive.test.js', 'requestGuard.test.js', 'likeGuard.test.js', 'sanitize.test.js', 'feed.test.js', 'scrapeGuard.test.js', 'contentCrypto.test.js', 'browserCrypto.test.js', 'notes.test.js', 'security.test.js'];
   for (const s of suites) {
     // 套件间重启服务：隔离信誉积分/限流窗口/票据内存状态
     // （2fa/lockout 套件会留下认证失败积分与持久化封禁，不隔离会污染后续套件）

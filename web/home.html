@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/icon-64.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- RSS 自动发现：主页域订阅源是「手记」摘要（由后端按 Host 派发） -->
+    <link rel="alternate" type="application/rss+xml" title="Xalor 的手记" href="/api/rss.xml" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Xalor 的个人主页 - 手记、日常与朋友" />
+    <meta name="theme-color" content="#e4573d" />
+    <!-- 主页域独立的 manifest：安装到桌面时显示的是「Xalor 的个人主页」，而不是博客名。
+         两个域名的 start_url 都是 /，由各自的 nginx 默认文档决定落到哪个入口 -->
+    <link rel="manifest" href="/manifest-home.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Xalor" />
+    <!-- 页面级 CSP：与博客入口同一策略（仅同源脚本，无 unsafe-inline） -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://v1.hitokoto.cn; font-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Xalor 的个人主页" />
+    <meta property="og:description" content="留下手记、日常和朋友。" />
+    <meta property="og:site_name" content="Xalor" />
+    <meta property="og:image" content="/og-image.webp" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Xalor 的个人主页" />
+    <meta name="twitter:description" content="留下手记、日常和朋友。" />
+    <title>Xalor 的个人主页</title>
+    <!-- 主题初始化（外部文件，同步阻塞加载防闪烁）；?v= 语义与 index.html 一致 -->
+    <script src="/theme-init.js?v=20261006"></script>
+    <script src="/anti-debug.js?v=20261001b"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="float-dock" class="float-dock"></div>
+    <script type="module" src="/src/main-home.js"></script>
+  </body>
+</html>

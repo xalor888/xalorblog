@@ -79,6 +79,15 @@ sudo systemctl restart xalor-blog  # 重启
 > `NODE_ENV=production`、`LISTEN_HOST=127.0.0.1`、`TRUST_PROXY=loopback`；
 > 不要使用 `TRUST_PROXY=1` 或 `true`。
 >
+> 双站点部署还要多三项：
+> - `ALLOWED_HOSTS` **必须同时包含两个域名**（如 `xalor.cn,blog.xalor.cn,localhost,127.0.0.1,::1`）——
+>   它同时是 Host 头校验和写请求 Referer/Origin 的白名单，漏填会让其中一个域名整站 403。
+> - `CORS_ORIGINS` **必须同时包含两个 https 来源**（如 `https://xalor.cn,https://blog.xalor.cn`）。
+>   这一项最容易被当成「同源就不用配」而漏掉：浏览器对**同源 POST/PUT/DELETE 也会带 Origin 头**
+>   （只有 GET/HEAD 不带），漏配的表现是页面能看、但该域名下点赞/评论/留言等写操作全部 403
+>   「不允许的跨域来源」。回归覆盖见 `server/test/notes.test.js` 的「跨站来源白名单」断言。
+> - `HOME_SITE_HOST` 填个人主页域名（如 `xalor.cn`），用于 SEO 路由按域名派发；留空则不派发。
+>
 > 通行证 jti 会写入 `gate_tickets`。nonce、登录锁定、刮取窗和大部分信誉状态仍在进程内存中。
 > 本 service 按单进程运行；不要用 cluster 或多副本，除非先把这些状态外置。
 > 生产默认 PoW 20 bit。`ADMIN_PATH` 不要使用 `admin`、`login` 等 WAF 蜜罐路径名。
@@ -89,13 +98,35 @@ sudo systemctl restart xalor-blog  # 重启
 示例会让静态前端返回 CSP（含 `frame-ancestors 'none'`）和 `X-Frame-Options: DENY`，
 且覆盖客户端传入的转发头，再把真实来源地址/协议传给仅监听 `127.0.0.1:3000` 的后端。
 
+示例是**两个 server 块**，共用一份前端产物（Vite 双入口）与一个后端：
+
+| 域名 | 根文件 | 兜底 |
+|---|---|---|
+| 博客域 | `web/dist/index.html` | `try_files $uri $uri/ /index.html` |
+| 个人主页域 | `web/dist/home.html` | `try_files $uri $uri/ /home.html` |
+
+`/api/`、`/uploads/` 与 `robots.txt|sitemap.xml|rss.xml|health` 三段反代抽在
+`nginx-locations.inc` 里，两个 server 块 `include` 同一份，避免代理头漂移。
+**`proxy_set_header Host $host` 必须保留** —— 后端按 Host 派发主页版/博客版的 SEO 路由。
+
 ```bash
-sudo cp nginx.conf.example /etc/nginx/sites-available/xalor-blog.conf
+sudo cp nginx.conf.example /etc/nginx/sites-available/xalor.conf
+sudo cp nginx-locations.inc /path/to/xalorblog/deploy/    # 保持 include 路径与之一致
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-若自定义了 `API_PREFIX`，必须同步修改 Nginx 的 `/api/` location。
+若自定义了 `API_PREFIX`，必须同步修改 `nginx-locations.inc` 的 `/api/` location。
+
+上线后自检：
+
+```bash
+curl -sI https://xalor.cn/ | head -1            # 主页域应返回 home.html 的内容（200）
+curl -s  https://xalor.cn/robots.txt | head -3  # 应含「Xalor 的个人主页」
+curl -s  https://xalor.cn/sitemap.xml | grep -c '#/notes'   # 应 > 0
+curl -s  https://blog.xalor.cn/sitemap.xml | grep -c '#/notes'  # 应为 0
+```
+
 
 ## 前置 CDN（阿里云 / 腾讯云）
 
