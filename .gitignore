@@ -14,8 +14,12 @@ server/run*.out
 *.log
 # 变更日志仅本地保留，不上传
 CHANGELOG.md
-# 数据库备份（含全量数据与哈希）
+# 数据库备份（含全量数据与哈希）——注意这是**复数** backups/，与下面入库的回滚快照目录无关
 deploy/backups/
+# 回滚快照（deploy/backup/，**单数**）：必须入库，否则从仓库部署的机器无法回滚
+# 这里显式写一条否定规则，防止将来有人加了 `deploy/` 之类的宽规则把它一起忽略掉
+!deploy/backup/
+!deploy/backup/**
 # 本地 MySQL 数据目录
 mysql/
 

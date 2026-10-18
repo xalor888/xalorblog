@@ -236,3 +236,48 @@ unset SEED_ADMIN_PASSWORD
 
 若旧数据库仍是公开测试密码，seed 会在同一事务中替换密码并撤销该管理员的全部旧会话；
 日志不会打印默认密码或新密码。
+
+## 反调试脚本（`web/public/anti-debug.js`）的移动端兼容
+
+v3 把「`outerHeight - innerHeight` 差值」与「`debugger` 计时」当作 DevTools 证据。手机浏览器
+（尤其 Edge Android / Edge iOS）的地址栏与工具栏会让这两个量天然超阈值，结果正常用户被全屏
+遮蔽层判成「打开了开发者工具」，整站不可用。
+
+v4（2026-10-18）的判据：
+
+| 端 | 窗口尺寸差 | debugger 计时 | 元素尺寸探针 | 触发条件 |
+|---|---|---|---|---|
+| 移动端（UA 含 `Mobile`/`EdgA/`/`EdgiOS/`，或 UA-CH `mobile`） | 不参与 | 不参与 | 参与 | 连续 2 个检测周期（约 2.4s）命中 |
+| **iPadOS 13+「请求桌面网站」**（UA 是 `Macintosh` 外壳、Safari 无 UA-CH） | 不参与 | 不参与 | 参与 | 同上；靠 `platform === 'MacIntel' && maxTouchPoints > 1` 识别 |
+| 桌面端 | 阈值 320px（`>320` 才触发） | 阈值 150ms（`>150` 才触发） | 参与 | 连续 2 个周期命中 |
+
+单个周期抖动不再触发；关闭 DevTools 后自动恢复；`localStorage['xalor_dev_mode']='1'` 仍可整体关闭。
+
+**验证**（无需真机，`node:vm` 造最小 DOM）：
+
+```bash
+cd web && node scripts/test-anti-debug.mjs
+# 期望 14/14：Edge Android/iOS、iPad 桌面外壳、Android 平板放行；
+# 桌面 400px 差、321px 边界、151ms、元素异常（含移动端）仍触发；320px/149ms 不触发；dev_mode 可关。
+# 同一个脚本可以拿来对旧版本做对比：
+#   node scripts/test-anti-debug.mjs deploy/backup/anti-debug.v3-20261018.js   → 8/14（v3 的 6 项失败）
+```
+
+**回滚**：改回 v3 并重新构建（`?v=` 版本号必须一起换，否则老访客继续跑缓存里的脚本）。
+
+v3 原文**已随仓库提交**在 `deploy/backup/anti-debug.v3-20261018.js`（6 KB，sha256 与当时的
+生产版本一致），所以**从仓库 clone 出来的部署目录也能直接回滚**：
+
+```bash
+# 在仓库根目录执行
+cp deploy/backup/anti-debug.v3-20261018.js web/public/anti-debug.js
+sed -i '' 's/anti-debug.js?v=[0-9a-z]*/anti-debug.js?v=20261018d/' web/index.html web/home.html
+cd web && npm run build
+```
+
+> **不要**从 `HEAD` 里取脚本当回滚源：一旦 v4 提交入库，`HEAD` 指向的就是 v4，那样做会"成功地"
+> 把 v4 再写一遍 —— 看着执行了、其实什么都没回滚，是**静默失败**。回滚只认 `deploy/backup/`
+> 下的版本化文件（本仓库已入库）。
+
+注意 `?v=` 用**新的**版本号（示例里是 `20261018d`），不要复用已经发出去的 `20261018a/c`：
+浏览器缓存以 URL 为准，复用旧号等于让部分访客继续跑缓存里的脚本。
