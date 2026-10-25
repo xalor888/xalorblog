@@ -370,6 +370,27 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【编辑器快捷键：Ctrl+S 存草稿、Ctrl+Enter 发布（但要先确认）】');
+{
+  // 实测两条都通：
+  //   Ctrl+S（只填标题）→ 「请填写正文」，说明快捷键没绕过校验；
+  //   Ctrl+S（填全）→ 「草稿已保存」并回到列表；
+  //   Ctrl+Enter → 弹「发布后文章将对访客可见，确定发布吗？」，
+  //                点确认后「文章已发布」。
+  // 关键：Ctrl+Enter **不能跳过发布确认** —— 误按一次就直接对访客可见是不可接受的。
+  const ae = read('../src/views/admin/ArticleEdit.vue');
+  const fn = (ae.match(/function onEditorKeydown[\s\S]{0,500}/) || [''])[0];
+  ok('Ctrl/Cmd+S 触发保存', /toLowerCase\(\) === 's'[\s\S]{0,80}saveDraft\(\)/.test(fn), fn.slice(0, 60));
+  ok('Ctrl/Cmd+Enter 触发发布', /e\.key === 'Enter'[\s\S]{0,80}publish\(\)/.test(fn));
+  // 防重入：正在保存/发布时不再重复触发
+  ok('保存/发布中不重复触发', /!savingDraft\.value && !publishing\.value/.test(fn));
+  // 发布前必须有确认
+  const pub = (ae.match(/async function publish[\s\S]{0,900}/) || [''])[0];
+  ok('发布前弹确认（快捷键不能绕过）', /ElMessageBox\.confirm/.test(pub) && /发布后文章将对访客可见/.test(pub));
+  // AI 代发才允许跳过，且必须显式传参
+  ok('仅显式传 skipConfirm 才跳过确认', /skipConfirm = false/.test(pub));
+}
+
 console.log('\n【帮助面板列出的快捷键必须真的能用】');
 {
   // 实测缺陷：帮助面板里写着「Ctrl/Cmd K 打开全局搜索」，
