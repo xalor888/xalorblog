@@ -353,6 +353,29 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【后台搜索框的 placeholder 要说准搜什么】');
+{
+  const adm = read('../src/views/admin/ArticleManage.vue');
+  // 实测：后台文章搜索查的是 title **+ content**（admin.js 里 orWhere('a.content', ...)），
+  // 但 placeholder 写的是「搜索文章标题…」。搜 Knex 会出来标题不含 Knex 的文章 ——
+  // 管理员第一反应是「搜索坏了」，其实是文案承诺的范围比实际窄。
+  ok(
+    'placeholder 不再只写「标题」',
+    !/placeholder="搜索文章标题…"/.test(adm),
+    '实际同时搜正文，写窄了会让人以为搜错'
+  );
+  ok('placeholder 写明搜标题或正文', /placeholder="搜索标题或正文…"/.test(adm));
+
+  // 其他后台列表的 placeholder 本来就写全了字段
+  for (const [f, pat] of [
+    ['CommentManage', /搜索昵称\/内容\/文章/],
+    ['MessageManage', /搜索昵称\/内容/],
+    ['AuditManage', /搜索操作者/],
+  ]) {
+    ok(`${f} 的 placeholder 已写明字段`, pat.test(read(`../src/views/admin/${f}.vue`)));
+  }
+}
+
 console.log('\n【打印时不能把 fixed 元素印到纸上】');
 {
   const css = read('../src/styles/main.css');

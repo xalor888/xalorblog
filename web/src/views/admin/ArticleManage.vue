@@ -5,7 +5,7 @@
       <div class="toolbar-left">
         <el-input
           v-model="keyword"
-          placeholder="搜索文章标题…"
+          placeholder="搜索标题或正文…"
           clearable
           :prefix-icon="Search"
           class="search-input"
