@@ -370,6 +370,23 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【评论提交：快捷键、校验、昵称记忆】');
+{
+  // 实测：空提交 →「请填写昵称」；只填昵称按 Ctrl+Enter →「请填写评论内容（不能只有空格）」；
+  // 正常提交 →「评论成功」，正文清空，昵称写进 localStorage，
+  // **刷新后自动预填**（我一度以为昵称被丢掉了 —— 其实是输入框清空 + 记住 + 下次预填）。
+  const cs = read('../src/components/site/CommentSection.vue');
+  ok('支持 Ctrl+Enter 提交', /ctrlKey[\s\S]{0,80}Enter|Enter[\s\S]{0,80}ctrlKey/.test(cs));
+  ok('提交前校验昵称', /请填写昵称/.test(cs));
+  ok('校验评论内容（并说明不能只有空格）', /请填写评论内容/.test(cs));
+  // 昵称必须长期记住：清空输入框但写进 localStorage
+  ok('昵称写进 localStorage 长期记忆', /localStorage\.setItem\('xalor_cname'/.test(cs));
+  ok('提交后清空正文', /form\.value\.content = ''/.test(cs));
+  ok('提交后清草稿', /clearDraft\(\)/.test(cs));
+  // 打开页面时要预填回去，否则「记住」等于没记
+  ok('挂载时预填昵称', /xalor_cname/.test(cs) && /form\.value\.nickname\s*=/.test(cs));
+}
+
 console.log('\n【评论草稿按文章隔离，不能串味】');
 {
   // 实测：在文章 A 写草稿 → localStorage 只有 xalor_cdraft_1；
