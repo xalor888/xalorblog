@@ -353,6 +353,29 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【RSS 的频道信息与正文语义】');
+{
+  const feed = read('../../server/src/routes/feed.js');
+  // 实测原来 channel/link 是 `${siteUrl}/api/share/` —— 空 slug 的分享路径，
+  // 不是有效页面（打开就是 404/空内容）。频道链接该指向站点首页。
+  ok(
+    'channel/link 指向站点首页，不是空 slug 的分享页',
+    !/<link>\$\{esc\(siteUrl\)\}\$\{apiPrefix\}\/share\/<\/link>/.test(feed),
+    '空 slug 的 /api/share/ 不是有效页面'
+  );
+  ok(
+    '频道图优先用 og_image（与分享卡片同口径）',
+    /channelImageFor\(settings\.avatar, siteUrl, settings\.site_name, settings\.og_image\)/.test(feed),
+    '两处用不同的图会让人以为是两个站'
+  );
+  // 实测 6 条 content:encoded 每条都含一个 <h1>，与阅读器自己的条目标题重复
+  ok(
+    'RSS 正文的 h1 降级为 h2（与网页端 demoteH1 一致）',
+    /function demoteH1/.test(feed) && /demoteH1\(sanitizeRssHtml/.test(feed),
+    '实测每条订阅内容都含 <h1>，叠上阅读器标题就是两个主标题'
+  );
+}
+
 console.log('\n【sitemap 必须是引擎能收录的真实 URL】');
 {
   const feed = read('../../server/src/routes/feed.js');

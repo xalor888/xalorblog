@@ -105,9 +105,13 @@ function enclosureFor(cover, siteUrl) {
  * 频道站标（RSS 2.0 channel image：阅读器显示站点 logo，替代默认图标）
  * 使用站点设置的头像（默认 logo.png）；无头像时返回空串
  */
-function channelImageFor(avatar, siteUrl, siteName) {
-  if (!avatar) return '';
-  const url = avatar.startsWith('http') ? avatar : siteUrl + avatar;
+function channelImageFor(avatar, siteUrl, siteName, preferImage) {
+  // 优先用站点专门的分享图（`og_image`），其次头像。
+  // 头像通常是正方形小图，而 RSS 阅读器的频道图按方图显示尚可，
+  // 但两处用不同的图会让人以为是两个站 —— 与分享卡片保持同一口径。
+  const pick = preferImage || avatar;
+  if (!pick) return '';
+  const url = pick.startsWith('http') ? pick : siteUrl + pick;
   return `    <image>
       <url>${esc(url)}</url>
       <title>${esc(siteName)}</title>
@@ -178,6 +182,18 @@ const RSS_HTML_OPTIONS = {
 /** 清洗 RSS 全文 HTML：剔除正文中残留的裸脚本与事件属性 */
 function sanitizeRssHtml(html) {
   return sanitizeHtml(html, RSS_HTML_OPTIONS);
+}
+
+/**
+ * 正文 h1 降级为 h2。
+ *
+ * 为什么：文章正文常以 `# 标题` 开头。网页端有 demoteH1 处理（每页只能有一个 h1，
+ * 由页面模板自己提供），但 RSS 的 content:encoded 直接输出 markdown 转换结果 ——
+ * 实测 6 条订阅内容**每条都含一个 `<h1>`**。阅读器本身会渲染条目标题，
+ * 再叠一个正文 h1 就是两个主标题，且与网页端语义不一致。
+ */
+function demoteH1(html) {
+  return String(html || '').replace(/<h1(\b[^>]*)>([\s\S]*?)<\/h1>/gi, '<h2$1>$2</h2>');
 }
 
 async function robotsTxt(req) {
@@ -259,7 +275,7 @@ async function homeRssXml(req) {
     <description>${esc(settings.site_desc)}</description>
     <language>zh-cn</language>
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
-${channelImageFor(settings.avatar, siteUrl, settings.site_name)}
+${channelImageFor(settings.avatar, siteUrl, settings.site_name, settings.og_image)}
 ${items}
   </channel>
 </rss>`;
@@ -293,7 +309,7 @@ router.get('/rss.xml', async (req, res) => {
         .map((a) => {
           const desc = esc(a.summary || plainText(a.content).slice(0, 300));
           // 全文：mdToHtml 做 XML 转义 + URL 绝对化，sanitizeRssHtml 再做白名单清洗
-          const full = sanitizeRssHtml(mdToHtml(a.content, siteUrl));
+          const full = demoteH1(sanitizeRssHtml(mdToHtml(a.content, siteUrl)));
           const link = `${esc(siteUrl)}${apiPrefix}/share/${a.slug}`;
           const pubDate = toRfc822(a.published_at);
           const cats = (tagsByArticle[a.id] || [])
@@ -318,15 +334,17 @@ ${contentPart}
         })
         .join('\n');
 
+      // channel/link 曾是 `${siteUrl}/api/share/` —— 空 slug 的分享路径，不是有效页面。
+      // 频道链接应指向站点首页（RSS 里 channel/link 的语义就是「这个频道的网站」）。
       return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:media="http://search.yahoo.com/mrss/">
   <channel>
     <title>${esc(settings.site_name)}</title>
-    <link>${esc(siteUrl)}${apiPrefix}/share/</link>
+    <link>${esc(siteUrl)}/</link>
     <description>${esc(settings.site_desc)}</description>
     <language>zh-cn</language>
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
-${channelImageFor(settings.avatar, siteUrl, settings.site_name)}
+${channelImageFor(settings.avatar, siteUrl, settings.site_name, settings.og_image)}
 ${items}
   </channel>
 </rss>`;
