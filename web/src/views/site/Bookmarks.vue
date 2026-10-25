@@ -11,8 +11,13 @@
       </div>
 
       <div v-if="bookmarks.length" class="bm-grid" v-reveal="'stagger'">
-        <div v-for="b in bookmarks" :key="b.id" class="bm-item">
-          <ArticleCard :article="toArticle(b)" />
+        <div v-for="b in bookmarks" :key="b.id" class="bm-item" :class="{ 'bm-item--stale': staleSlugs.has(b.slug) }">
+          <!-- 失效条目不删、也不给死链：包一层说明，读者自己决定要不要清 -->
+          <div v-if="staleSlugs.has(b.slug)" class="bm-stale-note" role="note">
+            <XIcon name="EyeOff" :size="14" />
+            <span>这篇当前不可访问（可能已下线或删除）</span>
+          </div>
+          <ArticleCard v-else :article="toArticle(b)" />
           <button class="bm-remove" :title="'取消收藏 ' + b.title" @click="remove(b.id)">
             <XIcon name="Trash2" :size="14" />
           </button>
@@ -51,6 +56,8 @@ watchEffect(() => {
 });
 
 const bookmarks = ref(getBookmarks());
+/** 已失效（404）的 slug 集合：只标记不删除，见 pruneStale 的注释 */
+const staleSlugs = ref(new Set());
 
 // 失效条目清理：收藏快照存在 localStorage 里，文章被删除/改 slug 之后它不会自动消失，
 // 于是收藏页会一直展示一条**点进去是 404** 的卡片（实测：注入 slug=deleted-article-xyz
@@ -64,28 +71,30 @@ const checking = ref(false);
 async function pruneStale() {
   if (checking.value || !bookmarks.value.length) return;
   checking.value = true;
-  const stale = [];
+  const gone = new Set();
   for (const b of bookmarks.value) {
     // 先看缓存：24 小时内问过的 slug 不再重复请求。
     // 不这么做的话，每进一次页面就是二十来个（足迹上限 20）语义完全重复的请求。
     const cached = getCachedStatus(b.slug);
-    if (cached === 'gone') { stale.push(b.id); continue; }
+    if (cached === 'gone') { gone.add(b.slug); continue; }
     if (cached === 'ok') continue;
     try {
       await articleApi.detail(b.slug);
       setCachedStatus(b.slug, 'ok');
     } catch (e) {
-      // 只有明确的 404 才算失效；网络错误/超时一律不缓存，下次还会再问
+      // 只有明确的 404 才标记失效；网络错误/超时一律不缓存，下次还会再问
       if (e?.response?.status === 404) {
         setCachedStatus(b.slug, 'gone');
-        stale.push(b.id);
+        gone.add(b.slug);
       }
     }
   }
-  if (stale.length) {
-    stale.forEach((id) => removeBookmark(id));
-    bookmarks.value = getBookmarks();
-  }
+  // ⚠ 这里**只标记、不删除**。
+  // detail 对「草稿/已下线」的文章同样返回 404，而那不是删除 ——
+  // 实测把一篇已发布文章改成 draft 后，读者的收藏被整条抹掉，文章恢复也回不来。
+  // **读者主动保存的数据不能因为我们这边的一次下线就消失**，
+  // 所以失效条目继续留在列表里、显示为不可点击并说明原因，由读者自己决定去留。
+  staleSlugs.value = gone;
   checking.value = false;
 }
 

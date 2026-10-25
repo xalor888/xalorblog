@@ -13,8 +13,12 @@
       </div>
 
       <div v-if="history.length" class="bm-grid" v-reveal="'stagger'">
-        <div v-for="b in history" :key="b.slug" class="bm-item">
-          <ArticleCard :article="toArticle(b)" />
+        <div v-for="b in history" :key="b.slug" class="bm-item" :class="{ 'bm-item--stale': staleSlugs.has(b.slug) }">
+          <div v-if="staleSlugs.has(b.slug)" class="bm-stale-note" role="note">
+            <XIcon name="EyeOff" :size="14" />
+            <span>这篇当前不可访问（可能已下线或删除）</span>
+          </div>
+          <ArticleCard v-else :article="toArticle(b)" />
           <button class="bm-remove" :title="'从足迹移除 ' + b.title" @click="remove(b.slug)">
             <XIcon name="Trash2" :size="14" />
           </button>
@@ -42,6 +46,8 @@ import { applyPageMeta } from '@/utils/pageMeta';
 
 const site = useSiteStore();
 const history = ref(getHistory());
+/** 已失效（404）的 slug 集合：只标记不删除，见 pruneStale 的注释 */
+const staleSlugs = ref(new Set());
 
 watchEffect(() => {
   const siteName = site.settings.site_name || 'Xalor的小站';
@@ -90,28 +96,30 @@ const checking = ref(false);
 async function pruneStale() {
   if (checking.value || !history.value.length) return;
   checking.value = true;
-  const stale = [];
+  const gone = new Set();
   for (const b of history.value) {
     // 先看缓存：24 小时内问过的 slug 不再重复请求。
     // 不这么做的话，每进一次页面就是二十来个（足迹上限 20）语义完全重复的请求。
     const cached = getCachedStatus(b.slug);
-    if (cached === 'gone') { stale.push(b.slug); continue; }
+    if (cached === 'gone') { gone.add(b.slug); continue; }
     if (cached === 'ok') continue;
     try {
       await articleApi.detail(b.slug);
       setCachedStatus(b.slug, 'ok');
     } catch (e) {
-      // 只有明确的 404 才算失效；网络错误/超时一律不缓存，下次还会再问
+      // 只有明确的 404 才标记失效；网络错误/超时一律不缓存，下次还会再问
       if (e?.response?.status === 404) {
         setCachedStatus(b.slug, 'gone');
-        stale.push(b.slug);
+        gone.add(b.slug);
       }
     }
   }
-  if (stale.length) {
-    stale.forEach((slug) => removeHistory(slug));
-    history.value = getHistory();
-  }
+  // ⚠ 这里**只标记、不删除**。
+  // detail 对「草稿/已下线」的文章同样返回 404，而那不是删除 ——
+  // 实测把一篇已发布文章改成 draft 后，读者的收藏被整条抹掉，文章恢复也回不来。
+  // **读者主动保存的数据不能因为我们这边的一次下线就消失**，
+  // 所以失效条目继续留在列表里、显示为不可点击并说明原因，由读者自己决定去留。
+  staleSlugs.value = gone;
   checking.value = false;
 }
 

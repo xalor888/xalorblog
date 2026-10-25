@@ -370,6 +370,31 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【失效条目只标记不删除：草稿/下线不等于删除，读者存的数据不能没】');
+{
+  // 缺陷：detail 对「草稿/已下线」的文章同样返回 404，而原实现把 404 直接当成删除、
+  // 把读者的收藏整条抹掉。实测把一篇已发布文章改成 draft 后，收藏从 1 条变成 0 条，
+  // **文章改回 published 也回不来了** —— 这比展示一条死链更糟：读者主动保存的数据被我们删了。
+  // 修：只把 slug 记进 staleSlugs，条目继续留在列表里、不给可点链接、写明原因；
+  // 实测文章恢复后（清掉 gone 缓存重校验）失效标记消失、链接回来、卡片正常。
+  for (const [name, p] of [['收藏页', '../src/views/site/Bookmarks.vue'],
+                            ['足迹页', '../src/views/site/History.vue']]) {
+    const src = read(p);
+    ok(`${name}有 staleSlugs 标记`, /const staleSlugs = ref\(new Set\(\)\)/.test(src), p);
+    // 关键：pruneStale 里不能再调用删除
+    const fn = (src.match(/async function pruneStale[\s\S]*?\n\}/) || [''])[0];
+    ok(`${name}校验时不删除条目`,
+       !/remove(Bookmark|History)\(/.test(fn) && !/\.forEach\(\(.*\) => remove/.test(fn),
+       fn.match(/remove\w*\(/) ? '仍在删除' : '');
+    ok(`${name}把 404 记进 staleSlugs`, /staleSlugs\.value = gone/.test(fn));
+    // 模板要给说明、且不给死链
+    ok(`${name}失效条目有说明`, /bm-stale-note/.test(src), p);
+    ok(`${name}失效条目不给链接`, /v-else :article|ArticleCard v-else/.test(src), p);
+  }
+  const css = read('../src/styles/list-page.css');
+  ok('失效态有样式且不推翻玻璃语言', /\.bm-stale-note/.test(css) && /var\(--border\)/.test(css));
+}
+
 console.log('\n【失效校验的缓存：24h 内不重复请求，但网络错误绝不缓存】');
 {
   // 两个列表页都在挂载时逐条 detail(slug)，足迹上限 20 → 每进一次页面就是二十来个

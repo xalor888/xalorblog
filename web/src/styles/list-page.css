@@ -107,3 +107,22 @@
     transform: none;
   }
 }
+
+/* 失效条目：保留在列表里（读者自己存的，不能因我方下线而消失），
+   但不给可点链接，并明确写出原因。视觉上比正常卡片弱一档。 */
+.bm-item--stale {
+  opacity: 0.72;
+}
+.bm-stale-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 84px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+  background: var(--bg-soft);
+  color: var(--text-2);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
