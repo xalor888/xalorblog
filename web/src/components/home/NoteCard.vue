@@ -10,7 +10,11 @@
         </span>
       </div>
       <span v-if="note.is_pinned" class="nc-pin" title="置顶"><XIcon name="Pin" :size="13" /></span>
-      <span v-if="note.mood" class="nc-mood">{{ note.mood }}</span>
+      <!-- 心情标签补一个可读名称。
+           实测：读屏读到的是一个孤零零的「开心」——
+           既不知道这是心情，也不知道它跟手记内容是什么关系。
+           用 aria-label 说出来，视觉上仍是原来那个小标签。 -->
+      <span v-if="note.mood" class="nc-mood" :aria-label="`心情：${note.mood}`">{{ note.mood }}</span>
     </header>
 
     <router-link :to="`/notes/${note.id}`" class="nc-body">

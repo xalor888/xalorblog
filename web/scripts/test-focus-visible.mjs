@@ -353,6 +353,15 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【手记的心情标签要说清是什么】');
+{
+  const card = read('../src/components/home/NoteCard.vue');
+  // 实测：读屏读到的是一个孤零零的「开心」——
+  // 既不知道这是心情，也不知道它跟手记内容是什么关系。
+  ok('心情标签有 aria-label', /:aria-label="`心情：\$\{note\.mood\}`"/.test(card));
+  ok('视觉上仍是原来那个标签（文本不变）', /class="nc-mood"/.test(card) && /\{\{ note\.mood \}\}/.test(card));
+}
+
 console.log('\n【评论要有语义，不能只靠缩进表达层级】');
 {
   const item = read('../src/components/site/CommentItem.vue');
