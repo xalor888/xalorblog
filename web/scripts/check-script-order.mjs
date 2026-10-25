@@ -50,7 +50,7 @@ function stripNoise(code) {
       out += '  '; i += 2;
       continue;
     }
-    if (c === '"' || c === "'" || c === '`') {
+    if (c === '"' || c === "'") {
       const quote = c;
       out += ' '; i += 1;
       while (i < n && code[i] !== quote) {
@@ -61,6 +61,43 @@ function stripNoise(code) {
       out += ' '; i += 1;
       continue;
     }
+    if (c === '`') {
+      // 模板字符串：字面量部分抹掉，但 `${...}` 里的表达式是**真实代码**，必须保留。
+      // 旧版把整段反引号内容当普通字符串吞掉，于是
+      //   const a = `${b}`; const b = 1;
+      // 这类「先引用后声明」被整段抹平，检查器一声不响地漏报。
+      out += ' '; i += 1;
+      while (i < n) {
+        if (code[i] === '\\') { out += '  '; i += 2; continue; }
+        if (code[i] === '`') { out += ' '; i += 1; break; }
+        if (code[i] === '$' && code[i + 1] === '{') {
+          out += '  '; i += 2;
+          let depth = 1;
+          while (i < n && depth > 0) {
+            const d = code[i];
+            if (d === '"' || d === "'" || d === '`') {
+              const q = d;
+              out += ' '; i += 1;
+              while (i < n && code[i] !== q) {
+                if (code[i] === '\\') { out += '  '; i += 2; continue; }
+                out += code[i] === '\n' ? '\n' : ' ';
+                i += 1;
+              }
+              out += ' '; i += 1;
+              continue;
+            }
+            if (d === '{') depth += 1;
+            else if (d === '}') depth -= 1;
+            out += d;
+            i += 1;
+          }
+          continue;
+        }
+        out += code[i] === '\n' ? '\n' : ' ';
+        i += 1;
+      }
+      continue;
+    }
     out += c; i += 1;
   }
   return out;
@@ -69,12 +106,29 @@ function stripNoise(code) {
 /** 取 .vue 的 <script setup> 内容，.js 取全文 */
 function scriptOf(file, text) {
   if (!file.endsWith('.vue')) return text;
-  const m = text.match(/<script setup>([\s\S]*?)<\/script>/);
+  // 属性顺序与引号写法都可能不同（<script setup lang="js"> / <script lang="ts" setup>），
+  // 旧版只认字面量 `<script setup>`，换个写法就静默返回空串 —— 整份文件被跳过，等于不检查。
+  const m = text.match(/<script\b[^>]*\bsetup\b[^>]*>([\s\S]*?)<\/script>/);
   return m ? m[1] : '';
 }
 
-const DECL_RE = /^(?:const|let|var|function|async function|class)\s+([A-Za-z_$][\w$]*)/;
-const SKIP_RE = /^(?:const|let|var|function|async function|class|import|export|if|for|while|switch|return|try|throw|\}|\{|\)|])/;
+/** 顶层声明行（行首的 const / let / var / class / function） */
+const DECL_RE = /^(?:const|let|var|function|async\s+function|class)\s+([A-Za-z_$][\w$]*)/;
+/** 声明语句的语句头：用于把这一行拆成「左侧名字」与「右侧初始化表达式」 */
+const DECL_HEAD_RE = /^(?:const|let|var)\s+/;
+const SKIP_RE = /^(?:const|let|var|function|async\s+function|class|import|export|if|for|while|switch|return|try|throw|\}|\{|\)|])/;
+
+/**
+ * 把「不是变量引用」的同名出现抹掉，避免误报：
+ *   - `.name` 属性访问
+ *   - `{ name: ... }` 对象字面量的键
+ * 抹成等长空格以保持列位置。
+ */
+function maskNonRefs(text) {
+  return text
+    .replace(/(\.)\s*([A-Za-z_$][\w$]*)/g, (m, dot, name) => dot + ' '.repeat(m.length - dot.length))
+    .replace(/([A-Za-z_$][\w$]*)(\s*:)/g, (m, name, colon) => ' '.repeat(name.length) + colon);
+}
 
 const findings = [];
 for (const file of collect(root)) {
@@ -96,10 +150,24 @@ for (const file of collect(root)) {
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     if (!line.trim() || line !== line.trimStart()) continue; // 只看顶层
-    if (SKIP_RE.test(line)) continue;
+    // 声明行不能整行跳过：`const a = b` 里右侧的 b 就是一次真实引用，
+    // 若 b 在后面才声明（`const b = ...`）同样是 TDZ。
+    // 旧版直接 `SKIP_RE` 掉整行，于是最常见的「初值里引用后声明变量」全部漏报。
+    let probe = line;
+    const head = line.match(DECL_HEAD_RE);
+    if (head) {
+      const eq = probe.indexOf('=');
+      if (eq === -1) continue; // 无初始化的裸声明，不产生引用
+      probe = ' '.repeat(eq + 1) + probe.slice(eq + 1);
+    } else if (SKIP_RE.test(line)) {
+      continue;
+    }
+    const self = head ? head[1] : null;
+    const masked = maskNonRefs(probe);
     for (const [name, at] of decl) {
       if (at <= i) continue;
-      if (new RegExp(`\\b${name}\\b`).test(line)) {
+      if (name === self) continue; // 自引用声明本身不算（`let x = x` 属另一类问题）
+      if (new RegExp(`\\b${name}\\b`).test(masked)) {
         findings.push({
           file: path.relative(path.resolve(root, '..'), file),
           declarationLine: at + 1,

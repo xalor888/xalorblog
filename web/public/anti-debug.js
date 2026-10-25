@@ -102,6 +102,9 @@
   }
 
   /* ---------- 反制：无限 debugger + 遮蔽层 ---------- */
+  /** 无限 debugger 的定时器句柄：恢复后必须停掉，否则页面会永久被 0ms 定时器拖住 */
+  var debugLoopTimer = null;
+
   function triggerAntiDebug() {
     if (warned) return;
     warned = true;
@@ -112,13 +115,14 @@
     } catch (e) { /* 忽略 */ }
 
     // 无限 debugger：DevTools 保持打开即持续卡死
-    function infiniteDebug() {
-      /* eslint-disable no-debugger */
-      debugger;
-      /* eslint-enable no-debugger */
-      setTimeout(infiniteDebug, 0);
+    if (debugLoopTimer === null) {
+      (function infiniteDebug() {
+        /* eslint-disable no-debugger */
+        debugger;
+        /* eslint-enable no-debugger */
+        debugLoopTimer = setTimeout(infiniteDebug, 0);
+      })();
     }
-    infiniteDebug();
 
     // 全屏遮蔽层：DevTools 关闭后自动恢复
     if (!document.getElementById('__x_shield__')) {
@@ -130,12 +134,24 @@
     }
   }
 
+  /**
+   * 解除反制。
+   *
+   * 旧版这里写的是 `if (warned && !devtoolsOpen)`，而唯一调用点所在的分支
+   * 已经把 devtoolsOpen 置为 false，于是条件恒假、函数体永不执行：
+   * 遮蔽层摘不掉、warned 也不复位 —— 页面「自动恢复」的承诺是假的，
+   * 用户关掉 DevTools 后仍然永久停留在全屏提示上。
+   */
   function releaseShield() {
-    if (warned && !devtoolsOpen) {
-      warned = false;
-      var shield = document.getElementById('__x_shield__');
-      if (shield && shield.parentNode) shield.parentNode.removeChild(shield);
+    var shield = document.getElementById('__x_shield__');
+    if (shield && shield.parentNode) shield.parentNode.removeChild(shield);
+    if (debugLoopTimer !== null) {
+      clearTimeout(debugLoopTimer);
+      debugLoopTimer = null;
     }
+    warned = false;
+    devtoolsOpen = false;
+    strikes = 0;
   }
 
   /* ---------- 定时检测循环 ---------- */
@@ -182,9 +198,16 @@
      前端在 web/src/utils/copyGuard.js 按这两个开关动态挂载/卸载监听，
      本脚本只负责与「调试行为」相关的防护。 */
 
-  /* ---------- console 全面静默 ---------- */
+  /* ---------- console 静默（只静默闲聊渠道，错误必须透出） ----------
+     旧版把 error 也一并吞掉，只回一句「不提供调试入口」。
+     后果是 src/main.js 的全局兜底彻底失效：
+       window.addEventListener('unhandledrejection', …) → console.error
+       app.config.errorHandler                        → console.error
+     而项目生产构建**保留** console.error（vite 的 terser 没有 drop_console），
+     恰恰是为了「避免静默白屏」。被这里覆写后，真出渲染错误时控制台一片空白，
+     排查成本反而变高。所以 error 保留原样，其余渠道静默。 */
   var warnedOnce = false;
-  ['log', 'info', 'warn', 'error', 'debug', 'trace'].forEach(function (method) {
+  ['log', 'info', 'warn', 'debug', 'trace'].forEach(function (method) {
     var original = console[method];
     console[method] = function () {
       if (!warnedOnce) {
