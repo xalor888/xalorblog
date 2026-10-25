@@ -410,7 +410,10 @@ const previewHtml = computed(() => renderMarkdown(form.value.content));
 /** 自动生成摘要：剥离 Markdown 语法后截取前 150 字（已填则不覆盖） */
 function autoSummary() {
   const md = form.value.content || '';
-  if (!md.trim()) return;
+  // 原来这里 `if (!md.trim()) return;` —— **静默返回**。
+  // 用户点了「自动生成摘要」，正文还空着时界面毫无反应：
+  // 既不知道是按钮没生效，也不知道要先写正文。
+  if (!md.trim()) return ElMessage.warning('正文还是空的，先写点内容再生成摘要');
   const plain = md
     .replace(/```[\s\S]*?```/g, ' ') // 代码块
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ') // 图片

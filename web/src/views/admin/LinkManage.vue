@@ -211,6 +211,7 @@ function onSelectionChange(rows) {
 }
 
 async function batchSetStatus(s) {
+  if (!selection.value.length) return ElMessage.warning('请先选择友链');
   batchLoading.value = true;
   try {
     await linkApi.batchStatus(selection.value.map((r) => r.id), s);
@@ -225,6 +226,9 @@ async function batchSetStatus(s) {
 }
 
 async function batchRemove() {
+  // 没有这道检查时，未选中会弹出「确定删除选中的 0 条友链吗？」
+  // —— 一个没有意义却要用户确认的对话框。
+  if (!selection.value.length) return ElMessage.warning('请先选择友链');
   try {
     await ElMessageBox.confirm(`确定删除选中的 ${selection.value.length} 条友链吗？此操作不可恢复。`, '批量删除', {
       type: 'warning',

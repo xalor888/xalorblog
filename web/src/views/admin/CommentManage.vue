@@ -305,6 +305,10 @@ function onSelectionChange(rows) {
 }
 
 async function batchSetStatus(s) {
+  // 服务端有 `if (!ids.length) return fail('请选择评论')` 兜底，
+  // 但不该让一次空选择走到网络上：既多发一个请求，
+  // 回来的提示也变成接口口径（「请选择评论」）而不是这一页的语境。
+  if (!selection.value.length) return ElMessage.warning('请先选择评论');
   batchLoading.value = true;
   try {
     await commentApi.batchStatus(selection.value.map((r) => r.id), s);
@@ -335,6 +339,9 @@ async function batchReAi() {
 }
 
 async function batchRemove() {
+  // 没有这道检查时，未选中会弹出「确定删除选中的 0 条评论吗？」
+  // —— 一个没有意义却要用户确认的对话框。
+  if (!selection.value.length) return ElMessage.warning('请先选择评论');
   try {
     await ElMessageBox.confirm(`确定删除选中的 ${selection.value.length} 条评论吗？此操作不可恢复。`, '批量删除', {
       type: 'warning',

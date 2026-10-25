@@ -175,7 +175,9 @@ async function remove(row) {
 
 async function batch(action) {
   const ids = selection.value.map((r) => r.id);
-  if (!ids.length) return;
+  // 与 ArticleManage 保持一致：未选中就点批量操作要说一句，
+  // 原来这里是静默 return —— 点了完全没反应。
+  if (!ids.length) return ElMessage.warning('请先选择手记');
   try {
     await noteApi.batchUpdate(ids, action);
     ElMessage.success('操作完成');
@@ -188,7 +190,7 @@ async function batch(action) {
 
 async function batchDelete() {
   const ids = selection.value.map((r) => r.id);
-  if (!ids.length) return;
+  if (!ids.length) return ElMessage.warning('请先选择手记');
   try {
     await ElMessageBox.confirm(`确定删除选中的 ${ids.length} 条手记？此操作不可恢复。`, '批量删除', { type: 'warning' });
   } catch (e) {

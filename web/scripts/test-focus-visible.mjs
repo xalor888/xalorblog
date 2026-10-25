@@ -370,6 +370,27 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【用户点了按钮，界面不能毫无反应】');
+{
+  // 实测：ArticleEdit 的「自动生成摘要」在正文为空时 `if (!md.trim()) return;`
+  // —— 点了完全没反应，用户不知道是按钮坏了还是正文没写。
+  const ae = read('../src/views/admin/ArticleEdit.vue');
+  ok('自动摘要空正文时给提示（不是静默 return）',
+     /if \(!md\.trim\(\)\) return ElMessage\.warning/.test(ae));
+
+  // 批量操作栏：未选中时整条 v-if 不渲染 —— 这比「渲染后静默 return」更彻底。
+  // 但函数层仍要有兜底，因为 AI 面板等入口可能绕过 UI 直接调用。
+  for (const [f, label] of [['CommentManage','评论'], ['MessageManage','留言'],
+                            ['LinkManage','友链'], ['NoteManage','手记']]) {
+    const src = read(`../src/views/admin/${f}.vue`);
+    ok(`${label}：批量栏未选中时不渲染`, /v-if="selection\.length"/.test(src));
+    ok(`${label}：函数层也有空选择兜底`, new RegExp(`请先选择${label}`).test(src));
+  }
+  // ArticleManage 的批量入口一直都有提示，不能退步
+  ok('文章批量操作仍有「请先选择文章」',
+     (read('../src/views/admin/ArticleManage.vue').match(/请先选择文章/g) || []).length >= 5);
+}
+
 console.log('\n【创建按钮要自己防重入，别只靠数据库唯一约束】');
 {
   // 实测：连点 3 次「创建」只建出 1 条，但**第 2、3 次是被数据库唯一约束挡的**
