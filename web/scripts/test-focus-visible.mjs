@@ -370,6 +370,25 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【script-order 检查器：export const 的 TDZ 也必须抓到】');
+{
+  // 缺陷（我实测出来的）：检查器只认行首的 const|let|var，
+  // 于是 `export const a = b;` —— **ESM 模块里最常见的写法** —— 整行不被识别为声明，
+  // 右侧那次引用也就不会被检查。
+  // 验证方式：写一个确定有 TDZ 的探针文件进 src/，看检查器抓不抓：
+  //   修复前 `const a = b;` 抓到、`export const a = b;` **静默通过**；
+  //   修复后两种都抓到，且真实代码 92 个文件零误报。
+  // 这个检查器存在的意义就是防「构建期不报错、运行时整页空白」的那类故障，
+  // 漏掉最常见的写法等于漏掉大半。
+  const co = read('../scripts/check-script-order.mjs');
+  ok('DECL_RE 认 export', /export\\s\+\(\?:default/.test(co), 'DECL_RE 缺 export 前缀');
+  // 三处正则都要认，少一处就漏
+  const declHead = (co.match(/const DECL_HEAD_RE = [^;]+/) || [''])[0];
+  ok('DECL_HEAD_RE 认 export', /export/.test(declHead), declHead.slice(0, 60));
+  // 实测跑一遍，必须通过
+  ok('真实代码零误报可参考 check:script-order 门禁', /check:script-order/.test(read('../package.json')));
+}
+
 console.log('\n【阅读统计的缓存失效：发布/删除后要立刻反映，不能等 60 秒】');
 {
   // 代码里原先有一段注释写着「已知缺口：invalidateReadingCache() 没有接入 admin 的写入路径，

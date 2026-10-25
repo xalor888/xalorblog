@@ -112,11 +112,22 @@ function scriptOf(file, text) {
   return m ? m[1] : '';
 }
 
-/** 顶层声明行（行首的 const / let / var / class / function） */
-const DECL_RE = /^(?:const|let|var|function|async\s+function|class)\s+([A-Za-z_$][\w$]*)/;
+/**
+ * 顶层声明行。
+ *
+ * ⚠ 必须认 `export` 前缀。
+ * 原版只匹配行首的 `const|let|var|function|class`，
+ * 于是 `export const a = b;` 这种**在 ESM 模块里最常见的写法**整行不被识别为声明，
+ * 该标识符就永远不会进入「已声明」集合 —— 后面用到它时也不会被当成提前引用。
+ * 实测：`const a = b; const b = 1;` 能抓到，
+ * 同样内容加上 `export` 就静默通过；而 src 下 `export const` 有二十多处。
+ */
+const DECL_RE = /^(?:export\s+(?:default\s+)?)?(?:const|let|var|function|async\s+function|class)\s+([A-Za-z_$][\w$]*)/;
 /** 声明语句的语句头：用于把这一行拆成「左侧名字」与「右侧初始化表达式」 */
-const DECL_HEAD_RE = /^(?:const|let|var)\s+/;
-const SKIP_RE = /^(?:const|let|var|function|async\s+function|class|import|export|if|for|while|switch|return|try|throw|\}|\{|\)|])/;
+// 同上：必须认 `export` 前缀，否则 `export const a = b` 不会被拆成「名字 + 初值」，
+// 右侧那次引用也就不会被检查到。
+const DECL_HEAD_RE = /^(?:export\s+(?:default\s+)?)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)/;
+const SKIP_RE = /^(?:(?:export\s+(?:default\s+)?)?(?:const|let|var|function|async\s+function|class)|import|export|if|for|while|switch|return|try|throw|\}|\{|\)|])/;
 
 /**
  * 把「不是变量引用」的同名出现抹掉，避免误报：
