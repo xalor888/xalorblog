@@ -370,6 +370,23 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【编辑页必须拦住「未保存就离开」】');
+{
+  // 实测：改标题后直接切路由，对话框正常弹出：
+  // 「当前文章有尚未保存的修改，离开将丢失本次更改，是否确定离开？」
+  // （第一次测时我用错了 input 选择器，误判成「没弹框」—— 功能一直是好的）
+  const ae = read('../src/views/admin/ArticleEdit.vue');
+  ok('有 dirty 标志', /const dirty = ref\(false\)/.test(ae));
+  ok('form 深层变化会标记已修改', /watch\(form, scheduleAutosave, \{ deep: true \}\)/.test(ae));
+  ok('路由离开弹确认框', /onBeforeRouteLeave/.test(ae) && /尚未保存的修改/.test(ae));
+  ok('浏览器关闭/刷新也兜底（beforeunload）', /beforeunload/.test(ae) && /function onBeforeUnload/.test(ae));
+  ok('beforeunload 只在 dirty 时拦截', /if \(!dirty\.value\) return;/.test(ae));
+  // 卸载必须清掉待触发的自动保存，否则旧实例会污染新文章的草稿键
+  ok('卸载时清掉自动保存定时器', /clearTimeout\(autosaveTimer\)/.test(ae));
+  // 程序性赋值不能误标 dirty（否则「一进页面就提示未保存」）
+  ok('程序赋值期间抑制自动保存', /suppressWatch/.test(ae));
+}
+
 console.log('\n【标题由守卫统一拼，各视图不该各写一套】');
 {
   // 实测：后台 12 个页面标题全部是「<meta.title> · 管理后台」，
