@@ -454,19 +454,30 @@ const eyebrow = computed(() => {
   return 'ARCHIVES';
 });
 
+/**
+ * 分类与标签**可以叠加**，不要互相清空。
+ *
+ * 原来这两个函数会主动 `delete` 掉对方：
+ *   选「技术笔记」→ 3 篇；再点「# Node.js」→ 分类被删掉，退回标签单独筛选。
+ * 但**服务端本来就同时支持两者**（articles.js 分别读 category 与 tag，
+ * 两个条件都在 where 里）。实测直接访问 `?category=tech&tag=node.js`
+ * 返回正确的 2 篇，两个 chip 也都正确激活 ——
+ * **能力一直在，只是被前端点击行为挡掉了。**
+ *
+ * 现在只改自己那一维，另一维保留；页码与搜索词仍然重置
+ * （换筛选回到第 1 页是合理的）。
+ */
 function selectCategory(slug) {
   const q = { ...route.query };
   if (slug) q.category = slug; else delete q.category;
-  delete q.tag; delete q.keyword; delete q.page; // 筛选变化重置到第 1 页
-  keyword.value = '';
+  delete q.page;
   router.push({ path: '/articles', query: q });
 }
 
 function selectTag(slug) {
   const q = { ...route.query };
   if (slug) q.tag = slug; else delete q.tag;
-  delete q.category; delete q.keyword; delete q.page;
-  keyword.value = '';
+  delete q.page;
   router.push({ path: '/articles', query: q });
 }
 

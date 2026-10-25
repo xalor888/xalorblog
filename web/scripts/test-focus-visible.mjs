@@ -353,6 +353,23 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【分类与标签必须能叠加，不能互相清空】');
+{
+  const list = read('../src/views/site/ArticleList.vue');
+  const catFn = (list.match(/function selectCategory[\s\S]*?\n\}/) || [''])[0];
+  const tagFn = (list.match(/function selectTag[\s\S]*?\n\}/) || [''])[0];
+  // 实测原实现：selectTag 里 `delete q.category`、selectCategory 里 `delete q.tag`，
+  // 于是「技术笔记 → 3 篇，再点 # Node.js」分类被丢掉，退回 2 篇。
+  // 但服务端同时支持两者：直接访问 ?category=tech&tag=node.js 返回正确的 2 篇，
+  // 两个 chip 也都正确激活 —— 能力一直在，被前端点击行为挡掉了。
+  ok('selectCategory 不清空 tag', !/delete q\.tag/.test(catFn), catFn.slice(0, 40));
+  ok('selectTag 不清空 category', !/delete q\.category/.test(tagFn), tagFn.slice(0, 40));
+  ok('换筛选仍重置页码', /delete q\.page/.test(catFn) && /delete q\.page/.test(tagFn));
+  // 服务端必须继续同时支持两个条件
+  const srv = read('../../server/src/routes/articles.js');
+  ok('服务端仍同时读取 category 与 tag', /qs\(req\.query\.category\)/.test(srv) && /qs\(req\.query\.tag\)/.test(srv));
+}
+
 console.log('\n【筛选 chip 的选中态要能被播报】');
 {
   const list = read('../src/views/site/ArticleList.vue');
