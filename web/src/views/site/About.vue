@@ -82,7 +82,7 @@ site.init();
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.22em;
-  color: var(--accent);
+  color: var(--accent-text);
   text-transform: uppercase;
   margin-bottom: 12px;
 }
@@ -109,7 +109,7 @@ site.init();
   justify-content: center;
   font-size: 2.2rem;
   font-weight: 800;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .profile-avatar img {
@@ -165,7 +165,7 @@ site.init();
 .ps-item b {
   font-size: 1.2rem;
   font-weight: 800;
-  color: var(--accent);
+  color: var(--accent-text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -187,7 +187,7 @@ site.init();
 }
 
 .social-chip:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }

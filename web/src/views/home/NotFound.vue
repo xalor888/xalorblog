@@ -29,7 +29,7 @@
   font-family: var(--font-mono);
   font-size: 46px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   letter-spacing: 0.04em;
 }
 .nf-card h1 {
@@ -59,7 +59,7 @@
 }
 .nf-btn:hover { color: var(--accent-deep); border-color: var(--accent); }
 .nf-btn.primary {
-  background: var(--accent);
+  background: var(--accent-fill);
   border-color: var(--accent);
   color: var(--accent-contrast);
 }

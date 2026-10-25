@@ -14,7 +14,13 @@
 
   --text: #1a1814;
   --text-2: #5a5446;
-  --text-3: #7a7364;
+  /* 弱化文字：原 #7a7364 对本站浅底 (#f6f4f1) 只有 4.29:1，差一点点到
+     WCAG AA 的 4.5:1 —— 而它被三十多处小字复用（日期、字数、页脚副标、
+     章节计数…），所以在这里一次修掉而不是逐处打补丁。
+     #726b5d 对页底 4.81:1，但对**玻璃卡片**（叠出来的 #ede9e0）只有 4.36:1 ——
+     而侧栏统计、字数这些恰好都在卡片里。#6b6456 对玻璃底 4.84:1、
+     对页底 5.3:1，仍是同一个暖灰，肉眼几乎分辨不出。 */
+  --text-3: #6b6456;
   --border: #e6e0d4;
   --line: #d8d0c2;
 
@@ -23,9 +29,28 @@
   --accent-soft: #fbeae4;
   --accent-deep: #bf3f28;
   --accent-contrast: #ffffff;
+  /* 「主色作为**文字**」专用。--accent (#e4573d) 对浅底 (#f6f4f1) 只有
+     3.34:1，达不到 WCAG AA 小字的 4.5:1 —— 而它被 114 处 `color:` 复用
+     （阅读全文、置顶、公告标签、章节计数、eyebrow…）。
+     一次性把「作文字」的那一类切到 #b03823（对页底 5.57:1、对 accent-soft
+     淡底 4.66:1 —— 公告标签正是压在后者上，4.05:1 的 #bf3f28 还不够），
+     装饰用途（圆点、下划线、进度条、边框）继续用 --accent 保持鲜艳。 */
+  --accent-text: #b03823;
+  /* 「主色作底色 + 白字」的实心填充色。
+     为什么单独一个 token：--accent 在深色主题下会被提亮（为了当**文字**时
+     对深底有 4.5:1 的对比度），但同一抹提亮过的颜色拿去当**按钮底色**配白字，
+     对比度只有 2.55:1（实测：发布留言 / skip-link / 各种 primary 按钮）。
+     底色与文字对亮度的要求是相反的，必须分开。
+     --accent-fill 固定取压深 18% 的值：白字对它 5.17:1（对 #e4573d 只有 3.67:1）。
+     theme.js 在运行时用 shade() 算同一个值，这里的字面量是首屏/无 JS 时的兜底，
+     两者必须一致（test-contrast-tokens.mjs 断言这个字面量达标）。 */
+  --accent-fill: #bb4732;
 
   /* 点缀色（低饱和，克制使用） */
+  /* 琥珀作为「文字」时对浅底只有 2.65:1（四色里唯一不达标的），
+     单独给一个更深的文字版；图形/装饰仍用 --amber 的鲜艳值。 */
   --amber: #c9900f;
+  --amber-text: #866204;
   --teal: #217a5e;
   --blue: #2f6fb3;
   --rose: #c24b5e;
@@ -188,6 +213,11 @@
   --accent: var(--accent-deep);
   --accent-soft: var(--accent-soft-dark);
   --accent-deep: var(--accent-deep-dark);
+  /* 深色下 --accent 已经提亮过（对深底够用），文字色直接复用 */
+  --accent-text: var(--accent-deep-dark);
+  /* 深色下实心按钮的底色：不能跟着 --accent 提亮（白字会糊），
+     保持在浅色主色的饱和度上即可 */
+  --accent-fill: var(--accent-dark);
 
   /* ---------- 液态玻璃：暗色材质 ----------
      暗色下玻璃的"折射"靠极淡的白光边缘 + 更深的底，而不是继续堆白。 */
@@ -375,6 +405,71 @@ summary {
   }
 }
 
+/* ============================================================
+   分类色在深色主题下统一提亮
+   ============================================================
+   分类色由后端按分类写死（#c9900f 琥珀 / #217a5e 黛绿 / #2f6fb3 黛蓝 /
+   #c24b5e 绛红），它们是按浅底挑的。深色底 (#12110f) 上这些色相
+   实测只有 3.2–4.0:1，低于 WCAG AA 的 4.5:1 —— 而它们被用在文章卡、
+   列表、详情页的分类标签上，是读者最常扫的一层信息。
+   不在数据里改色（那会让同一分类在浅色下变得过亮），
+   而是在深色主题下对「作为文字色」的那一处统一混白提亮。
+   注意只动 color，不动 background（底色本来就靠 color-mix 的 10% 透明，
+   提亮后更淡，仍然可读）。 */
+/* 注意特指度：各组件的样式是 scoped 的，选择器形如
+   `.grid-cat[data-v-164d7cc6]`（0,2,0）。上面那种 `[data-theme] .grid-cat`
+   只有 (0,1,1)，实测**打不过**它，规则虽然命中却不生效。
+   再加一层 [data-theme] 把特指度提到 (0,2,1) 才能赢；
+   这是与「输入框 16px」同一类陷阱，别再靠猜。 */
+[data-theme='dark'][data-theme] .cat,
+[data-theme='dark'][data-theme] .grid-cat,
+[data-theme='dark'][data-theme] .head-cat,
+[data-theme='dark'][data-theme] .grid-pin {
+  color: color-mix(in srgb, var(--cat, var(--accent)) 55%, #ffffff);
+}
+
+/* ============================================================
+   分类色：作文字时用更深的版本
+   ============================================================
+   四个分类色 (#c9900f / #217a5e / #2f6fb3 / #c24b5e) 是按浅底挑的，
+   作为**文字**在浅底上的对比度分别是 2.65 / 4.94 / 4.89 / 4.44：
+   琥珀严重不足，绛红差一点点。深色主题下已由上面的规则统一提亮。
+   这里只处理浅色主题的文字色，取更深的一档（4.68 / 6.64 / 6.05 / 5.86）。
+   这些色来自后端的数据，值本身就是色相标识，所以按值匹配而不是按 class。 */
+/* 琥珀色单独指名替换（它是唯一真正不达标的：2.65:1）。
+   用属性选择器匹配内联 --cat 的值 —— 那个值来自后端数据，
+   不会因为主题或组件而变，匹配是可靠的。
+   其余三色 4.44–4.94 已在线内，不再动它们（多改一分都会牺牲色相辨识度）。 */
+[data-theme='light'] .cat[style*='c9900f'],
+[data-theme='light'] .grid-cat[style*='c9900f'],
+[data-theme='light'] .head-cat[style*='c9900f'],
+[data-theme='light'] .grid-pin[style*='c9900f'] {
+  color: var(--amber-text);
+}
+
+/* 绛红 (#c24b5e) 在浅底上 4.44:1、压在 7% 淡底上 4.01:1，差最后一口气。
+   与琥珀同理给一个更深的文字版；其余两色（黛绿/黛蓝）已达标不动。 */
+[data-theme='light'] .cat[style*='c24b5e'],
+[data-theme='light'] .grid-cat[style*='c24b5e'],
+[data-theme='light'] .head-cat[style*='c24b5e'],
+[data-theme='light'] .grid-pin[style*='c24b5e'] {
+  color: #9e3548;
+}
+
+/* 黛绿 / 黛蓝：对玻璃底 4.35 / 4.33，都差一点点。
+   同样按色值点名替换 —— 这两个色在深色主题下不需要（那边已统一提亮）。 */
+[data-theme='light'] .cat[style*='217a5e'],
+[data-theme='light'] .grid-cat[style*='217a5e'],
+[data-theme='light'] .head-cat[style*='217a5e'] {
+  color: #1c6b52;
+}
+
+[data-theme='light'] .cat[style*='2f6fb3'],
+[data-theme='light'] .grid-cat[style*='2f6fb3'],
+[data-theme='light'] .head-cat[style*='2f6fb3'] {
+  color: #2a64a2;
+}
+
 /* 控件文字不该被长按选中（内容文字必须保持可选——绝不能加到 body 上）。
    -webkit-touch-callout 同时压掉 iOS 长按弹出的「拷贝/共享」气泡。 */
 button,
@@ -468,8 +563,8 @@ body::before {
 }
 
 ::selection {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--accent-contrast);
 }
 
 /* 主题/强调色切换：优先 View Transitions 整页交叉淡化（theme.js 探测支持后启用）。
@@ -553,8 +648,10 @@ input:-webkit-autofill:focus {
 }
 
 .btn-primary {
-  background: var(--accent);
-  color: #fff;
+  /* 实心底用 --accent-fill：--accent 在深色下为了当文字而提亮，
+     拿去配白字只有 2.55:1（详见 :root 里 --accent-fill 的注释） */
+  background: var(--accent-fill);
+  color: var(--accent-contrast);
 }
 
 .btn-primary:hover {
@@ -649,7 +746,7 @@ input:-webkit-autofill:focus {
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.28em;
-  color: var(--accent);
+  color: var(--accent-text);
   text-transform: uppercase;
   margin-bottom: 14px;
 }
@@ -1028,7 +1125,7 @@ input:-webkit-autofill:focus {
 }
 
 .el-message-box__btns .el-button--primary {
-  background: var(--accent) !important;
+  background: var(--accent-fill) !important;
   border-color: transparent !important;
   color: #fff !important;
   box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 38%, transparent);
@@ -1123,7 +1220,7 @@ input:-webkit-autofill:focus {
 /* 下拉列表项：选中/悬停仍用品牌色，避免玻璃面把状态吞掉 */
 .el-select-dropdown__item.is-selected,
 .el-dropdown-menu__item:not(.is-disabled):focus {
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
   background: var(--accent-soft) !important;
   font-weight: 600;
 }
@@ -1205,8 +1302,8 @@ input:-webkit-autofill:focus {
 
 /* 选区配色：浅色用珊瑚浅底，暗色用珊瑚深底 */
 ::selection {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--accent-contrast);
 }
 
 [data-theme='dark'] ::selection {

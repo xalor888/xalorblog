@@ -134,7 +134,7 @@ onMounted(async () => {
 }
 
 .year-chip:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -151,7 +151,7 @@ onMounted(async () => {
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.22em;
-  color: var(--accent);
+  color: var(--accent-text);
   text-transform: uppercase;
   margin-bottom: 12px;
 }
@@ -249,7 +249,7 @@ onMounted(async () => {
 
 .tl-count {
   font-size: 0.76rem;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
   padding: 2px 10px;
   border-radius: 999px;
@@ -302,7 +302,7 @@ onMounted(async () => {
 }
 
 .tl-item:hover .tl-day {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .tl-line {
@@ -323,7 +323,7 @@ onMounted(async () => {
 }
 
 .tl-item:hover .tl-title {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .tl-views {

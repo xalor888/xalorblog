@@ -142,7 +142,7 @@ async function onLike() {
   flex-shrink: 0;
 }
 .nc-pin {
-  color: var(--accent);
+  color: var(--accent-text);
   display: inline-flex;
   margin-left: auto;
 }
@@ -219,6 +219,6 @@ async function onLike() {
   background: var(--accent-soft);
 }
 .nc-action.like { margin-left: auto; font-variant-numeric: tabular-nums; }
-.nc-action.like.liked { color: var(--accent); }
+.nc-action.like.liked { color: var(--accent-text); }
 .nc-action:disabled { cursor: default; opacity: 0.8; }
 </style>

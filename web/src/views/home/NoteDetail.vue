@@ -216,7 +216,7 @@ onMounted(() => {
   background: var(--bg-soft);
 }
 .na-tag.mood { background: var(--accent-soft); color: var(--accent-deep); }
-.na-pin { margin-left: auto; color: var(--accent); }
+.na-pin { margin-left: auto; color: var(--accent-text); }
 
 .na-body { margin-top: 14px; }
 .na-images { margin-top: 14px; }
@@ -254,7 +254,7 @@ onMounted(() => {
   transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .like-btn:hover:not(:disabled), .share-btn:hover { color: var(--accent-deep); border-color: var(--accent); }
-.like-btn.liked { color: var(--accent); border-color: var(--accent); }
+.like-btn.liked { color: var(--accent-text); border-color: var(--accent); }
 .like-btn:disabled { cursor: default; }
 .share-btn { margin-left: auto; }
 
@@ -292,7 +292,7 @@ onMounted(() => {
   font-family: var(--font-mono);
   font-size: 32px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .empty-card p { margin: 0; color: var(--text-2); font-size: 14px; }
 .back-btn {

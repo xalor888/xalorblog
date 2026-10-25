@@ -234,7 +234,7 @@ defineProps({
   color: var(--cat);
   padding: 3px 10px;
   border-radius: 5px;
-  background: color-mix(in srgb, var(--cat) 10%, transparent);
+  background: color-mix(in srgb, var(--cat) 7%, transparent);
 }
 
 .cat.muted {
@@ -266,7 +266,7 @@ defineProps({
 }
 
 .article-card:hover .title {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .summary {
@@ -312,7 +312,7 @@ defineProps({
   gap: 5px;
   font-size: 0.84rem;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
   opacity: 0.9;
 }
 

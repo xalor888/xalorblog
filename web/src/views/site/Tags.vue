@@ -68,7 +68,7 @@ onMounted(async () => {
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.22em;
-  color: var(--accent);
+  color: var(--accent-text);
   text-transform: uppercase;
   margin-bottom: 12px;
 }
@@ -98,7 +98,7 @@ onMounted(async () => {
 .cloud-item:hover {
   color: #fff;
   border-color: var(--accent);
-  background: var(--accent);
+  background: var(--accent-fill);
   transform: translateY(-3px) scale(1.04);
 }
 

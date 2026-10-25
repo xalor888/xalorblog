@@ -599,7 +599,7 @@ defineExpose({
 .ai-go {
   padding: 7px 22px;
   border-radius: 10px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 0.85rem;
   font-weight: 600;
@@ -644,7 +644,7 @@ defineExpose({
 }
 
 .user-bubble {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   white-space: pre-wrap;
 }
@@ -701,7 +701,7 @@ defineExpose({
 }
 
 .ai-md :deep(a) {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ---------- 图片卡片 ---------- */
@@ -774,7 +774,7 @@ defineExpose({
   padding: 4px 0;
   border-radius: 7px;
   font-size: 0.74rem;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-weight: 600;
 }
@@ -873,7 +873,7 @@ defineExpose({
   padding: 2px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .ai-applied-tag.undone {
@@ -935,7 +935,7 @@ defineExpose({
 
 .ai-chip:hover:not(:disabled) {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .ai-chip:disabled {
@@ -994,7 +994,7 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 0.8rem;
   font-weight: 600;

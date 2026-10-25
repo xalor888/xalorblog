@@ -823,7 +823,7 @@ watch(form, scheduleAutosave, { deep: true });
 }
 
 .ed-icon-btn:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
@@ -950,7 +950,7 @@ watch(form, scheduleAutosave, { deep: true });
 
 .ed-tab.active {
   color: #fff;
-  background: var(--accent);
+  background: var(--accent-fill);
   box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 38%, transparent);
 }
 
@@ -978,7 +978,7 @@ watch(form, scheduleAutosave, { deep: true });
 }
 
 .md-tool:hover:not(:disabled) {
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 13%, transparent);
 }
 

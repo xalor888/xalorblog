@@ -88,7 +88,7 @@ async function clearAll() {
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.22em;
-  color: var(--accent);
+  color: var(--accent-text);
   text-transform: uppercase;
   margin-bottom: 12px;
 }

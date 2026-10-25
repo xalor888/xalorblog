@@ -317,7 +317,7 @@ onUnmounted(() => {
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.22em;
-  color: var(--accent);
+  color: var(--accent-text);
   text-transform: uppercase;
   margin-bottom: 12px;
 }
@@ -412,12 +412,12 @@ onUnmounted(() => {
 }
 
 .emoji-toggle:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
 }
 
 .emoji-toggle.active {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -462,7 +462,7 @@ onUnmounted(() => {
 .submit-btn {
   padding: 9px 28px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 0.9rem;
   font-weight: 600;

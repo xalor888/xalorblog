@@ -289,7 +289,7 @@ const avatarColor = computed(() => {
 }
 
 .web:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .time {
@@ -300,7 +300,7 @@ const avatarColor = computed(() => {
 }
 
 .time:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: underline;
   text-decoration-style: dotted;
   text-underline-offset: 3px;
@@ -316,7 +316,7 @@ const avatarColor = computed(() => {
 }
 
 .at {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -336,7 +336,7 @@ const avatarColor = computed(() => {
 }
 
 .reply-btn:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 
@@ -353,12 +353,12 @@ const avatarColor = computed(() => {
 }
 
 .like-btn:hover:not(:disabled) {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 
 .like-btn.liked {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .like-btn:disabled {
@@ -392,7 +392,7 @@ const avatarColor = computed(() => {
 }
 
 .expand-btn:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
 }
 

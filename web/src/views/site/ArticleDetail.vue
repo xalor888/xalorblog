@@ -997,7 +997,7 @@ onUnmounted(() => {
   font-family: Georgia, serif;
   font-size: 8rem;
   font-weight: 800;
-  color: var(--accent);
+  color: var(--accent-text);
   opacity: 0.07;
   left: 50%;
   top: 10px;
@@ -1009,7 +1009,7 @@ onUnmounted(() => {
   font-family: Georgia, serif;
   font-size: 3.4rem;
   font-weight: 800;
-  color: var(--accent);
+  color: var(--accent-text);
   line-height: 1;
   margin-bottom: 10px;
 }
@@ -1098,7 +1098,7 @@ onUnmounted(() => {
   color: var(--cat);
   padding: 3px 10px;
   border-radius: 5px;
-  background: color-mix(in srgb, var(--cat) 10%, transparent);
+  background: color-mix(in srgb, var(--cat) 7%, transparent);
 }
 
 .head-cat.muted {
@@ -1144,13 +1144,13 @@ onUnmounted(() => {
 }
 
 .share-btn:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
 .share-btn.active {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -1188,7 +1188,7 @@ onUnmounted(() => {
 }
 
 .share-item:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 
@@ -1253,7 +1253,7 @@ onUnmounted(() => {
 }
 
 .dm-item.dm-link:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .dm-sep {
@@ -1280,7 +1280,7 @@ onUnmounted(() => {
 }
 
 .d-tag:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -1424,7 +1424,7 @@ onUnmounted(() => {
 }
 
 .rt-btn:hover:not(.dim) {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -1446,7 +1446,7 @@ onUnmounted(() => {
 
 /* 沉浸模式开关的激活态 */
 .rt-btn.on {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -1499,14 +1499,14 @@ onUnmounted(() => {
 
 /* 基础几何与玻璃材质来自全局 .dock-btn（main.css），这里只保留差异态 */
 .fab:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   transform: translateY(-2px);
 }
 
 /* 点赞态与数字徽标 */
 .fab.liked {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -1519,7 +1519,7 @@ onUnmounted(() => {
   height: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -1582,7 +1582,7 @@ onUnmounted(() => {
 }
 
 .td-close:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   transform: rotate(90deg);
 }
@@ -1642,7 +1642,7 @@ onUnmounted(() => {
 }
 
 .td-item.active {
-  color: var(--accent);
+  color: var(--accent-text);
   border-left-color: var(--accent);
   background: var(--accent-soft);
   font-weight: 650;
@@ -1692,21 +1692,21 @@ onUnmounted(() => {
   padding: 12px 36px;
   border-radius: 999px;
   border: 1.5px solid var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 1.05rem;
   font-weight: 650;
   transition: all var(--dur) var(--ease);
 }
 
 .like-btn:hover:not(:disabled) {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   transform: translateY(-2px);
   box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .like-btn.liked {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   border-color: var(--accent);
 }
@@ -1770,7 +1770,7 @@ onUnmounted(() => {
 }
 
 .cc-text a {
-  color: var(--accent);
+  color: var(--accent-text);
   border-bottom: 1px dashed var(--accent);
 }
 
@@ -1795,7 +1795,7 @@ onUnmounted(() => {
 }
 
 .cc-btn:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -1922,7 +1922,7 @@ onUnmounted(() => {
 }
 
 .related-card:hover .rc-title {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .rc-meta {
@@ -1944,7 +1944,7 @@ onUnmounted(() => {
 .related-card:hover .rc-arrow {
   opacity: 1;
   transform: none;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ============ 评论 ============ */
@@ -1993,7 +1993,7 @@ onUnmounted(() => {
 }
 
 .toc-toggle:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .toc-title {
@@ -2071,7 +2071,7 @@ onUnmounted(() => {
 }
 
 .toc-item.active {
-  color: var(--accent);
+  color: var(--accent-text);
   border-left-color: var(--accent);
   background: var(--accent-soft);
   font-weight: 600;

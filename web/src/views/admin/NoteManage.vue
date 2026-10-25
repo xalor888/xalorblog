@@ -232,7 +232,7 @@ onMounted(load);
   white-space: nowrap;
   max-width: 100%;
 }
-.pin-tag { color: var(--accent); display: inline-flex; flex-shrink: 0; }
+.pin-tag { color: var(--accent-text); display: inline-flex; flex-shrink: 0; }
 .img-tag {
   display: inline-flex;
   align-items: center;

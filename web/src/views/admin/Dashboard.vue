@@ -365,7 +365,7 @@ onMounted(loadAll);
 }
 
 .dash-refresh:hover:not(:disabled) {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -468,7 +468,7 @@ onMounted(loadAll);
 .sec-overview-card:hover .so-arrow {
   opacity: 1;
   transform: none;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .stat-card {
@@ -632,7 +632,7 @@ onMounted(loadAll);
 }
 
 .top-item:hover .top-title {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .top-views,
@@ -695,7 +695,7 @@ onMounted(loadAll);
 }
 
 .feed-link:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .feed-title {
@@ -757,7 +757,7 @@ onMounted(loadAll);
 }
 
 .range-btn.active {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }

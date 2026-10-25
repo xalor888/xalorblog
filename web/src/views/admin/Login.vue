@@ -270,7 +270,7 @@ async function submit() {
 }
 
 .pass-toggle:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 
@@ -295,7 +295,7 @@ async function submit() {
   width: 100%;
   padding: 12px;
   border-radius: var(--radius-sm);
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 0.95rem;
   font-weight: 650;
@@ -325,7 +325,7 @@ async function submit() {
 }
 
 .back-home:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* 两步验证输入框入场动画 */

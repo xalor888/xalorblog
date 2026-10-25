@@ -335,7 +335,7 @@ onMounted(load);
 }
 
 .site-name:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .site-url {

@@ -679,7 +679,7 @@ onUnmounted(() => {
 }
 
 .export-btn:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }

@@ -691,7 +691,7 @@ onUnmounted(() => {
 
 .more-btn:hover {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .home-error,
@@ -781,7 +781,7 @@ onUnmounted(() => {
 }
 
 .rc-longest:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .rc-longest-title {
@@ -874,7 +874,7 @@ onUnmounted(() => {
 
 .alink:hover {
   color: #fff;
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .side-row,
@@ -891,7 +891,7 @@ onUnmounted(() => {
 .side-row:hover,
 .hot-row:hover,
 .comment-row:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .dot {
@@ -929,7 +929,7 @@ onUnmounted(() => {
 }
 
 .hot-tabs button.active {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
 }
 
@@ -940,7 +940,7 @@ onUnmounted(() => {
   color: var(--text-3);
 }
 
-.rank.top { color: var(--accent); }
+.rank.top { color: var(--accent-text); }
 
 .hot-title,
 .rc-text {
@@ -955,7 +955,7 @@ onUnmounted(() => {
   height: 28px;
   border-radius: 50%;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -990,7 +990,7 @@ onUnmounted(() => {
 
 .tag-cloud a:hover {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 @media (max-width: 960px) {

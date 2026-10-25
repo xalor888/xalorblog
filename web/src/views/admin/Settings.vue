@@ -969,7 +969,7 @@ onMounted(async () => {
   align-items: center;
   gap: 5px;
   margin-top: 10px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 0.88rem;
 }
 
@@ -988,7 +988,7 @@ onMounted(async () => {
 }
 
 .ai-status.on {
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 

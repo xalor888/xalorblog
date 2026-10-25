@@ -166,7 +166,7 @@ onUnmounted(() => {
 }
 
 .help-close:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 

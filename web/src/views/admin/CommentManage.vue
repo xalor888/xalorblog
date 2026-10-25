@@ -449,7 +449,7 @@ onMounted(() => {
 }
 
 .content-article:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .pagination-wrap {
@@ -488,7 +488,7 @@ onMounted(() => {
 
 
 .reply-at {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 

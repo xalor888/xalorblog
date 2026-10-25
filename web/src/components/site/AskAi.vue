@@ -262,7 +262,7 @@ onUnmounted(() => {
 /* 基础几何与玻璃材质来自全局 .dock-btn（main.css），这里只保留差异态 */
 .ask-fab {
   flex-shrink: 0;
-  color: var(--accent);
+  color: var(--accent-text);
   transition: transform var(--dur) var(--ease);
 }
 
@@ -318,7 +318,7 @@ onUnmounted(() => {
 
 .ask-close:hover {
   color: #fff;
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .ask-list {
@@ -361,7 +361,7 @@ onUnmounted(() => {
 }
 
 .ask-suggest:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
 }
 
@@ -388,7 +388,7 @@ onUnmounted(() => {
 }
 
 .ask-row.user .ask-bubble {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   white-space: pre-wrap;
 }
@@ -450,7 +450,7 @@ onUnmounted(() => {
 }
 
 .ask-copy:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .ask-row.assistant {
@@ -519,7 +519,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
 }
 

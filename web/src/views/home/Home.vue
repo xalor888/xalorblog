@@ -290,7 +290,7 @@ onMounted(() => {
   transform: translateY(-1px);
 }
 .hero-btn.primary {
-  background: var(--accent);
+  background: var(--accent-fill);
   border-color: var(--accent);
   color: var(--accent-contrast);
 }

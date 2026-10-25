@@ -130,7 +130,7 @@ onUnmounted(() => {
   font-family: Georgia, serif;
   font-size: 9rem;
   font-weight: 800;
-  color: var(--accent);
+  color: var(--accent-text);
   opacity: 0.08;
   left: 50%;
   top: -30px;
@@ -221,7 +221,7 @@ onUnmounted(() => {
   padding: 8px 20px;
   border: none;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 0.86rem;
   font-weight: 600;

@@ -200,7 +200,7 @@ onMounted(load);
 .create-btn {
   padding: 9px 24px;
   border-radius: var(--radius-sm);
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 0.9rem;
   font-weight: 600;
@@ -227,7 +227,7 @@ onMounted(load);
 
 .tag-name {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .count-badge {

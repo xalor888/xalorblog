@@ -448,7 +448,7 @@ watch(
 
 .count {
   font-size: 0.78rem;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
   padding: 2px 10px;
   border-radius: 999px;
@@ -489,12 +489,12 @@ watch(
 }
 
 .emoji-toggle:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
 }
 
 .emoji-toggle.active {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -514,7 +514,7 @@ watch(
 }
 
 .rc-context-nick {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 650;
   flex-shrink: 0;
 }
@@ -541,7 +541,7 @@ watch(
 }
 
 .rc-context-link:hover .rc-context-text {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .rc-context-cancel {
@@ -562,7 +562,7 @@ watch(
 
 .rc-context-cancel:hover {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* 评论排序切换 */
@@ -588,12 +588,12 @@ watch(
 }
 
 .cs-btn:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .cs-btn.active {
   background: var(--card);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
   box-shadow: var(--shadow-1);
 }
@@ -701,7 +701,7 @@ watch(
   align-items: center;
   gap: 5px;
   font-size: 0.84rem;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
   padding: 5px 12px;
   border-radius: 6px;
@@ -716,7 +716,7 @@ watch(
 .submit-btn {
   padding: 9px 26px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 0.9rem;
   font-weight: 600;
@@ -812,7 +812,7 @@ watch(
 }
 
 .more-replies-btn:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }

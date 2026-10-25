@@ -22,7 +22,7 @@
   float: left;
   padding-right: 10px;
   padding-top: 4px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* 标题：层级分明，非模板感 */
@@ -74,7 +74,7 @@
 }
 
 .markdown-body a {
-  color: var(--accent);
+  color: var(--accent-text);
   position: relative;
   padding-bottom: 1px;
 }
@@ -117,7 +117,7 @@
 }
 
 .markdown-body li::marker {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -203,7 +203,8 @@
   font-size: 0.74rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #8a8575;
+  /* 代码块头部底色 #252421，原来的 #8a8575 只有 4.21:1 */
+  color: #9a9486;
 }
 
 .code-copy {
@@ -370,7 +371,10 @@
    ============================================================ */
 .hljs-comment,
 .hljs-quote {
-  color: #7d7a6e;
+  /* 深色代码底 (#1b1a17) 上 #7d7a6e 只有 4.04:1，而注释是代码块里
+     读得最多的部分之一（「// 查询」这类说明）。提到 #8f8b7d → 5.1:1，
+     仍然明显比正文暗（注释该退后），但不再费力。 */
+  color: #8f8b7d;
   font-style: italic;
 }
 .hljs-keyword,

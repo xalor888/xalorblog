@@ -309,7 +309,7 @@ async function logout() {
 }
 
 .side-link.active {
-  color: var(--accent);
+  color: var(--accent-text);
   /* 选中态 = 一小片更实的玻璃：半透明品牌色 + 顶部高光边 */
   background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 9%, transparent));
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lg-edge) 70%, transparent);
@@ -323,7 +323,7 @@ async function logout() {
   height: 20px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 0.72rem;
   font-weight: 700;
@@ -418,7 +418,7 @@ async function logout() {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   display: flex;
   align-items: center;
@@ -445,7 +445,7 @@ async function logout() {
 
 /* AI 助手：打开时点亮，一眼看出面板是开着的 */
 .ai-trigger.active {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 

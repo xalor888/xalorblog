@@ -34,11 +34,41 @@ export const useThemeStore = defineStore('theme', () => {
     root.dataset.theme = isDark.value ? 'dark' : 'light';
     // 深色强调色：与 CSS 约定对齐（[data-theme='dark'] --accent = --accent-deep）。
     // 内联变量优先级高于样式表，必须在 JS 侧直接给出深色取值，否则深色永远用浅色主色。
-    const base = isDark.value ? shade(accent.value, 0.28) : accent.value;
+    //
+    // ⚠ 深色下的方向是「提亮」而不是「调暗」：
+    //   样式表里 [data-theme='dark'] 的约定是 --accent: var(--accent-deep)，
+    //   而 --accent-deep-dark 比浅色主色更亮（#e4573d → #ff8a6e）。
+    //   旧实现在这里调了 shade(..., 0.28)（把 #e4573d 压成 #a43f2c），
+    //   内联变量又盖过样式表，于是深色下所有主色文字与 bg(#12110f) 的对比度
+    //   只有 2.99:1 —— 远低于 WCAG AA 的 4.5:1（实测：eyebrow / 公告标签 /
+    //   归档年份计数 / 阅读更多 等一批小字全部不达标）。
+    //   提亮到 mix(白, 0.28) 后实测 6.1:1，且视觉上仍是同一个强调色。
+    const base = isDark.value ? mix(accent.value, '#ffffff', 0.28) : accent.value;
     root.style.setProperty('--accent', base);
     // 主题色自动生成浅/深变体
-    root.style.setProperty('--accent-soft', mix(accent.value, '#ffffff', isDark.value ? 0.06 : 0.9));
-    root.style.setProperty('--accent-deep', shade(accent.value, 0.28));
+    // --accent-soft 是「主色的淡底」，用于 chip / 标签底色。
+    // 浅色主题：向白色混 90% → 极淡的珊瑚底（正对）。
+    // 深色主题：**不能继续混白色** —— 混 6% 得到的几乎是原色 (实测 rgb(230,97,73))，
+    // 于是「主色文字 + 淡底」变成了「亮字压亮底」，对比度只有 1.33:1。
+    // 深色下应该向**页面底色**混，得到一块比背景略亮的暗珊瑚底。
+    root.style.setProperty(
+      '--accent-soft',
+      isDark.value
+        ? mix(accent.value, '#12110f', 0.82)
+        : mix(accent.value, '#ffffff', 0.9)
+    );
+    // --accent-deep 在语义上是「比主色更强的强调」，深色下同样要更亮而不是更暗
+    root.style.setProperty(
+      '--accent-deep',
+      isDark.value ? mix(accent.value, '#ffffff', 0.4) : shade(accent.value, 0.28)
+    );
+    // 实心填充色（主色作底 + 白字）：**不随深色提亮**。
+    // --accent 在深色下变亮是为了当文字时对深底够对比度；同一抹亮色配白字
+    // 只有 2.55:1（实测「发布留言」/ skip-link / .btn-primary）。
+    // 底色与前景对亮度的需求相反，所以这里保持原色的饱和度。
+    // 压深 18%：白字对原色 (#e4573d) 只有 3.67:1，达不到 AA 的 4.5:1。
+    // 压深后约 4.6:1，观感仍是同一个珊瑚（按钮本来就该比文字重一点）。
+    root.style.setProperty('--accent-fill', shade(accent.value, 0.18));
     // 同步 Element Plus 主色（深色下主色提亮、light-N 朝深底压暗，镜像样式表深色色板的配方）
     const brightBase = isDark.value ? mix(accent.value, '#ffffff', 0.1) : accent.value;
     root.style.setProperty('--el-color-primary', brightBase);

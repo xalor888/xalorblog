@@ -162,7 +162,7 @@ onMounted(() => {
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.22em;
-  color: var(--accent);
+  color: var(--accent-text);
   text-transform: uppercase;
   margin-bottom: 12px;
 }
@@ -226,7 +226,7 @@ onMounted(() => {
 }
 
 .link-card:hover .link-name {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .link-desc {
@@ -248,7 +248,7 @@ onMounted(() => {
 .link-card:hover .link-go {
   opacity: 1;
   transform: none;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* 申请表单 */
@@ -323,7 +323,7 @@ onMounted(() => {
 .apply-btn {
   padding: 10px 30px;
   border-radius: var(--radius-sm);
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 0.9rem;
   font-weight: 600;

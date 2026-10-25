@@ -484,7 +484,7 @@ onMounted(async () => {
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.22em;
-  color: var(--accent);
+  color: var(--accent-text);
   text-transform: uppercase;
   margin-bottom: 12px;
 }
@@ -550,11 +550,11 @@ onMounted(async () => {
 
 .sort-btn:hover {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .sort-btn.active {
-  background: var(--accent);
+  background: var(--accent-fill);
   border-color: var(--accent);
   color: #fff;
   font-weight: 600;
@@ -586,12 +586,12 @@ onMounted(async () => {
 }
 
 .view-btn:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .view-btn.active {
   background: var(--card);
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: var(--shadow-1);
 }
 
@@ -613,7 +613,7 @@ onMounted(async () => {
 
 .chip:hover {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .chip.active {
@@ -624,7 +624,7 @@ onMounted(async () => {
 }
 
 [data-theme='dark'] .chip.active {
-  background: var(--accent);
+  background: var(--accent-fill);
   border-color: var(--accent);
   color: #fff;
 }
@@ -687,14 +687,14 @@ onMounted(async () => {
 }
 
 .search-clear:hover {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
 }
 
 .search-btn {
   padding: 6px 16px;
   border-radius: 6px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 0.86rem;
   font-weight: 600;
@@ -751,7 +751,7 @@ onMounted(async () => {
 }
 
 .row-item:hover .row-index {
-  color: var(--accent);
+  color: var(--accent-text);
   opacity: 1;
 }
 
@@ -781,7 +781,7 @@ onMounted(async () => {
   color: var(--cat);
   padding: 2px 9px;
   border-radius: 5px;
-  background: color-mix(in srgb, var(--cat) 10%, transparent);
+  background: color-mix(in srgb, var(--cat) 7%, transparent);
 }
 
 .row-cat.muted {
@@ -821,7 +821,7 @@ onMounted(async () => {
 }
 
 .row-item:hover .row-title {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .row-title :deep(mark),
@@ -877,7 +877,7 @@ onMounted(async () => {
 
 .row-item:hover .row-arrow {
   transform: translateX(3px);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ============ 卡片视图 ============ */
@@ -937,7 +937,7 @@ onMounted(async () => {
   color: var(--cat, var(--accent));
   padding: 2px 8px;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--cat, var(--accent)) 12%, transparent);
+  background: color-mix(in srgb, var(--cat, var(--accent)) 7%, transparent);
 }
 
 /* 置顶徽章（卡片视图） */
@@ -947,7 +947,9 @@ onMounted(async () => {
   gap: 3px;
   font-size: 0.76rem;
   font-weight: 600;
-  color: #c24b5e;
+  /* 固定色（不跟分类走）：「置顶」在所有卡片上都是绛红。
+     原 #c24b5e 压在 10% 绛红淡底上只有 4.01:1，提到 #9e3548 → 5.28:1。 */
+  color: #9e3548;
   padding: 2px 8px;
   border-radius: 4px;
   background: color-mix(in srgb, #c24b5e 12%, transparent);
@@ -970,7 +972,7 @@ onMounted(async () => {
 }
 
 .grid-item:hover .grid-title {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .grid-summary {
@@ -1048,7 +1050,7 @@ onMounted(async () => {
 
 .page-btn:hover:not(:disabled) {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .page-btn:disabled {
@@ -1066,7 +1068,7 @@ onMounted(async () => {
 }
 
 .page-num.current {
-  background: var(--accent);
+  background: var(--accent-fill);
   border-color: var(--accent);
   color: #fff;
   cursor: default;

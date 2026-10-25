@@ -502,7 +502,7 @@ onUnmounted(() => {
   z-index: calc(var(--z-nav) + 1);
   padding: 10px 18px;
   border-radius: 0 0 10px 10px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 14px;
   font-weight: 600;
@@ -869,7 +869,7 @@ onUnmounted(() => {
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
 }
@@ -885,7 +885,7 @@ onUnmounted(() => {
 }
 
 .ticker.overlay.compact .ticker-badge {
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
@@ -1082,7 +1082,7 @@ onUnmounted(() => {
 }
 
 .social-link:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   transform: translateY(-2px);
 }
@@ -1105,7 +1105,7 @@ onUnmounted(() => {
 }
 
 .footer-link:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   transform: translateX(3px);
 }
 
@@ -1146,12 +1146,12 @@ onUnmounted(() => {
 }
 
 .footer-icp:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .footer-powered em {
   font-style: normal;
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -1177,7 +1177,7 @@ onUnmounted(() => {
 /* 基础几何与玻璃材质来自全局 .dock-btn（main.css），这里只保留工具钮的差异态 */
 .tool-btn:hover {
   color: #fff;
-  background: var(--accent);
+  background: var(--accent-fill);
   border-color: var(--accent);
   transform: translateY(-2px);
 }
@@ -1327,7 +1327,7 @@ onUnmounted(() => {
 }
 
 .mobile-link.active {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
   font-weight: 600;
 }
@@ -1352,7 +1352,7 @@ onUnmounted(() => {
 }
 
 .mobile-action:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
