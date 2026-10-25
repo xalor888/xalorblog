@@ -382,6 +382,11 @@ console.log('\n【后台打印：留下数据，去掉操作界面】');
   ok('侧栏隐藏后主区不再留左偏移', /\.admin-main[\s\S]{0,120}margin-left:\s*0/.test(printBlock));
   // 行内按钮必须隐藏，而表格文字必须保留 —— 两者不能一锅端
   ok('表格行内按钮在打印时隐藏', /\.el-table__row button/.test(printBlock));
+  // 实测打印文章页时纸上还留着两个按钮：
+  // 代码块的「复制」与「复制本文链接」——它们的唯一作用是把内容送进剪贴板，
+  // 而纸上没有剪贴板。（修完后前台文章页可见按钮数 = 0）
+  ok('代码块复制按钮打印时隐藏', /\.code-copy/.test(printBlock));
+  ok('复制本文链接按钮打印时隐藏', /\.cc-btn/.test(printBlock));
   // 只检查规则本身，先剥掉注释 —— 注释里提到这个反面写法（作为说明）不算违规
   const printRules = printBlock.replace(/\/\*[\s\S]*?\*\//g, '');
   ok(

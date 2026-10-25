@@ -1744,10 +1744,15 @@ select:focus-visible,
     border-color: #ddd !important;
   }
   /* 余下的零散交互件（AI 提示条上的「前往配置」、顶栏图标按钮）
-     在纸上同样没有意义。用 :not(.el-table) 限定，避免误伤表格内需要保留的内容。 */
+     在纸上同样没有意义。 */
   .ai-go,
   .icon-btn,
-  .theme-btn {
+  .theme-btn,
+  /* 实测打印文章页时，纸上还留着两个按钮：
+     代码块右上角的「复制」，和「复制本文链接」（.cc-btn）。
+     它们的唯一作用是把内容送进剪贴板 —— 纸上没有剪贴板。 */
+  .code-copy,
+  .cc-btn {
     display: none !important;
   }
 }
