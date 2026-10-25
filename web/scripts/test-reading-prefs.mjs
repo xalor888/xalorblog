@@ -301,5 +301,39 @@ console.log('\n【空态必须有出口：任何筛选都要能一键清除】')
   ok('clearFilter 保留 pageSize（清筛选不该动每页条数）', fn ? !fn[1].includes('pageSize') : false);
 }
 
+console.log('\n【加载失败必须区别于「没有文章」】');
+{
+  const { readFileSync } = await import('node:fs');
+  const { dirname, resolve } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const here = dirname(fileURLToPath(import.meta.url));
+  const list = readFileSync(resolve(here, '../src/views/site/ArticleList.vue'), 'utf8');
+
+  // 实测：网络全断时出现过完整失败态（提示 + 重试），重试能恢复 6 篇文章。
+  // 但对用户来说「加载失败」与「真的没有文章」含义完全相反：
+  // 一个要检查网络，一个要换关键词。不能只靠颜色区分。
+  ok(
+    '失败态带 role=alert（读屏立刻播报，不用等用户发现）',
+    /class="empty-state state-error" role="alert"/.test(list)
+  );
+  ok(
+    '失败态有独立类名 state-error（与「没有文章」可区分）',
+    list.includes('state-error')
+  );
+  ok(
+    '失败提示说清原因并提供重试',
+    list.includes('加载失败') && /retry-btn[^>]*>重试|@click="load\(page\)">重试/.test(list)
+  );
+  ok(
+    '重试沿用当前页码（load(page)），失败不该把读者送回第 1 页',
+    /@click="load\(page\)">重试/.test(list),
+    '原来是 load(1)'
+  );
+  ok(
+    '失败时不清空 page（否则重试无法沿用）',
+    !/loadFailed\.value = true;[\s\S]{0,80}?page\.value = 1/.test(list)
+  );
+}
+
 console.log('\n【空态文案区分层级】');
 process.exit(fail === 0 ? 0 : 1);

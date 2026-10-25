@@ -128,11 +128,15 @@
       <!-- 列表 -->
       <SkeletonList v-if="loading" :count="3" class="list-loading" />
       <template v-else-if="loadFailed">
-        <!-- 网络/服务错误：明确提示并提供重试，避免误显示空状态 -->
-        <div class="empty-state">
+        <!-- 网络/服务错误：明确提示并提供重试，避免误显示空状态。
+             加 state-error 类是为了能和「真的没有文章」区分开 ——
+             两者视觉相近，但对用户的含义完全相反（一个是「换个词」，
+             一个是「检查网络」）。role=alert 让读屏在失败发生时立刻播报，
+             而不是等用户自己发现结果区没东西。 -->
+        <div class="empty-state state-error" role="alert">
           <div class="icon-wrap"><XIcon name="ShieldAlert" :size="30" /></div>
           <p>加载失败，可能是网络波动或服务暂时不可用</p>
-          <button class="search-btn retry-btn" @click="load(1)">重试</button>
+          <button class="search-btn retry-btn" @click="load(page)">重试</button>
         </div>
       </template>
       <template v-else>
