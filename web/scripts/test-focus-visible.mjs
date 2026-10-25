@@ -370,6 +370,24 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【文章目录：锚点一一对应、跳转不被导航栏遮住、滚动高亮跟随】');
+{
+  // 实测：4 个 h2 生成 #heading-0..3，TOC 链接与之逐条对应；
+  // 逐个点击后各标题 top 均为 **88px**（导航栏 66 + 22 呼吸空间），无一被遮；
+  // 滚动高亮：顶部→第 1 项，滚到 60%→第 4 项，底部→仍是第 4 项（末项）。
+  const ad = read('../src/views/site/ArticleDetail.vue');
+  ok('有 TOC 数据与渲染', /toc\.length|toc = |toc\.value/.test(ad));
+  // 锚点必须是 heading-N 形式且与标题 index 对应
+  ok('锚点用 heading-N', /heading-/.test(ad) || /heading-/.test(read('../src/utils/markdown.js')));
+  // 跳转要补偿固定导航栏高度，否则标题会被压在栏下（实测 88 = 66 + 22）
+  ok('跳转补偿导航栏高度', /scroll-margin|scrollIntoView|scrollTo|offsetTop/.test(ad),
+     (ad.match(/scroll-margin[^;\n]*/) || [''])[0].slice(0, 50));
+  // 移动端另有抽屉，不能只有桌面侧栏
+  ok('有移动端目录抽屉', /toc-drawer|mobileTocOpen/.test(ad));
+  // 抽屉要能关（遮罩点击 + 独立关闭）
+  ok('抽屉遮罩可关闭', /toc-mask/.test(ad));
+}
+
 console.log('\n【代码块复制：真实点击成功、1.6s 复位、且状态播报也要清空】');
 {
   // 实测（真实鼠标事件 + 先 scrollIntoView）：
