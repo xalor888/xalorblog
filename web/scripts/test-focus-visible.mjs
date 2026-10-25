@@ -370,6 +370,27 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【手记图集（notes.images）是 JSON 字符串，扫描要能从中认出 URL】');
+{
+  // 上一轮把手记补进扫描，但我没验过 images 列的真实格式。
+  // 它存的是 **JSON 字符串**（`["/uploads/a.png"]`），不是数组、也不是裸文件名。
+  // 实测：只放进图集、正文完全不提这张图的手记 →
+  //   `.del-btn` disabled=true；绕过前端调接口 → 400，磁盘文件仍在；
+  //   把图从图集里清空后 → disabled 变回 false（**说明引用是活的，不会一挂就永久锁住**）。
+  const notes = read('../../server/src/utils/notes.js');
+  // images 列的解析必须容错（脏值降级空数组）
+  const parse = (notes.match(/function parseImages[\s\S]{0,420}/) || [''])[0];
+  ok('images 按 JSON 字符串解析', /JSON\.parse\(raw\)/.test(parse));
+  ok('脏值降级为空数组', /catch \(e\)[\s\S]{0,40}return \[\]/.test(parse));
+  ok('只保留非空字符串', /typeof u === 'string' && u/.test(parse));
+  // 写入时走白名单，所以列里存的确实是 /uploads/... 或 http(s)，正则才抓得到
+  ok('写入时清洗过 URL', /serializeImages/.test(notes) && /safeCover/.test(notes));
+
+  const ad = read('../../server/src/routes/admin.js');
+  // pluck('images') 拿到的是原始 JSON 字符串，正则直接扫即可 —— 这点要留在代码里
+  ok('扫描读的是原始列', /db\('notes'\)[\s\S]{0,80}pluck\('images'\)/.test(ad));
+}
+
 console.log('\n【引用扫描的五类来源：漏掉任何一类都会把在用的图误判成孤儿】');
 {
   // 缺陷：collectReferencedUploads 只扫了 articles.cover / articles.content /
