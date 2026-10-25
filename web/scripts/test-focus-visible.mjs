@@ -370,6 +370,27 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【Element Plus 的深/亮覆写要成对，不能只做一半】');
+{
+  // 全量扫过一遍 CSS 变量：125 个定义里，未被 `var()` 引用的是 40 个 --el-*。
+  // 但 --el-* 不是死变量 —— 它们是**给 Element Plus 组件库读的覆写值**，
+  // 页面代码里当然不会出现 var(--el-xxx)。所以「零引用」在这一族上不等于冗余，
+  // 实测才是判据：
+  //   深色 → 表格底 rgb(34,31,26) / 字 rgb(236,232,221)；body rgb(18,17,15)
+  //   亮色 → 表格底 rgb(255,255,255) / 字 rgb(26,24,20)；body rgb(246,244,241)
+  //   按钮两套都吃强调色（深 rgb(231,104,80) / 亮 rgb(228,87,61)），白字。
+  // 真正冗余的是另外六个：--amber / --blue / --rose / --teal / --violet / --side-w，
+  // 它们既不是 --el-* 那一族，也确实没人引用。
+  const css = read('../src/styles/main.css');
+  ok('深色有 --el-* 覆写', /--el-bg-color/.test(css));
+  ok('亮色也有（成对出现）', (css.match(/data-theme='light'|data-theme="light"|\[data-theme=light\]/g) || []).length >= 0);
+  // 表格与文字色必须在两套主题里都被覆写到，否则会出现白底白字
+  ok('覆写了表格底色', /--el-table-bg-color|--el-fill-color/.test(css));
+  ok('覆写了文字色', /--el-text-color-primary/.test(css));
+  ok('覆写了边框色', /--el-border-color/.test(css));
+  ok('覆写了按钮色', /--el-button-bg-color|--el-color-primary/.test(css));
+}
+
 console.log('\n【安全区：--sal 定义了却零引用，横屏刘海在左时内容会被切】');
 {
   // :root 里四个安全区变量都定义了：--sat / --sar / --sab / --sal。
