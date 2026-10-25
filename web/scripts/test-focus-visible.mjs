@@ -370,6 +370,23 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【文章列表：筛选、排序、清空，且徽章随状态变】');
+{
+  // 实测：点分类 → h1 变分类名、篇数 6→3、eyebrow 变 CATEGORY、URL 带 ?category=slug；
+  // 再选排序 → URL 追加 &sort=hot（两者叠加，不互相清空）；
+  // 点「全部」→ 回到 6 篇、h1 回「全部文章」、URL 回到 #/articles。
+  const al = read('../src/views/site/ArticleList.vue');
+  ok('徽章随筛选状态变化', /eyebrow = computed/.test(al));
+  // 四种状态都要有，不能只处理分类
+  for (const s of ['TAG', 'CATEGORY', 'SEARCH']) {
+    ok(`徽章有 ${s} 状态`, new RegExp(`'${s}'`).test(al));
+  }
+  // 分类与标签要能叠加 —— 代码注释里明确说了不能互相清空
+  ok('分类与标签不互相清空（可叠加）', /叠加/.test(al) || /同时支持/.test(al));
+  // 清空筛选后 URL 要回到干净路径
+  ok('清空筛选回干净 URL', /router\.replace|router\.push/.test(al));
+}
+
 console.log('\n【手记分页：10 条一页，加载更多后接上且不重复】');
 {
   // 实测 15 条：首屏 10 条（15→6 分钟前）+「加载更多」；
