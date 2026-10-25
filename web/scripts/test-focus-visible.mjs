@@ -370,6 +370,28 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【首页那个全屏 canvas：标签页切走之后必须真的停下来】');
+{
+  // 全站扫过一遍常驻动画，多数是骨架屏/spinner（加载完就移除，合理）。
+  // 首页多出来的 drift/blink 也不算问题：粒子在 prefers-reduced-motion 时**根本不启动**
+  // （`if (!c || reduce) return`），光标只在 v-if="open" 的面板里渲染。
+  //
+  // 真正的缺口在 AmbientParticles 的 rAF 循环：它**无条件自循环**。
+  // 浏览器对后台标签页只是降频、并不保证停，而这是全屏 canvas。
+  // 补上 visibilitychange 后按 rAF 调用次数实测（500ms 窗口）：
+  //   正常 12 次 → 隐藏后 **0 次** → 恢复后 15 次。
+  const ap = read('../src/components/site/AmbientParticles.vue');
+  ok('监听 visibilitychange', /addEventListener\('visibilitychange'/.test(ap));
+  ok('卸载时摘掉监听', /removeEventListener\('visibilitychange'/.test(ap));
+  const fn = (ap.match(/function onVisibility[\s\S]{0,500}/) || [''])[0];
+  ok('隐藏时取消 rAF', /document\.hidden[\s\S]{0,120}cancelAnimationFrame/.test(fn), fn.slice(0, 60));
+  ok('恢复时重新启动', /!raf[\s\S]{0,60}tick\(c\)/.test(fn), '恢复分支缺失');
+  // 粒子数按屏宽分档，不是无脑铺满
+  ok('移动端粒子更少', /innerWidth < 720 \? 36 : 72/.test(ap));
+  // 减弱动效时完全不启动
+  ok('尊重 prefers-reduced-motion', /prefers-reduced-motion: reduce/.test(ap) && /if \(!c \|\| reduce\) return/.test(ap));
+}
+
 console.log('\n【看不见的动画也要停掉：空闲时不该有常驻合成】');
 {
   // 实测发现的真问题：路由进度条 rpSlide 是 infinite 动画，

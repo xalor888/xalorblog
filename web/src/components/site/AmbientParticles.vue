@@ -71,6 +71,25 @@ function tick(c) {
   raf = requestAnimationFrame(() => tick(c));
 }
 
+/**
+ * 标签页不可见时把循环停掉。
+ *
+ * 浏览器对后台标签页的 rAF 本来就会降频，但**并不保证停**，
+ * 而这是首页那个全屏 canvas：切到别的标签、或者手机上切到后台之后，
+ * 它仍可能以较低频率继续逐帧重绘 36~72 个粒子。
+ * 显式暂停既省电，也避免回到前台时积压出一段追赶式的跳帧。
+ */
+function onVisibility() {
+  const c = canvasRef.value;
+  if (!c) return;
+  if (document.hidden) {
+    cancelAnimationFrame(raf);
+    raf = 0;
+  } else if (!raf) {
+    tick(c);
+  }
+}
+
 function onResize() {
   const c = canvasRef.value;
   if (!c) return;
@@ -87,11 +106,13 @@ onMounted(() => {
   seed();
   tick(c);
   window.addEventListener('resize', onResize, { passive: true });
+  document.addEventListener('visibilitychange', onVisibility);
 });
 
 onUnmounted(() => {
   cancelAnimationFrame(raf);
   window.removeEventListener('resize', onResize);
+  document.removeEventListener('visibilitychange', onVisibility);
 });
 </script>
 
