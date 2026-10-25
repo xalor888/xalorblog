@@ -353,6 +353,41 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【不要用 opacity 压低文字对比度】');
+{
+  // 实测：.empty-state .empty-hint 用 --text-3 本身是 5.34:1（合规），
+  // 叠上 opacity: 0.9 与背景混合后实际变成 4.34:1，跌破 AA 的 4.5。
+  // 层级靠字号与位置表达就够了 —— 颜色已经够淡。
+  const css = read('../src/styles/main.css');
+  const hintBlock = (css.match(/\.empty-state \.empty-hint \{[\s\S]*?\}/) || [''])[0];
+  ok('空态提示不再用 opacity 压对比度', !/opacity:\s*0\.\d/.test(hintBlock), hintBlock.slice(0, 60));
+  ok('空态提示仍用 --text-3（比正文淡一档，但不靠透明度）', /color:\s*var\(--text-3\)/.test(hintBlock));
+
+  // 全站的 opacity 使用必须都是非文字场景
+  const textOpacity = [];
+  for (const [file, label] of [['../src/styles/main.css', 'main'], ['../src/styles/markdown.css', 'markdown']]) {
+    const src = read(file);
+    const lines = src.split('\n');
+    lines.forEach((l, i) => {
+      if (!/^\s*opacity:\s*0\.[0-9]+/.test(l)) return;
+      // 向上找最近的选择器
+      let sel = '';
+      for (let j = i; j >= 0; j -= 1) {
+        if (/\{\s*$/.test(lines[j])) { sel = lines[j].trim(); break; }
+      }
+      // 允许：hover 态、装饰线、非文字容器
+      const allowed = /:hover|::|markdown-body h[1-6]::|float-dock|overlay|backdrop|scroll-hint|divider/.test(sel)
+        || /^\s*\/[/*]/.test(l);
+      if (!allowed && sel && !/empty-hint/.test(sel)) textOpacity.push(`${label}:${i + 1} ${sel} → ${l.trim()}`);
+    });
+  }
+  ok(
+    '其余 opacity 都是非文字场景（hover 反馈/装饰线/浮层）',
+    textOpacity.length === 0,
+    textOpacity.slice(0, 3).join(' | ') || '有文字元素被 opacity 压了'
+  );
+}
+
 console.log('\n【快捷键必须能被发现】');
 {
   const layout = read('../src/views/site/Layout.vue');
