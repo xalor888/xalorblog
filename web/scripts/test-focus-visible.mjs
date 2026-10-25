@@ -353,6 +353,24 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【评论要有语义，不能只靠缩进表达层级】');
+{
+  const item = read('../src/components/site/CommentItem.vue');
+  // 实测：整列评论原本都是 <div>，嵌套回复的层级**只靠缩进这种视觉效果**表达，
+  // 不看屏幕的人完全无从得知哪条是回复谁的。
+  ok('评论条目用 <article> 而不是 <div>', /<article\s/.test(item) && /<\/article>/.test(item));
+  ok(
+    'aria-label 区分主评论与回复',
+    /depth > 0 \? `回复 \$\{comment\.nickname\} 的评论`/.test(item),
+    '两者都只念「某某的评论」就分不出层级'
+  );
+  ok('父评论的 aria-label 是「某某的评论」', /: `\$\{comment\.nickname\} 的评论`/.test(item));
+
+  // 排序按钮的开关状态要被播报
+  const sec = read('../src/components/site/CommentSection.vue');
+  ok('排序按钮有 aria-pressed（不只靠 active 样式）', /aria-pressed/.test(sec));
+}
+
 console.log('\n【评论点赞按钮要有可读名称】');
 {
   const item = read('../src/components/site/CommentItem.vue');

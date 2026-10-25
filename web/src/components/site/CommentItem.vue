@@ -1,5 +1,13 @@
 <template>
-  <div class="comment-item" :class="{ child: depth > 0 }">
+  <!-- 用 <article> 而不是 <div>：一条评论是一个自足的内容单元，
+       读屏用户通过 landmark/region 能直接跳到下一条。
+       原来整列都是 div，嵌套回复的层级**只靠缩进这种视觉效果表达**，
+       不看屏幕的人完全无从得知哪条是回复谁的。 -->
+  <article
+    class="comment-item"
+    :class="{ child: depth > 0 }"
+    :aria-label="depth > 0 ? `回复 ${comment.nickname} 的评论` : `${comment.nickname} 的评论`"
+  >
     <div class="comment-card" :class="{ highlighted: isHighlighted }" :id="'comment-' + comment.id" :data-id="comment.id">
       <div class="avatar" :style="{ background: avatarColor }" @click="$emit('reply', comment)">
         <span>{{ initial }}</span>
@@ -66,7 +74,7 @@
         </div>
       </div>
     </div>
-  </div>
+  </article>
 </template>
 
 <script setup>
