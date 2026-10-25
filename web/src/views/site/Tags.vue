@@ -8,16 +8,30 @@
       </div>
 
       <div class="cloud" v-reveal>
-        <router-link
-          v-for="tag in tags"
-          :key="tag.id"
-          :to="{ path: '/articles', query: { tag: tag.slug } }"
-          class="cloud-item"
-          :class="'weight-' + weightClass(tag.article_count)"
-        >
-          # {{ tag.name }}
-          <span class="cloud-count">{{ tag.article_count }}</span>
-        </router-link>
+        <!-- 零文章的标签渲染成 span 而不是链接。
+             实测标签云里「# 旅行 0」「# 产品 0」是可点击的 router-link，
+             点进去得到一个「没有匹配的文章」空页 —— 读者点了个东西，什么也没有。
+             计数为 0 本身就说明不该点，所以直接不做成链接；
+             同时给 aria-disabled 和说明，读屏也知道它暂时没有内容。 -->
+        <template v-for="tag in tags" :key="tag.id">
+          <span
+            v-if="!tag.article_count"
+            class="cloud-item is-empty weight-1"
+            :aria-label="`${tag.name}，暂无文章`"
+          >
+            # {{ tag.name }}
+            <span class="cloud-count">0</span>
+          </span>
+          <router-link
+            v-else
+            :to="{ path: '/articles', query: { tag: tag.slug } }"
+            class="cloud-item"
+            :class="'weight-' + weightClass(tag.article_count)"
+          >
+            # {{ tag.name }}
+            <span class="cloud-count">{{ tag.article_count }}</span>
+          </router-link>
+        </template>
       </div>
     </div>
   </div>
@@ -93,6 +107,19 @@ onMounted(async () => {
   background: var(--card);
   line-height: 1.4;
   transition: all var(--dur) var(--ease);
+}
+
+/* 零文章的标签：不可点，视觉上也要说明白（否则看起来和可点的没区别） */
+.cloud-item.is-empty {
+  opacity: 0.5;
+  cursor: default;
+  /* 覆盖掉 hover 反馈 —— 它不可点，就不该有「可以点」的暗示 */
+}
+
+.cloud-item.is-empty:hover {
+  color: var(--text-2);
+  background: var(--card);
+  transform: none;
 }
 
 .cloud-item:hover {

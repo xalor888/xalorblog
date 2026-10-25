@@ -304,6 +304,27 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【之前从未检查过的路由】');
+{
+  // 实测 5 个页面（归档/标签/收藏/友链/404）：友链页 h1→h3 跳级，其余正常。
+  const links = read('../src/views/site/Links.vue');
+  ok(
+    '友链页「申请友链」是 h2（h1 之后没有分区标题，用 h3 会跳级）',
+    /<h2 class="apply-title">/.test(links) && !/<h3 class="apply-title">/.test(links)
+  );
+
+  // 标签云：零文章的标签原本是可点 router-link，点进去是空页
+  const tags = read('../src/views/site/Tags.vue');
+  ok('零计数标签渲染成 span 而非链接', /v-if="!tag\.article_count"[\s\S]{0,160}?class="cloud-item is-empty/.test(tags));
+  ok('零计数标签有说明性 aria-label', /aria-label="`\$\{tag\.name\}，暂无文章`"/.test(tags));
+  ok('有文章的标签仍是 router-link', /v-else[\s\S]{0,200}?router-link|<router-link[\s\S]{0,120}?v-else/.test(tags) || /v-else\s*\n\s*:to=/.test(tags));
+  ok('.is-empty 有视觉区分（降低不透明度）', /\.cloud-item\.is-empty \{[\s\S]{0,80}?opacity: 0\.5/.test(tags));
+  ok(
+    '.is-empty 覆盖 hover（不可点的东西不该有可点的暗示）',
+    /\.cloud-item\.is-empty:hover \{[\s\S]{0,120}?transform: none/.test(tags)
+  );
+}
+
 console.log('\n【关于页与个人主页的一致性】');
 {
   // 关于页只走 renderMarkdown、不走 addHeadingIds —— 没有 TOC 就不需要锚点，

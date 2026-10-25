@@ -28,7 +28,10 @@
 
       <!-- 申请表单 -->
       <div class="apply-card card fade-up">
-        <h3 class="apply-title">申请友链</h3>
+        <!-- h2 而不是 h3：本页 h1 是「友情链接」，中间没有分区标题，
+             用 h3 会造成 h1→h3 跳级（实测本页跳级就是这一处）。
+             样式走 .apply-title 类，不依赖标签名。 -->
+        <h2 class="apply-title">申请友链</h2>
         <p class="apply-tip">请先添加本站链接，再提交申请，审核通过后展示。</p>
         <div class="apply-grid">
           <div class="field">
