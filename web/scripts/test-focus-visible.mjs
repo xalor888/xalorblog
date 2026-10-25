@@ -370,6 +370,19 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【滑动动画的容器必须裁剪】');
+{
+  const rp = read('../src/components/ui/RouteProgress.vue');
+  // 实测：.rp-bar 用 translateX(-100% → 400%) 持续滑动，
+  // 而 .route-progress 没有 overflow ——
+  // 375px 视口下条形右边缘在 421px，**溢出 46px**，3px 高的渐变光晕贴在屏幕外。
+  // 桌面端宽度大不易察觉，窄屏上一眼可见。
+  const wrap = (rp.match(/\.route-progress \{[\s\S]*?\n\}/) || [''])[0];
+  ok('进度条容器有 overflow: hidden', /overflow:\s*hidden/.test(wrap), wrap.slice(0, 60));
+  // 动画本身不能因此被关掉
+  ok('滑动动画仍在（裁剪不等于禁用）', /@keyframes rpSlide/.test(rp) && /animation:\s*rpSlide/.test(rp));
+}
+
 console.log('\n【导航里的图标按钮都要有名字（含状态）】');
 {
   const layout = read('../src/views/site/Layout.vue');

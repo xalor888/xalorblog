@@ -48,6 +48,13 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   height: 3px;
+  /* 必须裁剪。
+     .rp-bar 用 translateX(-100% → 400%) 做持续滑动，
+     没有裁剪时它会真的跑到容器外 ——
+     实测 375px 视口下条形右边缘在 421px，**溢出 46px**，
+     那 3px 高的渐变光晕会贴在屏幕右侧外面。
+     桌面端因为宽度大不容易察觉，窄屏上一眼就能看到。 */
+  overflow: hidden;
   z-index: var(--z-toast);
   pointer-events: none;
   opacity: 0;
