@@ -353,6 +353,31 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【分享卡片的配图链路】');
+{
+  // 实测：无封面的文章，分享页 og:image 退回 settings.avatar = /logo.png（646KB 头像），
+  // 而专为此准备的 /og-image.png（254KB 宽幅）从未被引用过。
+  const share = read('../../server/src/routes/share.js');
+  ok(
+    '分享图按 cover → og_image → avatar → 内置 顺序回退',
+    /toAbs\(article\.cover\)[\s\S]{0,120}?toAbs\(settings\.og_image\)[\s\S]{0,120}?toAbs\(settings\.avatar\)/.test(share),
+    '原实现无封面时直接退回头像，正方形小图当 1200×630 大图会被裁得很糟'
+  );
+  ok('og:image 无条件输出（cover 现在恒有值）', /<meta property="og:image" content="\$\{esc\(cover\)\}">/.test(share));
+  ok('twitter:card 恒为 summary_large_image', /content="summary_large_image">/.test(share));
+  ok('JSON-LD 也带 image', /image: \[cover\]/.test(share));
+
+  // 前后端默认值必须一致
+  ok(
+    '前端 pageMeta 默认图与 server 一致（/og-image.png）',
+    /'\/og-image\.png'/.test(read('../src/utils/pageMeta.js')),
+    '两处各写一个默认值，迟早一边改另一边忘'
+  );
+
+  // 后台可编辑
+  ok('后台设置页能编辑分享卡片图', /v-model="form\.og_image"/.test(read('../src/views/admin/Settings.vue')));
+}
+
 console.log('\n【启动失败兜底：不能永远停在「加载中」】');
 {
   // 实测：阻断 vue 依赖后 main.js 整个 import 失败，一行都不会执行，

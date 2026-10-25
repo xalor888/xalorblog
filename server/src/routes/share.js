@@ -50,11 +50,24 @@ router.get('/share/:slug', async (req, res) => {
     const rawDesc = article.summary || plainText(article.content).slice(0, 200);
     const desc = esc(rawDesc);
     // 封面缺失时回退站点头像（保证社交平台有可抓取的 OG 图片）
-    const cover = article.cover
-      ? (article.cover.startsWith('http') ? article.cover : siteUrl + article.cover)
-      : (settings.avatar
-          ? (settings.avatar.startsWith('http') ? settings.avatar : siteUrl + settings.avatar)
-          : '');
+    /**
+     * 分享卡片配图，按优先级取：
+     *   1. 文章封面；
+     *   2. 站点专门的分享图 `og_image`（宽幅，适合卡片）；
+     *   3. 站点头像；
+     *   4. 内置 `/og-image.png`。
+     *
+     * 为什么要有第 2、4 级：原实现无封面时退回 `avatar`，而本站头像就是
+     * `/logo.png`（正方形小图）—— 作为 1200×630 的分享大图会被裁得很糟。
+     * 而 `web/public/og-image.png` 一直是存在的、专为此准备的，却从未被引用。
+     *
+     * 全部绝对化：社交平台不解析相对路径。
+     */
+    const toAbs = (p) => (!p ? '' : (String(p).startsWith('http') ? String(p) : siteUrl + String(p)));
+    const cover = toAbs(article.cover)
+      || toAbs(settings.og_image)
+      || toAbs(settings.avatar)
+      || siteUrl + '/og-image.png';
     const siteName = esc(settings.site_name || 'Xalor的小站');
 
     // 结构化数据（BlogPosting：富摘要/知识图谱收录；JSON.stringify 保证标题等特殊字符安全嵌入）
@@ -70,7 +83,7 @@ router.get('/share/:slug', async (req, res) => {
       mainEntityOfPage: { '@type': 'WebPage', '@id': rawSelfUrl },
       author: { '@type': 'Person', name: authorName },
       publisher: { '@type': 'Organization', name: settings.site_name || 'Xalor的小站' },
-      ...(cover ? { image: [cover] } : {}),
+      image: [cover],
     }).replace(/</g, '\\u003c');
 
     const html = `<!DOCTYPE html>
@@ -89,14 +102,14 @@ router.get('/share/:slug', async (req, res) => {
 <meta property="og:description" content="${desc}">
 <meta property="og:site_name" content="${siteName}">
 <meta property="og:url" content="${shareUrl}">
-${cover ? `<meta property="og:image" content="${esc(cover)}">` : ''}
+<meta property="og:image" content="${esc(cover)}">
 <meta property="og:locale" content="zh_CN">
 
 <!-- Twitter Card -->
-<meta name="twitter:card" content="${cover ? 'summary_large_image' : 'summary'}">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${title}">
 <meta name="twitter:description" content="${desc}">
-${cover ? `<meta name="twitter:image" content="${esc(cover)}">` : ''}
+<meta name="twitter:image" content="${esc(cover)}">
 
 <!-- 跳转到 SPA（人类访问自动重定向） -->
 <meta http-equiv="refresh" content="0;url=${shareUrl}">

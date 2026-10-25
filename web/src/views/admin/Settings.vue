@@ -19,6 +19,13 @@
         <el-form-item label="站点 URL">
           <el-input v-model="form.site_url" placeholder="https://blog.example.com（RSS/Sitemap/分享链接使用，留空自动推导）" />
         </el-form-item>
+        <el-form-item label="分享卡片图">
+          <el-input v-model="form.og_image" placeholder="/og-image.png（1200×630 宽幅；留空则用头像）" />
+          <p class="field-hint">
+            社交平台分享时显示的配图。**必须是绝对 URL 或站内绝对路径**（相对路径会被平台忽略），
+            尺寸建议 1200×630。文章有封面时优先用封面。
+          </p>
+        </el-form-item>
         <el-form-item label="头像">
           <div class="avatar-field">
             <el-input v-model="form.avatar" placeholder="头像图片 URL" />

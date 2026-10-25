@@ -89,7 +89,9 @@ export function applyPageMeta({ title, description, path, canonical, image, site
   upsertMeta('twitter:description', description);
 
   // og:image / twitter:image 必须是**绝对 URL**，相对路径会被平台忽略
-  const img = absoluteUrl(image || site?.settings?.og_image || '/og-image.webp', site);
+  // 默认值与 server/src/routes/share.js 保持一致，都用 /og-image.png ——
+  // 两处各写一个默认值，迟早有一边改另一边忘（本项目已因此踩过一次）。
+  const img = absoluteUrl(image || site?.settings?.og_image || '/og-image.png', site);
   if (img) {
     upsertMeta('og:image', img);
     upsertMeta('twitter:image', img);
