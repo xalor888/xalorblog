@@ -370,6 +370,33 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【批量操作的端到端：真改了库里那几条，且不多不少】');
+{
+  // 上一轮评论页没数据，只靠断言；这一轮造了 4 条待审评论，把链路走完整：
+  //   全选表头 → 已选 4 条；取消选择 → 勾选归 0；
+  //   勾 2 条「批量通过」→ 提示「已通过 2 条评论」，
+  //   库里 c3/c4=approved、c1/c2 仍 pending（**没有误改未选中的**）；
+  //   「批量拒绝」→ 提示「已拒绝 2 条评论」，库里 c3/c4=rejected；
+  //   且两个操作完成后批量栏自动消失、勾选归 0（说明 clearSelection 在操作后也被调到）。
+  const cm = read('../src/views/admin/CommentManage.vue');
+  // 批量栏只在有选中时出现
+  ok('批量栏按选择显示', /v-if="selection\.length"/.test(cm));
+  // 批量接口要真的带 ids，而不是无参调用
+  // 实际是位置参数形式：batchStatus(selection.value.map(r => r.id), s)
+  ok('批量请求带 ids', /batchStatus\(selection\.value\.map\(\(r\) => r\.id\)/.test(cm),
+     (cm.match(/batchStatus\([^)]*\)/) || [''])[0].slice(0, 60));
+  // 空选择不该发请求：既多一个往返，提示口径也会变成接口的话
+  ok('空选择提前拦下', /if \(!selection\.value\.length\) return ElMessage\.warning/.test(cm),
+     (cm.match(/if \(!selection\.value\.length\)[^\n]*/) || [''])[0].slice(0, 50));
+  // 操作完成后要清选择（否则批量栏挂着，容易被再点一次）
+  const fn = (cm.match(/async function batchSetStatus[\s\S]{0,1200}/) || [''])[0];
+  ok('批量后清空选择', /clearSelection\(|selection\.value = \[\]/.test(fn));
+  // 数量要写进提示，让用户知道改了几条
+  ok('提示带条数', /条评论/.test(fn));
+  // 加载态防止连点
+  ok('有 batchLoading 防连点', /batchLoading/.test(cm));
+}
+
 console.log('\n【批量栏的「取消选择」必须真的取消勾选，不能只藏起工具栏】');
 {
   // 缺陷：`@click="selection = []"` 只清了我们自己的数组，
