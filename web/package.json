@@ -6,11 +6,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-script-order.mjs && node scripts/test-mobile-baseline.mjs && node scripts/test-reading-prefs.mjs && node scripts/test-word-stats.mjs && node scripts/test-contrast-tokens.mjs && node scripts/test-theme-init-parity.mjs && vite build",
+    "build": "node scripts/check-script-order.mjs && node scripts/test-mobile-baseline.mjs && node scripts/test-reading-prefs.mjs && node scripts/test-word-stats.mjs && node scripts/test-contrast-tokens.mjs && node scripts/test-theme-init-parity.mjs && node scripts/test-focus-visible.mjs && vite build",
     "preview": "vite preview",
     "check:script-order": "node scripts/check-script-order.mjs",
     "check:mobile": "node scripts/test-mobile-baseline.mjs",
-    "test:scripts": "node scripts/test-script-order.mjs && node scripts/test-anti-debug.mjs && node scripts/test-mobile-baseline.mjs && node scripts/test-reading-prefs.mjs && node scripts/test-word-stats.mjs && node scripts/test-contrast-tokens.mjs && node scripts/test-theme-init-parity.mjs"
+    "test:scripts": "node scripts/test-script-order.mjs && node scripts/test-anti-debug.mjs && node scripts/test-mobile-baseline.mjs && node scripts/test-reading-prefs.mjs && node scripts/test-word-stats.mjs && node scripts/test-contrast-tokens.mjs && node scripts/test-theme-init-parity.mjs && node scripts/test-focus-visible.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

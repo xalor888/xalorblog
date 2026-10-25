@@ -620,7 +620,6 @@ watch(
   font-size: 0.9rem;
   color: var(--text);
   background: var(--bg);
-  outline: none;
   transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
   margin-bottom: 12px;
 }
@@ -629,6 +628,16 @@ watch(
 .form-textarea:focus {
   border-color: var(--accent);
   background: var(--card);
+}
+
+/* 键盘聚焦：除了边框变色，再给一圈可见的焦点环。
+   只写在这里而不是靠 main.css 的全局规则 —— 组件的 scoped 选择器
+   （.form-input[data-v-x]）特指度高于全局 .form-input，全局那条打不过。
+   这是本项目反复踩到的同一个坑，见 main.css 里的相关注释。 */
+.form-input:focus-visible,
+.form-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .form-input {

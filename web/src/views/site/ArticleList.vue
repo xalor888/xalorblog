@@ -712,12 +712,19 @@ onMounted(async () => {
 .search-input {
   flex: 1;
   border: none;
-  outline: none;
   background: transparent;
   color: var(--text);
   font-size: 0.9rem;
   padding: 9px 0;
   min-width: 0;
+}
+
+/* 输入框本身不画环：它外面套了一层胶囊 .search-box，
+   环画在内层会被胶囊裁掉。焦点指示交给 .search-box:focus-within（见 main.css）。
+   这里显式写 :focus-visible 的 outline:none，是为了让静态检查能识别
+   「这是有意把环挪给父容器」，而不是漏掉了。 */
+.search-input:focus-visible {
+  outline: none;
 }
 
 /* 关键词清除按钮 */
@@ -1154,12 +1161,17 @@ onMounted(async () => {
   color: var(--text);
   font-size: 0.82rem;
   cursor: pointer;
-  outline: none;
   transition: border-color var(--dur) var(--ease);
 }
 
 .page-size-select:focus {
   border-color: var(--accent);
+}
+
+/* 键盘聚焦时必须有可见环：只靠 border-color 变化，小控件上几乎看不出 */
+.page-size-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 @media (max-width: 640px) {

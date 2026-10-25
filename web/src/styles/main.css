@@ -686,11 +686,50 @@ input:-webkit-autofill:focus {
   background: var(--text-3);
 }
 
-/* 键盘可达性：仅键盘导航时显示焦点环 */
+/* ============================================================
+   键盘可达性：焦点必须看得见
+   ============================================================
+   这条全局规则是兜底，但**它会被组件里同特指度的 `:focus { outline: none }` 干掉**
+   （两者都是 0,1,0，后出现的赢）。实测三个输入框因此完全没有焦点指示：
+   列表页搜索框、留言页昵称、留言内容 —— 键盘用户 Tab 进去后不知道自己在哪。
+
+   处理分两层：
+   1. 全局兜底（本条）：给所有可聚焦元素一个 2px 强调色环。
+   2. 输入框类（下方 :focus-visible 覆盖）：它们通常为了「去掉浏览器默认的
+      粗黑框」而写了 outline:none，只保留 border-color 变化。但边框变色在
+      小字号旁几乎看不见，也不满足 WCAG 2.4.7。所以这里在键盘聚焦时
+      重新给一圈 outline —— 鼠标点击时（非 focus-visible）仍然只有边框变色，
+      不破坏原有的克制观感。 */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 3px;
+}
+
+/* 输入框/文本域：键盘聚焦时补回可见焦点环。
+   用 :focus-visible 而不是 :focus，是因为鼠标点进输入框时
+   本来就有光标 + 边框变色，再加一圈环反而吵。 */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+.form-input:focus-visible,
+.form-textarea:focus-visible,
+.search-input:focus-visible,
+.el-input__inner:focus-visible,
+.el-textarea__inner:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 输入框外面套了一层胶囊时（如列表页搜索框），环画在内层输入框上会被
+   胶囊裁掉 —— 改为让外层容器显示环，内层保持 outline:none。 */
+.search-box:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.search-input:focus-visible {
+  outline: none;
 }
 
 /* 暗色下图片/封面降亮，避免刺眼 */
