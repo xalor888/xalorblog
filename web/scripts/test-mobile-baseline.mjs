@@ -137,5 +137,38 @@ for (const f of scrollContainers) {
   );
 }
 
+// ---------- 9. 首屏视差：必须按帧收敛，且尊重 reduced-motion ----------
+// 实测（浏览器）：未节流时 30 个 scroll 事件触发 33 次 transform 写入；
+// 高刷屏上 scroll 派发比渲染帧还密，等于每次滚动都在重算样式。
+{
+  const js = siteHome.slice(siteHome.indexOf('<script setup>'), siteHome.indexOf('</script>'));
+  ok(
+    '头图视差用 requestAnimationFrame 收敛（每帧最多一次）',
+    /requestAnimationFrame\(applyHeroParallax\)/.test(js),
+    '原来每个 scroll 事件都直接写 style.transform'
+  );
+  ok(
+    '视差有节流闸（连续 scroll 只排一次 rAF）',
+    /if\s*\(heroTicking\)\s*return/.test(js)
+  );
+  ok(
+    '节流位在函数入口复位（任何 return 路径都不会把它卡死）',
+    /function applyHeroParallax\(\)\s*\{[\s\S]{0,300}?heroTicking\s*=\s*false/ .test(js),
+    '漏掉复位会让视差滚过一屏后永久冻住'
+  );
+  ok(
+    'reduced-motion 下关掉视差',
+    /prefers-reduced-motion: reduce[\s\S]{0,200}?matches/.test(js) && /heroMotionAllowed/.test(js)
+  );
+  ok(
+    '卸载时取消挂起的 rAF（防卸载后仍写 DOM）',
+    /cancelAnimationFrame\(heroRafId\)/.test(js)
+  );
+  ok(
+    '视差用 translate3d 走合成层（不是改 top/left 触发重排）',
+    /translate3d\(0,/.test(js)
+  );
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);

@@ -347,11 +347,52 @@ async function loadHome() {
     hotRes.status === 'rejected';
 }
 
-function onHeroScroll() {
+/**
+ * 头图视差。
+ *
+ * 一帧只写一次：scroll 事件的派发频率跟着滚动帧率走（120Hz 屏上比渲染帧
+ * 还密），原来每个事件都直接 `style.transform = ...`，等于每次滚动都触发
+ * 一次样式重算 + 合成层更新。用 rAF 收敛到「每帧最多一次」。
+ *
+ * 两个额外收敛：
+ *  - 头图已经滚出视口后不再算（此时 translateY 的结果没人看得见，
+ *    继续写只是白烧 CPU）；
+ *  - `prefers-reduced-motion: reduce` 下整段关掉（视差是最典型的
+ *    前庭不适触发源，这类用户明确表示过不要这种位移）。
+ */
+let heroTicking = false;
+let heroRafId = 0;
+
+function heroMotionAllowed() {
+  return !(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true);
+}
+
+function applyHeroParallax() {
+  // 先复位节流位再干任何事：任何一条 return 路径漏掉复位，
+  // 视差都会「冻住」且再也不更新（滚过一屏再滚回来就永远不动了）。
+  heroTicking = false;
+
   const hero = heroBg.value;
   if (!hero) return;
-  const y = Math.min(window.scrollY, window.innerHeight);
-  hero.style.transform = `scale(1.08) translateY(${y * 0.18}px)`;
+
+  if (!heroMotionAllowed()) {
+    // 关掉视差时确保不残留位移（用户可能是在页面打开后改的系统设置）
+    if (hero.style.transform !== 'scale(1.08)') hero.style.transform = 'scale(1.08)';
+    return;
+  }
+
+  const y = window.scrollY;
+  // 滚过一整屏后头图已完全离开视区，末值保持不动即可 —— 不是 bug，
+  // 是刻意省掉看不见的写入；滚回来时下面的分支会重新接管。
+  if (y > window.innerHeight) return;
+
+  hero.style.transform = `scale(1.08) translate3d(0, ${(y * 0.18).toFixed(2)}px, 0)`;
+}
+
+function onHeroScroll() {
+  if (heroTicking) return;
+  heroTicking = true;
+  heroRafId = requestAnimationFrame(applyHeroParallax);
 }
 
 // 数字动画只在 onMounted 的 runCountUps() 触发一次：stats 仅在 site.init() 里变化，
@@ -383,6 +424,7 @@ onUnmounted(() => {
   typingAlive = false;
   stopTyping();
   clearTimeout(hitokotoRetry);
+  cancelAnimationFrame(heroRafId);
   window.removeEventListener('scroll', onHeroScroll);
 });
 </script>
