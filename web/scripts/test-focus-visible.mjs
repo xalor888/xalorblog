@@ -353,6 +353,29 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【快捷键必须能被发现】');
+{
+  const layout = read('../src/views/site/Layout.vue');
+  // 实测：全站原本 0 个 kbd 提示、0 个帮助按钮 ——
+  // `/` 搜索、`?` 帮助、`Esc` 关闭只有已经知道的人才会用。
+  // 快捷键的价值完全取决于能否被发现。
+  ok(
+    '导航栏有可见的快捷键入口',
+    /aria-label="查看键盘快捷键"/.test(layout),
+    '只有 `?` 键触发等于对所有人都不存在'
+  );
+  ok('按钮点击能打开面板（通过 ref 调 openHelp）', /shortcutHelpRef\.value\?\.openHelp\?\./.test(layout));
+  ok('搜索按钮的 title 标出 / 键', /title="搜索 \(\/\)"/.test(layout));
+
+  const help = read('../src/components/ui/ShortcutHelp.vue');
+  ok('ShortcutHelp 暴露了 openHelp', /defineExpose\(\{ openHelp \}\)/.test(help));
+  ok(
+    '按键清单按适用页面分组（避免误导）',
+    /label: '文章页'/.test(help) && /label: '后台编辑'/.test(help),
+    '← → 只在文章页有效，混在一起会让人在列表页按了没反应'
+  );
+}
+
 console.log('\n【robots.txt 不能挡住 sitemap 里的 URL】');
 {
   const feed = read('../../server/src/routes/feed.js');

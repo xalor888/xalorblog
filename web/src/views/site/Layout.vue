@@ -50,8 +50,21 @@
         </button>
 
         <div class="nav-actions">
-          <button class="icon-btn" title="搜索 (Ctrl+K)" @click="openSearch">
+          <button class="icon-btn" title="搜索 (/)" aria-label="搜索（按斜杠键）" @click="openSearch">
             <XIcon name="Search" :size="17" />
+          </button>
+
+          <!-- 快捷键入口。
+               实测：全站原本没有任何 kbd 提示或帮助按钮，
+               也就是说 `/` 搜索、`?` 帮助、`Esc` 关闭这些**只有知道的人才会用**。
+               快捷键的价值完全取决于能否被发现，所以给一个看得见的按钮。 -->
+          <button
+            class="icon-btn shortcut-btn"
+            title="键盘快捷键 (?)"
+            aria-label="查看键盘快捷键"
+            @click="openShortcuts"
+          >
+            <XIcon name="Keyboard" :size="17" />
           </button>
 
           <button
@@ -258,8 +271,8 @@
     <!-- 全局搜索 (Ctrl+K) -->
     <SearchModal />
 
-    <!-- 快捷键帮助 (? 键) -->
-    <ShortcutHelp />
+    <!-- 快捷键帮助（`?` 键或导航栏按钮） -->
+    <ShortcutHelp ref="shortcutHelpRef" />
   </div>
 </template>
 
@@ -473,6 +486,13 @@ function toggleMobile() {
 }
 
 // 快捷键：/ 快速唤起搜索（输入框内不触发）
+const shortcutHelpRef = ref(null);
+
+/** 打开快捷键帮助面板（与 `?` 键同一入口） */
+function openShortcuts() {
+  shortcutHelpRef.value?.openHelp?.();
+}
+
 function onGlobalKeydown(e) {
   // ESC：关闭移动端菜单，并把焦点还给汉堡按钮
   if (e.key === 'Escape' && mobileOpen.value) {

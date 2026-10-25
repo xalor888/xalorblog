@@ -160,6 +160,14 @@ onUnmounted(() => {
   if (open.value) unlockBodyScroll();
   document.removeEventListener('keydown', onKeydown);
 });
+/**
+ * 对外暴露 openHelp：让导航栏的「快捷键」按钮能打开它。
+ *
+ * 原来只有 `?` 键能触发，而页面上**没有任何入口告诉用户有 `?` 这个键** ——
+ * 实测全站 0 个 kbd 提示、0 个帮助按钮，等于这个功能对所有人都不存在。
+ * 快捷键的价值完全取决于能否被发现。
+ */
+defineExpose({ openHelp });
 </script>
 
 <style scoped>
