@@ -353,6 +353,33 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【twitter:* 必须用 name，不能用 property】');
+{
+  const pm = read('../src/utils/pageMeta.js');
+  // 实测：twitter:title / description / image 原来全走 upsertMeta，
+  // 被写成 property="twitter:*" —— Twitter 读 name，等于这三项不存在。
+  // meta[name^="twitter"] 那时只剩 card 一项。
+  const twWrites = [...pm.matchAll(/upsertMeta\('(twitter:[a-z]+)'/g)].map(m => m[1]);
+  ok('没有 twitter:* 走 upsertMeta（会被写成 property）', twWrites.length === 0, twWrites.join(', '));
+  for (const k of ['twitter:card', 'twitter:title', 'twitter:description', 'twitter:image']) {
+    ok(`${k} 用 setMetaByName 写入`, new RegExp(`setMetaByName\\('${k}'`).test(pm));
+  }
+}
+
+console.log('\n【首页也要有分享卡片】');
+{
+  const home = read('../src/views/site/Home.vue');
+  // 实测：全站八条路由里只有首页 og:image 是 null ——
+  // 而首页恰恰是被分享最多的那一个。
+  ok('首页调用 applyPageMeta', /applyPageMeta\(/.test(home));
+  ok('首页声明 path 为 /', /path: '\/'/.test(home));
+  // 首页标题就是站名，不能再传 title，否则会变成「Xalor的小站 · Xalor的小站」
+  ok(
+    '首页不重复传 title（避免站名叠两次）',
+    !/applyPageMeta\(\{[^}]*title:\s*(?:name|site\.settings\.site_name)/.test(home)
+  );
+}
+
 console.log('\n【每个站点页都要写全 page meta】');
 {
   // 实测：#/messages 原本只手动设了 document.title，

@@ -83,10 +83,12 @@ export function applyPageMeta({ title, description, path, canonical, image, site
   // 标题：页面标题 + 站名，与 document.title 保持同源
   if (title) {
     upsertMeta('og:title', `${title} · ${siteName}`);
-    upsertMeta('twitter:title', `${title} · ${siteName}`);
+    // twitter:* 一律走 setMetaByName —— Twitter 读的是 name 属性，
+    // 写成 property 等于这一项不存在（下面 twitter:card 处有更详细的说明）。
+    setMetaByName('twitter:title', `${title} · ${siteName}`);
   }
   upsertMeta('og:description', description);
-  upsertMeta('twitter:description', description);
+  setMetaByName('twitter:description', description);
 
   // og:image / twitter:image 必须是**绝对 URL**，相对路径会被平台忽略
   // 默认值与 server/src/routes/share.js 保持一致，都用 /og-image.png ——
@@ -94,10 +96,13 @@ export function applyPageMeta({ title, description, path, canonical, image, site
   const img = absoluteUrl(image || site?.settings?.og_image || '/og-image.png', site);
   if (img) {
     upsertMeta('og:image', img);
-    upsertMeta('twitter:image', img);
+    setMetaByName('twitter:image', img);
   }
-  // twitter:* 实际用的是 name 属性，但 upsertMeta 按 ':' 判断会当成 property。
-  // 显式按 name 写入，否则会被写成 property="twitter:card"，Twitter 读不到。
+  // twitter:* **全部**都用 name 属性，而 upsertMeta 历史实现按「含 ':'」判断成
+  // property —— 于是 twitter:title / description / image 全被写成 property，
+  // 对 Twitter 而言等于不存在（实测三者都出现在 meta[property=...] 里，
+  // meta[name^="twitter"] 只剩 card 一项）。
+  // 所以这里四项一律走 setMetaByName，别再图省事用 upsertMeta。
   setMetaByName('twitter:card', 'summary_large_image');
 
   // og:url 与 canonical：每页都应有，指向自己的规范地址

@@ -185,6 +185,7 @@ import SkeletonList from '@/components/ui/SkeletonList.vue';
 import { articleApi, categoryApi, tagApi, commentApi, hitokotoApi } from '@/api';
 import { useSiteStore } from '@/stores/site';
 import { formatNumber } from '@/utils/format';
+import { applyPageMeta } from '@/utils/pageMeta';
 
 const site = useSiteStore();
 
@@ -192,6 +193,16 @@ watchEffect(() => {
   const name = site.settings.site_name || 'Xalor的小站';
   const slogan = site.settings.site_slogan;
   document.title = slogan ? `${name} · ${slogan}` : name;
+  // 首页也需要分享元数据 —— 原来这里只设了 document.title，
+  // 于是 og:image / og:url / canonical / description 全是空的。
+  // 实测：全站八条路由里**只有首页的 og:image 是 null**，
+  // 而首页恰恰是被分享得最多的那一个。
+  // 首页的标题就是站名本身，所以这里不传 title（避免出现「Xalor的小站 · Xalor的小站」）。
+  applyPageMeta({
+    description: site.settings.site_desc || slogan || '',
+    path: '/',
+    site: site.settings,
+  });
 });
 const heroBg = ref(null);
 const articles = ref([]);
