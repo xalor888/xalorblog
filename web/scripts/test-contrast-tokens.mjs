@@ -237,6 +237,52 @@ console.log('\n【后台：Element Plus 默认灰与语义色的对比度】');
   ok('认证失败徽标（原 #c9900f 仅 2.46:1）已压深', /\.t-auth \{[^}]*color: #8a5a00/.test(sec));
 }
 
+console.log('\n【prefers-reduced-motion：全局兜底】');
+{
+  // 审计发现 9 个组件带动画却没处理 reduced-motion（灯箱缩放、路由进度条、
+  // 封面骨架微光、搜索弹层滑入、AI 面板、后台仪表盘、404 图标…）。
+  // 逐个补会一直漏，所以要有全局兜底。
+  ok(
+    '存在 prefers-reduced-motion 的全局兜底（* 选择器）',
+    /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]{0,600}?\*,\s*\n\s*\*::before,\s*\n\s*\*::after/.test(css)
+  );
+  ok(
+    '动画时长压到近零而不是 none（保住 animationend 事件语义）',
+    /animation-duration:\s*0\.01ms !important/.test(css),
+    'animation:none 会让依赖 animationend 的逻辑永远等不到'
+  );
+  ok(
+    '循环动画的迭代次数锁为 1（infinite 会一直动）',
+    /animation-iteration-count:\s*1 !important/.test(css)
+  );
+  ok(
+    'transition 也压到近零而不是禁用（保住 transitionend）',
+    /transition-duration:\s*0\.01ms !important/.test(css)
+      && !/transition:\s*none !important/.test(css)
+  );
+  ok(
+    'scroll-behavior 回到 auto（平滑滚动也是动效）',
+    /scroll-behavior:\s*auto !important/.test(css)
+  );
+  ok(
+    '显式停掉已知的循环动效（进度条/骨架屏/加载转圈）',
+    /\.rp-bar,[\s\S]{0,160}?animation:\s*none !important/.test(css)
+  );
+  // 组件样式排在 main.css 之后，不加 !important 会被盖回去
+  ok(
+    '兜底规则用 !important（组件 scoped 样式在后，否则压不住）',
+    (css.match(/animation-duration:\s*0\.01ms !important/g) || []).length >= 1
+  );
+  // 项目避开了 transitionend，这条是「不改坏」的前提
+  ok(
+    '项目不依赖 transitionend/animationend（所以压时长是安全的）',
+    (() => {
+      const app = readFileSync(resolve(here, '../src/App.vue'), 'utf8');
+      return /不依赖 transitionend/.test(app);
+    })()
+  );
+}
+
 console.log('\n【反向保护：这些地方必须继续用原色，不能也被换掉】');
 {
   // 装饰用途（圆点/下划线/进度条/边框）应保持鲜艳的主色

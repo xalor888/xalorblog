@@ -1677,6 +1677,49 @@ select:focus-visible,
 }
 
 /* ============================================================
+   prefers-reduced-motion：全局兜底
+   ============================================================
+   本项目已经有三处**针对性**的 reduced-motion 规则（reveal 入场、
+   路由转场、粒子画布），但审计发现还有 9 个组件带着动画却没有处理：
+   图片灯箱缩放、路由进度条、封面骨架微光、搜索弹层滑入、
+   AI 面板、后台仪表盘、404 图标……逐个补会一直漏，所以加一条兜底。
+
+   为什么用 0.01ms 而不是 0：
+   `animation: none` 会让「依赖动画结束事件（animationend）」的逻辑永远等不到；
+   0.01ms 让动画立即完成并照常触发事件，只是人眼看不到过程。
+   这是 reduced-motion 的标准做法，不是这里发明的。
+
+   注意不使用 `!important` 之外的 hack：这里的 !important 是必要的 ——
+   各组件在自己的 scoped 块里写 `animation: xxx 1.5s infinite`，
+   特指度虽然低，但源码顺序在本文件之后（Vite 会把组件样式排在后面），
+   不加 !important 会被它们盖回去。这正是本项目反复踩到的
+   「样式顺序 / 特指度」问题的又一次现身，所以这次直接写对。
+
+   保留 transition 的「瞬时完成」而不是「全部禁用」：
+   有些交互（展开/收起）靠 transitionend 收尾，禁用会让状态卡住。
+   只把时长压到近零，行为保持完整、观感静止。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* 循环动画最需要单独处理：即使时长压到近零，
+     `infinite` 也会让 it-count 有意义 —— 上面已经把迭代次数锁成 1，
+     这里再把可能残留的循环动效显式停掉，双保险。 */
+  .rp-bar,
+  .cover-skeleton,
+  .skeleton,
+  .el-loading-spinner {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
    沉浸阅读（html[data-focus='on']）
    ============================================================
    状态由 ArticleDetail 挂在 <html> 上（documentElement.dataset.focus），
