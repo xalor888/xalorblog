@@ -370,6 +370,34 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【免票接口 /home/summary 的白名单，以及 social_extra 的注入防护】');
+{
+  // 这是全站唯一有意放宽的免票接口（GATE_SKIP），所以要验两件事：
+  //   1) 只吐固定白名单字段 —— 实测顶层只有 9 个良性键，
+  //      不含 api_key / ai_base_url / ai_system_prompt / websearch_api_key / token 等；
+  //   2) social_extra 是唯一能注入任意内容的字段 ——
+  //      手动往库里塞 `[{label:'<img src=x onerror=alert(1)>', url:'javascript:alert(1)'}]` 之后，
+  //      前台实测：jsHrefs=0、injectedImg=0、onerror 属性=0、原始标签也没泄漏。
+  //      （库里那行是**我绕过 API 直接写**的，绕过了 safeUrl；
+  //        正常保存路径上 safeUrl 只放行 http(s)，所以这是纵深防御里「渲染层兜底」那一层在起作用。）
+  const home = read('../../server/src/routes/home.js');
+  // 白名单要显式挑字段，不能把整行 settings 摊出去
+  // 只看真正 return 出去的那段（注释里会提到 ai_api_key，那是说明白名单、不是泄漏）
+  const ret = (home.match(/return ok\(res,\s*\{[\s\S]{0,2000}?\n\s*\}\)/) || [''])[0];
+  ok('返回值不含密钥', !/api_key|web_api_key/.test(ret), ret ? '返回值里出现密钥字段' : '未定位到 return');
+  ok('返回字段数受控', (ret.match(/^\s{6}\w+:/gm) || []).length <= 12, `${(ret.match(/^\s{6}\w+:/gm) || []).length} 个顶层字段`);
+  ok('summary 显式列出 hero/social/stats', /hero:/.test(home) && /social:/.test(home) && /stats:/.test(home));
+
+  const se = read('../../server/src/utils/settings.js');
+  const block = (se.match(/home_social_extra'\)[\s\S]{0,900}/) || [''])[0];
+  ok('social_extra 必须是数组', /Array\.isArray\(list\)/.test(block));
+  ok('条数上限 8', /length > 8/.test(block));
+  ok('label 截断', /slice\(0, 30\)/.test(block));
+  ok('URL 过 safeUrl 白名单', /safeUrl\(/.test(block));
+  // 关键：校验后**重新序列化**，否则非法项会被原样带进公开接口
+  ok('校验后重新序列化', /value = JSON\.stringify\(cleaned\)/.test(block));
+}
+
 console.log('\n【主页设置改完要真的出现在前台，建站天数不能算出负数或 NaN】');
 {
   // 实测：把 greeting 改「探针问候」、role 改「探针头衔」保存 →
