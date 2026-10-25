@@ -370,6 +370,25 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【搜索：SQL 通配符必须按字面量处理】');
+{
+  // 实测边界：空关键词 → 6 篇；"Vue" → 2 篇；"%" / "_" / "'" / 200 个 a → 0 篇且有空状态。
+  // 关键是 % 和 _ 这两个 LIKE 通配符：不转义的话搜 "%" 会命中全部。
+  const san = read('../../server/src/utils/sanitize.js');
+  ok('有 escapeLike', /function escapeLike/.test(san));
+  const escFn = (san.match(/function escapeLike[\s\S]{0,160}/) || [''])[0];
+  ok('转义 \\ % _ 三个字符', /\[\\\\%_\]/.test(escFn), escFn.slice(0, 70));
+
+  const art = read('../../server/src/routes/articles.js');
+  ok('关键词查询前先 escapeLike', /escapeLike\(/.test(art));
+  ok('关键词有长度上限（防超长 LIKE）', /slice\(0, 50\)/.test(art));
+  // 同时搜标题与摘要 —— 只搜标题会漏掉只在摘要里提到的文章
+  const kwBlock = (art.match(/if \(keyword\)[\s\S]{0,400}/) || [''])[0];
+  ok('同时搜标题与摘要',
+     /a\.title', 'like'/.test(kwBlock) && /a\.summary', 'like'/.test(kwBlock),
+     kwBlock.slice(0, 80));
+}
+
 console.log('\n【导出的 CSV 必须防公式注入】');
 {
   // 用户提交的昵称/留言/友链简介会原样进 CSV。
