@@ -27,7 +27,15 @@
         </nav>
 
         <!-- 移动端菜单 -->
-        <button class="hamburger" :class="{ open: mobileOpen }" :aria-expanded="mobileOpen" aria-label="菜单" @click="mobileOpen = !mobileOpen">
+        <button
+          ref="hamburgerRef"
+          class="hamburger"
+          :class="{ open: mobileOpen }"
+          :aria-expanded="mobileOpen"
+          aria-controls="mobile-nav"
+          :aria-label="mobileOpen ? '关闭菜单' : '打开菜单'"
+          @click="toggleMobile"
+        >
           <span></span><span></span><span></span>
         </button>
 
@@ -74,17 +82,17 @@
 
     <!-- 移动端抽屉菜单 -->
     <transition name="drawer">
-      <div v-if="mobileOpen" class="drawer-scrim" @click="mobileOpen = false" aria-hidden="true"></div>
+      <div v-if="mobileOpen" class="drawer-scrim" @click="closeMobile(false)" aria-hidden="true"></div>
     </transition>
     <transition name="drawer">
-      <nav v-if="mobileOpen" class="mobile-menu">
+      <nav v-if="mobileOpen" id="mobile-nav" class="mobile-menu" aria-label="移动端导航">
         <template v-for="item in navItems" :key="item.to || item.href">
           <a
             v-if="item.external"
             :href="item.href"
             class="mobile-link external"
             rel="noopener"
-            @click="mobileOpen = false"
+            @click="closeMobile(false)"
           >
             <span>{{ item.short }}</span>
             <span class="mobile-zh">{{ item.label }}</span>
@@ -94,7 +102,7 @@
             :to="item.to"
             class="mobile-link"
             :class="{ active: isActive(item) }"
-            @click="mobileOpen = false"
+            @click="closeMobile(false)"
           >
             <span>{{ item.short }}</span>
             <span class="mobile-zh">{{ item.label }}</span>
@@ -246,7 +254,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import SearchModal from '@/components/ui/SearchModal.vue';
@@ -403,15 +411,47 @@ function scrollTop() {
 }
 
 function openSearch() {
-  mobileOpen.value = false; // 搜索弹窗打开前收起抽屉（避免两层 UI 叠加）
+  closeMobile(false); // 搜索弹窗打开前收起抽屉（避免两层 UI 叠加）
   window.dispatchEvent(new Event('xalor-open-search'));
+}
+
+/**
+ * 移动端抽屉的开关与焦点管理。
+ *
+ * 为什么需要：抽屉打开后焦点留在 body 上，键盘用户按 Tab 不会先进入菜单，
+ * 而是从页面顶部重新走一遍；关闭后焦点也不回到汉堡按钮。
+ * 对「覆盖式抽屉」来说这是必修项 —— 它遮住了内容，焦点却还在后面。
+ *
+ * 同时把汉堡按钮的 aria-label 随状态切换（「打开菜单」/「关闭菜单」），
+ * 读屏用户才知道再按一次会发生什么；aria-controls 指向抽屉，关联可判定。
+ */
+const hamburgerRef = ref(null);
+
+function openMobile() {
+  mobileOpen.value = true;
+  // 等抽屉渲染完再把焦点送进第一个链接
+  nextTick(() => {
+    const first = document.querySelector('.mobile-menu .mobile-link');
+    if (first && typeof first.focus === 'function') first.focus();
+  });
+}
+
+function closeMobile(restoreFocus = true) {
+  if (!mobileOpen.value) return;
+  mobileOpen.value = false;
+  if (restoreFocus) nextTick(() => hamburgerRef.value?.focus?.());
+}
+
+function toggleMobile() {
+  if (mobileOpen.value) closeMobile();
+  else openMobile();
 }
 
 // 快捷键：/ 快速唤起搜索（输入框内不触发）
 function onGlobalKeydown(e) {
-  // ESC：关闭移动端菜单（键盘导航完整性）
+  // ESC：关闭移动端菜单，并把焦点还给汉堡按钮
   if (e.key === 'Escape' && mobileOpen.value) {
-    mobileOpen.value = false;
+    closeMobile();
     return;
   }
   if (e.key !== '/') return;

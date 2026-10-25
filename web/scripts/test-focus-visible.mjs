@@ -334,6 +334,38 @@ console.log('\n【模态弹层的焦点必须被锁住】');
   }
 }
 
+console.log('\n【移动端抽屉：焦点与状态关联】');
+{
+  const layout = read('../src/views/site/Layout.vue');
+  ok(
+    '汉堡按钮有 aria-controls 指向抽屉 id',
+    /aria-controls="mobile-nav"/.test(layout) && /id="mobile-nav"/.test(layout)
+  );
+  ok(
+    '汉堡按钮的 aria-label 随开关状态切换',
+    /:aria-label="mobileOpen \? '关闭菜单' : '打开菜单'"/.test(layout),
+    '固定写「菜单」时读屏不知道再按一次会发生什么'
+  );
+  ok(
+    '打开抽屉后焦点进入菜单首个链接',
+    /function openMobile\(\)/.test(layout) && /\.mobile-menu \.mobile-link/.test(layout)
+  );
+  ok(
+    '关闭抽屉后焦点回到汉堡按钮',
+    /function closeMobile\(restoreFocus = true\)/.test(layout) && /hamburgerRef\.value\?\.focus\?\.\(\)/.test(layout)
+  );
+  ok(
+    'Esc 关闭时恢复焦点（键盘用户不该被丢在 body）',
+    /if \(e\.key === 'Escape' && mobileOpen\.value\) \{\s*\n\s*closeMobile\(\);/.test(layout)
+  );
+  ok(
+    '点遮罩/点链接关闭时不抢焦点（closeMobile(false)）',
+    (layout.match(/closeMobile\(false\)/g) || []).length >= 2,
+    '用户主动点了别处，把焦点拽回汉堡反而是干扰'
+  );
+  ok('抽屉 nav 有 aria-label', /id="mobile-nav"[^>]*aria-label="移动端导航"/.test(layout));
+}
+
 console.log('\n【全库扫描：watch 源不能是新建的数组/对象字面量】');
 {
   // 这是 ArticleList 翻页失效的根因，而且是**模式性**问题 ——
