@@ -370,6 +370,21 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【回复：进入/取消/嵌套与 @ 指向】');
+{
+  // 实测：点「回复」→ 占位符变 `回复 @昵称：`、焦点自动进 textarea；
+  // 点取消控件 → 占位符回到「写下你的评论…」、回复上下文消失；
+  // 真发一条 → 嵌套在一级评论下并自动带 `@__probe_root：`，总数 1→2。
+  const cs = read('../src/components/site/CommentSection.vue');
+  ok('占位符随回复态变化', /回复 @\$\{replyingTo\.nickname\}/.test(cs));
+  ok('有回复上下文条（v-if replyingTo）', /v-if="replyingTo"[\s\S]{0,80}reply-context/.test(cs));
+  // 取消必须是可点的独立控件，否则误点回复就退不出去
+  ok('有取消回复控件', /@click="cancelReply"/.test(cs));
+  ok('cancelReply 会把 replyingTo 置空', /function cancelReply[\s\S]{0,160}replyingTo\.value\s*=\s*null/.test(cs));
+  // 回复正文要带 @ 指向，否则看的人不知道在回谁
+  ok('回复自动带 @ 指向', /@\$\{replyingTo\.nickname\}/.test(cs));
+}
+
 console.log('\n【评论提交：快捷键、校验、昵称记忆】');
 {
   // 实测：空提交 →「请填写昵称」；只填昵称按 Ctrl+Enter →「请填写评论内容（不能只有空格）」；
