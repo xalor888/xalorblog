@@ -353,6 +353,22 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【分享页：og:url 必须与 canonical 一致】');
+{
+  const share = read('../../server/src/routes/share.js');
+  // 实测：文章分享页的 og:url 原来写的是 `${siteUrl}/#/article/<slug>`（人类重定向落点），
+  // 而 canonical 是 `/api/share/<slug>`（爬虫实际抓的地址）——
+  // 两者自相矛盾，等于向 Open Graph 声称规范地址是那个 hash URL。
+  // hash 之后的部分爬虫根本不会请求，指向它毫无意义。
+  ok('og:url 用 selfUrl 而不是 shareUrl', !/property="og:url" content="\$\{shareUrl\}"/.test(share));
+  ok('og:url 与 canonical 同为 selfUrl', /property="og:url" content="\$\{selfUrl\}"/.test(share));
+  // 但人类重定向仍然必须走 hash URL
+  ok('refresh 仍指向 hash URL（人类落点）', /http-equiv="refresh" content="0;url=\$\{shareUrl\}"/.test(share));
+  ok('noscript 兜底链接也用 hash URL', /<a href="\$\{shareUrl\}">/.test(share));
+  // 站点级分享页本来就一致，别被改坏
+  ok('站点分享页 og:url 仍是 selfUrl', (share.match(/property="og:url" content="\$\{selfUrl\}"/g) || []).length >= 2);
+}
+
 console.log('\n【twitter:* 必须用 name，不能用 property】');
 {
   const pm = read('../src/utils/pageMeta.js');

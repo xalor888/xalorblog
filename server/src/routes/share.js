@@ -40,7 +40,19 @@ router.get('/share/:slug', async (req, res) => {
     const siteUrl = settings.site_url
       ? String(settings.site_url).replace(/\/+$/, '')
       : req.protocol + '://' + req.get('host');
-    // 原始 URL（JSON-LD 结构化数据用，JSON.stringify 自行转义）
+    /**
+     * 两个 URL，用途必须分清 —— 混用过一次：
+     *
+     * rawShareUrl  → `/#/article/<slug>`，**人类**的落点：
+     *                用于 <meta http-equiv="refresh"> 与 noscript 里的「点击这里」。
+     *                SPA 靠 hash 路由渲染文章。
+     * rawSelfUrl   → `/api/share/<slug>`，**机器**的落点：
+     *                爬虫抓的就是它，所以 og:url 与 canonical 必须都指向它。
+     *
+     * 原来 og:url 写的是 rawShareUrl，于是 Open Graph 声称规范地址是那个 hash URL，
+     * 与 canonical 自相矛盾 —— 平台可能因此认为抓到的是另一个页面。
+     * hash 后面的部分对爬虫而言本来就不会被请求，指向它毫无意义。
+     */
     const rawShareUrl = `${siteUrl}/#/article/${req.params.slug}`;
     const rawSelfUrl = `${siteUrl}${config.apiPrefix}/share/${req.params.slug}`;
     // HTML 属性中的 URL 全量转义（slug 虽由服务端生成，纵深防御防任何字符注入 meta）
@@ -101,7 +113,7 @@ router.get('/share/:slug', async (req, res) => {
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${desc}">
 <meta property="og:site_name" content="${siteName}">
-<meta property="og:url" content="${shareUrl}">
+<meta property="og:url" content="${selfUrl}">
 <meta property="og:image" content="${esc(cover)}">
 <meta property="og:locale" content="zh_CN">
 
