@@ -304,6 +304,34 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【列表滚动位置：由路由 scrollBehavior 负责】');
+{
+  // 实测：从列表点进文章、浏览器后退 → 页面回到顶部。
+  // history.state.scroll 里明明有 {top:600}，但 Vue Router 在 hash 路由 +
+  // 异步组件下把 savedPosition 给成了 null，所以我们自己读 state 兜底。
+  const factory = read('../src/router/factory.js');
+  ok('scrollBehavior 优先用 savedPosition', /if \(savedPosition\) return savedPosition;/.test(factory));
+  ok(
+    'savedPosition 为 null 时读 history.state.scroll 兜底',
+    /window\.history\.state\?\.scroll/.test(factory),
+    'hash 路由下 savedPosition 经常是 null，只靠它等于不恢复'
+  );
+  ok('兜底只在位置 > 0 时用（新页面仍从顶部开始）', /stateScroll\.top > 0/.test(factory));
+  ok(
+    '同路由只改 query（翻页/筛选）时保持不动',
+    /to\.name === from\.name && to\.path === from\.path\) return false;/.test(factory),
+    '否则点「下一页」会被甩回顶部'
+  );
+
+  // 列表页不该再自己实现一套 —— 抢不过路由（路由在挂载后执行）
+  const list = read('../src/views/site/ArticleList.vue');
+  ok(
+    '列表页不再重复实现滚动恢复',
+    !/function restoreListScrollIfBack/.test(list) && !/LIST_SCROLL_PREFIX/.test(list),
+    '路由的 scrollBehavior 在挂载后执行，会覆盖组件里恢复的位置'
+  );
+}
+
 console.log('\n【阅读位置记忆：离开再回来应回到原处】');
 {
   const detail = read('../src/views/site/ArticleDetail.vue');

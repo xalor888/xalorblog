@@ -581,6 +581,19 @@ watchEffect(() => {
   el.setAttribute('content', desc);
 });
 
+/**
+ * 列表滚动位置：**由路由的 scrollBehavior 统一负责，不要在这里再实现一套**。
+ *
+ * 这段是我最初写的版本，实测无效 —— 原因值得记下来：
+ * `router.factory.js` 里的 `scrollBehavior` 返回 `savedPosition`（浏览器前进/后退时
+ * Vue Router 会给出），**它在组件挂载之后执行**，会把组件里刚恢复的位置覆盖回 0。
+ * 也就是说：谁最后跑谁说了算，而我抢不过路由。
+ *
+ * 上一轮给文章页做的 `xalor_readpos_` 是另一回事 ——
+ * 那是**同一路由的重新进入**（离开站点或刷新），scrollBehavior 拿不到 savedPosition，
+ * 两者不冲突。
+ */
+
 onMounted(async () => {
   // allSettled：分类/标签侧栏接口任一失败都不能拖死文章列表本体
   //（Promise.all 一处 reject 则 load(1) 永不执行，页面停在骨架屏且无提示）

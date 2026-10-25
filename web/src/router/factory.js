@@ -16,9 +16,30 @@ export function createAppRouter({ routes, siteName, notFoundName }) {
   const router = createRouter({
     history: createWebHashHistory(),
     routes,
+    /**
+     * 滚动位置策略。
+     *
+     * ⚠ 这里踩过一个坑：`savedPosition` 在 **hash 路由 + 异步组件**下经常是 null，
+     * 于是「从列表点进文章、浏览器后退」时页面回到顶部 ——
+     * 实测 `history.state.scroll` 里明明有 `{top: 600}`，
+     * Vue Router 却没有把它交给我们（savedPosition 为 null）。
+     *
+     * 所以这里**自己读 history.state.scroll 兜底**：
+     * 浏览器在 popstate 时会把离开时的滚动位置写进 state，
+     * 这是可靠的第二个来源。两者取其一即可。
+     */
     scrollBehavior(to, from, savedPosition) {
       if (savedPosition) return savedPosition;
-      if (to.name !== from.name) return { top: 0 };
+
+      // 后退/前进：浏览器记录了离开时的位置，优先恢复它
+      const stateScroll = typeof window !== 'undefined' ? window.history.state?.scroll : null;
+      if (stateScroll && typeof stateScroll.top === 'number' && stateScroll.top > 0) {
+        return { left: stateScroll.left || 0, top: stateScroll.top };
+      }
+
+      // 同路由只改 query（分页/筛选）时保持不动，
+      // 否则点「下一页」会被甩回顶部，读者要重新往下滚
+      if (to.name === from.name && to.path === from.path) return false;
       return { top: 0 };
     },
   });
