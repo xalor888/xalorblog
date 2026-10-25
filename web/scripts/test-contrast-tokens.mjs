@@ -299,5 +299,57 @@ console.log('\n【反向保护：这些地方必须继续用原色，不能也�
   ok('--accent-text 在浅色与深色各定义一次', count === 2, `实际 ${count} 处`);
 }
 
+
+// ============================================================
+// 主题色底（--accent-fill）必须让**全部七个**色都过 AA
+// ============================================================
+// 实测缺陷：原本 shade(accent.value, 0.18) 是按默认珊瑚调的（5.17:1 达标），
+// 但琥珀色只有 **4.04:1**，差 0.46 没过 4.5。
+// 最难的不是主色，是最亮的那个主题色 —— 这类校验必须遍历全部色板。
+{
+  const ACCENTS = [
+    ['珊瑚', '#e4573d'], ['琥珀', '#c9900f'], ['黛绿', '#217a5e'], ['黛蓝', '#2f6fb3'],
+    ['绛红', '#c24b5e'], ['堇紫', '#6d5bb8'], ['青碧', '#0f8f8f'],
+  ];
+  const themeSrc = readFileSync(resolve(here, '../src/stores/theme.js'), 'utf8');
+  const m = themeSrc.match(/--accent-fill'\s*,\s*shade\(accent\.value,\s*([\d.]+)\)/);
+  ok('能找到 --accent-fill 的压深比例', !!m);
+  const amount = m ? parseFloat(m[1]) : 0;
+
+  const hexToRgb = (h) => {
+    const v = h.replace('#', '');
+    return [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16));
+  };
+  const lum = (rgb) => {
+    const [r, g, b] = rgb.map((v) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a, b) => {
+    const l1 = lum(a);
+    const l2 = lum(b);
+    const hi = Math.max(l1, l2);
+    const lo = Math.min(l1, l2);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  const failing = [];
+  for (const [name, hex] of ACCENTS) {
+    const shaded = hexToRgb(hex).map((c) => Math.round(c * (1 - amount)));
+    const cr = ratio(shaded, [255, 255, 255]);
+    if (cr < 4.5) failing.push(`${name} ${cr.toFixed(2)}`);
+  }
+  ok(
+    `--accent-fill 压深 ${amount} 时七色配白字全部 ≥4.5`,
+    failing.length === 0,
+    failing.join(', ')
+  );
+  // 别压过头：最浅的珊瑚压得太深就不再是那个颜色了
+  const coralCr = ratio(hexToRgb('#e4573d').map((c) => Math.round(c * (1 - amount))), [255, 255, 255]);
+  ok('压深没有过头（珊瑚仍 < 8:1）', coralCr < 8, `珊瑚 ${coralCr.toFixed(2)}`);
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);

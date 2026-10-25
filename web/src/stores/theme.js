@@ -66,9 +66,12 @@ export const useThemeStore = defineStore('theme', () => {
     // --accent 在深色下变亮是为了当文字时对深底够对比度；同一抹亮色配白字
     // 只有 2.55:1（实测「发布留言」/ skip-link / .btn-primary）。
     // 底色与前景对亮度的需求相反，所以这里保持原色的饱和度。
-    // 压深 18%：白字对原色 (#e4573d) 只有 3.67:1，达不到 AA 的 4.5:1。
-    // 压深后约 4.6:1，观感仍是同一个珊瑚（按钮本来就该比文字重一点）。
-    root.style.setProperty('--accent-fill', shade(accent.value, 0.18));
+    // 压深比例要按**全部七个主题色**里最难的那个来定，不能只看默认的珊瑚。
+    // 原为 0.18：珊瑚 5.17:1 达标，但**琥珀只有 4.04:1**（实测 dark + #c9900f 的 skip-link），
+    // 差 0.46 没过 AA。0.24 时七色分别为
+    // 珊瑚 5.84 / 琥珀 4.62 / 黛绿 7.78 / 黛蓝 7.78 / 绛红 7.20 / 堇紫 8.08 / 青碧 6.14，
+    // 全部 ≥4.5，而观感上仍是同一个色（只是重了一点点，按钮本来就该比文字重）。
+    root.style.setProperty('--accent-fill', shade(accent.value, 0.24));
     // 同步 Element Plus 主色（深色下主色提亮、light-N 朝深底压暗，镜像样式表深色色板的配方）
     const brightBase = isDark.value ? mix(accent.value, '#ffffff', 0.1) : accent.value;
     root.style.setProperty('--el-color-primary', brightBase);
