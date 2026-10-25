@@ -851,6 +851,23 @@ input:-webkit-autofill:focus {
   font-size: 0.95rem;
 }
 
+/* 空态的第二行：说清「怎么改」，比第一行的「是什么」更需要克制 */
+.empty-state .empty-hint {
+  margin-top: 6px;
+  font-size: 0.84rem;
+  color: var(--text-3);
+  opacity: 0.9;
+}
+
+/* 空态的动作区：可能有「清除筛选」与「随便看看」两个按钮 */
+.empty-state .empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
 /* 动画 */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(14px); }

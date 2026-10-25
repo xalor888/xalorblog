@@ -199,10 +199,22 @@
         </div>
         <div v-else class="empty-state">
           <div class="icon-wrap"><XIcon name="FileSearch" :size="30" /></div>
-          <p>{{ hasFilter ? '没有找到相关文章，换个关键词试试？' : '还没有发布文章，敬请期待' }}</p>
-          <button v-if="hasFilter" class="search-btn retry-btn" :disabled="randomLoading" @click="randomArticle">
-            <XIcon name="Shuffle" :size="14" /> {{ randomLoading ? '找一篇…' : '随便看看' }}
-          </button>
+          <p>{{ emptyTitle }}</p>
+          <p v-if="emptyHint" class="empty-hint">{{ emptyHint }}</p>
+          <div class="empty-actions">
+            <!-- 只有「关键词」筛选时给「换个关键词」才是对的建议；
+                 分类/标签没结果时，读者需要的是清除筛选，而不是猜关键词。 -->
+            <button
+              v-if="activeCategory || activeTag"
+              class="search-btn retry-btn"
+              @click="clearFilter"
+            >
+              <XIcon name="X" :size="14" /> 清除筛选
+            </button>
+            <button v-if="hasFilter" class="search-btn retry-btn" :disabled="randomLoading" @click="randomArticle">
+              <XIcon name="Shuffle" :size="14" /> {{ randomLoading ? '找一篇…' : '随便看看' }}
+            </button>
+          </div>
         </div>
       </template>
 
@@ -286,6 +298,44 @@ const activeCategory = computed(() => route.query.category || '');
 const activeTag = computed(() => route.query.tag || '');
 const kw = computed(() => route.query.keyword || '');
 const sort = computed(() => route.query.sort || 'latest');
+
+/**
+ * 空态文案：必须说清「是哪一层筛选把结果筛没了」，否则读者会去改一个
+ * 根本不存在的输入框。
+ *
+ * 原来的实现只有一句「没有找到相关文章，换个关键词试试？」——
+ * 但按分类或标签筛选时页面上根本没有关键词框，这句话会把读者引到错误的方向。
+ * 现在按筛选类型分三种：关键词 / 分类 / 标签，各自给对应的事实。
+ */
+const emptyTitle = computed(() => {
+  if (!hasFilter.value) return '还没有发布文章，敬请期待';
+  if (kw.value) return `没有匹配「${kw.value}」的文章`;
+  if (activeCategory.value) {
+    const c = categories.value.find((x) => x.slug === activeCategory.value);
+    return c ? `分类「${c.name}」下还没有文章` : '这个分类还没有文章';
+  }
+  if (activeTag.value) {
+    const t = tags.value.find((x) => x.slug === activeTag.value);
+    return t ? `标签「${t.name}」下还没有文章` : '这个标签下还没有文章';
+  }
+  return '没有找到相关文章';
+});
+
+const emptyHint = computed(() => {
+  if (!hasFilter.value) return '';
+  if (kw.value) return '换个关键词，或者清除筛选看看全部文章';
+  return '可以清除筛选，或者随便看看其他文章';
+});
+
+/** 一次性清掉全部筛选（保留排序与每页条数这类偏好） */
+function clearFilter() {
+  const q = { ...route.query };
+  delete q.keyword;
+  delete q.category;
+  delete q.tag;
+  delete q.page;
+  router.push({ path: '/articles', query: q });
+}
 
 /** 当前分类的描述（有筛选且该分类存在描述时展示） */
 const activeCategoryDesc = computed(() => {

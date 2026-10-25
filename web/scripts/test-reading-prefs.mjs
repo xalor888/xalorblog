@@ -241,5 +241,37 @@ console.log('\n【代码块复制 / 图片属性 / 目录滚动】');
   }
 }
 
+console.log('\n【列表页空态：文案必须对应真实筛选条件】');
+{
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, resolve } = await import('node:path');
+  const here = dirname(fileURLToPath(import.meta.url));
+  const list = readFileSync(resolve(here, '../src/views/site/ArticleList.vue'), 'utf8');
+
+  // 真实缺陷：分类/标签筛选没结果时，页面却说「换个关键词试试」——
+  // 而按分类进来的人面前根本没有关键词输入框，这句建议会把读者带偏。
+  ok('空态按关键词给文案（含用户输入的关键词本身）',
+    /没有匹配「\$\{kw\.value\}」的文章/.test(list));
+  ok('空态按分类给文案（能查到分类名就用名字）',
+    /分类「\$\{c\.name\}」下还没有文章/.test(list));
+  ok('空态按标签给文案', /标签「\$\{t\.name\}」下还没有文章/.test(list));
+  ok('无筛选时不说「换个关键词」（那是两种完全不同的空）',
+    /还没有发布文章，敬请期待/.test(list));
+  ok('分类/标签筛选下提供「清除筛选」而不是让读者猜关键词',
+    /清除筛选/.test(list) && /function clearFilter\(\)/.test(list));
+  {
+    // 取出 clearFilter 的函数体，在体内独立断言（避免被相邻行打断）
+    const body = (list.match(/function clearFilter\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+    ok('清除筛选会清掉 keyword / category / tag',
+      /delete q\.keyword/.test(body) && /delete q\.category/.test(body) && /delete q\.tag/.test(body));
+    ok('清除筛选不动 sort（排序是偏好，不是筛选）', !/delete q\.sort/.test(body));
+    ok('清除筛选不动 pageSize（每页条数同理）', !/delete q\.pageSize/.test(body));
+    ok('清除筛选会回到第一页（否则清完可能停在空页）', /delete q\.page|page:\s*undefined/.test(body));
+  }
+  ok('空态有第二行「怎么办」的提示',
+    /empty-hint/.test(list));
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
