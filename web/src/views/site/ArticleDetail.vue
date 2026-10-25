@@ -387,6 +387,7 @@ import { articleApi } from '@/api';
 import { renderMarkdown, extractToc, addHeadingIds, addImgAttrs } from '@/utils/markdown';
 import { formatDate, formatNumber, readingTime } from '@/utils/format';
 import { isBookmarked, addBookmark, removeBookmark, onBookmarksChange } from '@/utils/bookmark';
+import { addHistory } from '@/utils/history';
 import { useSiteStore } from '@/stores/site';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 import { setArticleCopyAllowed, clearArticleCopyScope } from '@/utils/copyGuard';
@@ -757,6 +758,9 @@ async function load() {
       try { return !!localStorage.getItem(`xalor_liked_${a.id}`); } catch (e) { return false; }
     })();
     bookmarked.value = isBookmarked(a.id);
+    // 记一条阅读足迹（本机、被动、滚动淘汰）。放在取到正文之后，
+    // 这样记下的是**真的读到过**的文章，而不是点进来又立刻退出的。
+    addHistory(a);
     // 另一个标签页取消/新增收藏时，这里的按钮也要跟着变。
     // 不监听的话：那边清空了，这边还写着「取消收藏」，再点一下反而把它收回来。
     if (!offBookmarkSync) {

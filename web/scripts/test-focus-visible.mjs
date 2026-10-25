@@ -370,6 +370,37 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【新功能：阅读足迹（本机记录、去重、上限、可清空）】');
+{
+  // 实测：读两篇 → 足迹 2 条、最新在前；重复读同一篇**仍 2 条**（去重且移到最前）；
+  // 页面「阅读足迹 / 最近读过 2 篇」；清空有确认且带数量「确定清空全部 2 条阅读足迹吗？此操作不可恢复。」，
+  // 确认后归零、空状态给「去逛逛文章」。
+  const h = read('../src/utils/history.js');
+  ok('足迹工具存在', h.length > 0);
+  ok('有上限（不会无限增长）', /const MAX = \d+/.test(h), (h.match(/const MAX = \d+/)||[''])[0]);
+  // 去重：同一篇只留一条，否则反复回看会把列表占满
+  ok('同一篇去重', /filter\(\(b\) => b\.slug !== entry\.slug\)/.test(h));
+  // localStorage 读写都要 try/catch（隐私模式会直接抛）
+  ok('读有 try/catch', /try \{[\s\S]{0,80}getItem/.test(h));
+  ok('写有 try/catch', /try \{[\s\S]{0,80}setItem/.test(h));
+  ok('有跨标签页同步', /export function onHistoryChange/.test(h));
+
+  const hd = read('../src/views/site/ArticleDetail.vue');
+  ok('文章页会记足迹', /addHistory\(a\)/.test(hd));
+
+  const hv = read('../src/views/site/History.vue');
+  ok('足迹页存在', hv.length > 0);
+  ok('足迹页复用共用样式（不新造一套）', /@import '@\/styles\/list-page\.css'/.test(hv));
+  ok('足迹页也清理失效条目', /pruneStale|status === 404/.test(hv));
+  ok('清空有确认且带数量', /条阅读足迹/.test(hv) && /不可恢复/.test(hv));
+
+  // 路由与页脚入口
+  const rt = read('../src/router/routes-site-blog.js');
+  ok('路由已注册', /path: 'history'/.test(rt));
+  const lo = read('../src/views/site/Layout.vue');
+  ok('页脚有入口', /to="\/history"/.test(lo));
+}
+
 console.log('\n【收藏跨标签页同步：另一页改了，这页按钮与列表都要跟着变】');
 {
   // 缺陷：收藏存 localStorage，而 localStorage 变更**只在其他标签页触发 storage 事件**。

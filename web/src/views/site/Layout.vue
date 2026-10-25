@@ -210,6 +210,7 @@
             <router-link to="/links" class="footer-link">友情链接</router-link>
             <router-link to="/about" class="footer-link">关于本站</router-link>
             <router-link to="/bookmarks" class="footer-link">我的收藏</router-link>
+            <router-link to="/history" class="footer-link">阅读足迹</router-link>
             <a href="/api/rss.xml" class="footer-link" target="_blank" rel="noopener noreferrer">RSS 订阅</a>
           </div>
 

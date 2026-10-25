@@ -13,6 +13,7 @@ export const blogSiteRoutes = [
       { path: 'links', name: 'links', component: () => import('@/views/site/Links.vue') },
       { path: 'messages', name: 'messages', component: () => import('@/views/site/Messages.vue') },
       { path: 'bookmarks', name: 'bookmarks', component: () => import('@/views/site/Bookmarks.vue') },
+      { path: 'history', name: 'history', component: () => import('@/views/site/History.vue') },
     ],
   },
 ];
