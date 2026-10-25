@@ -65,7 +65,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch, watchEffect } from 'vue';
 import { useRoute } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import ImageLightbox from '@/components/ui/ImageLightbox.vue';
@@ -74,6 +74,7 @@ import { noteApi } from '@/api';
 import { useHomeStore } from '@/stores/home';
 import { renderMarkdown, addImgAttrs } from '@/utils/markdown';
 import { formatDateTime } from '@/utils/format';
+import { applyPageMeta } from '@/utils/pageMeta';
 
 const route = useRoute();
 const home = useHomeStore();
@@ -145,6 +146,29 @@ async function copyLink() {
 }
 
 watch(() => route.params.id, (id) => { if (id) load(id); });
+
+/**
+ * 手记详情的 meta。
+ *
+ * 原先同样什么都没设：标签页不动、og:image 缺、canonical 缺。
+ * 手记是会被单独分享出去的单元，缺这些等于分享时只有一条裸链接。
+ */
+watchEffect(() => {
+  const n = note.value;
+  const st = home.summary || {};
+  const siteName = st.site_name || 'Xalor 的个人主页';
+  if (!n) {
+    document.title = `手记 · ${siteName}`;
+    return;
+  }
+  document.title = `手记 · ${siteName}`;
+  applyPageMeta({
+    title: '手记',
+    description: String(n.excerpt || n.content || '').slice(0, 120),
+    path: `/notes/${n.id}`,
+    site: { settings: { site_name: siteName } },
+  });
+});
 onMounted(() => {
   home.load();
   load(route.params.id);

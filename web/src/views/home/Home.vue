@@ -113,13 +113,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watchEffect } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import NoteCard from '@/components/home/NoteCard.vue';
 import { useHomeStore } from '@/stores/home';
 import { noteApi } from '@/api';
 import { blogUrl } from '@/utils/siteLinks';
 import { timeAgo } from '@/utils/format';
+import { applyPageMeta } from '@/utils/pageMeta';
 
 const home = useHomeStore();
 const notes = ref([]);
@@ -184,6 +185,24 @@ function retry() {
   loadNotes();
 }
 
+
+/**
+ * 个人主页首页的 meta。
+ *
+ * 这个入口原先连 document.title 都没设，标签页靠 home.html 那句静态标题，
+ * og:image / canonical 全缺 —— 主页是整个站点最可能被直接分享的地址之一。
+ * 标题就是主页本身，所以不重复传 title（避免「X · X」）。
+ */
+watchEffect(() => {
+  const st = home.summary || {};
+  const siteName = st.site_name || 'Xalor 的个人主页';
+  document.title = siteName;
+  applyPageMeta({
+    description: st.site_desc || '',
+    path: '/',
+    site: { settings: { site_name: siteName } },
+  });
+});
 onMounted(() => {
   home.load();
   // 票据换取是异步的：ensurePass 已在入口预热，这里直接发起即可

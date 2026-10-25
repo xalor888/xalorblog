@@ -36,11 +36,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watchEffect } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import NoteCard from '@/components/home/NoteCard.vue';
 import { noteApi } from '@/api';
 import { useHomeStore } from '@/stores/home';
+import { applyPageMeta } from '@/utils/pageMeta';
 
 const home = useHomeStore();
 const list = ref([]);
@@ -83,6 +84,27 @@ async function onLike(note) {
   note.likes = data?.likes ?? note.likes;
 }
 
+
+/**
+ * 个人主页入口也需要写全 page meta。
+ *
+ * 这个入口的三个视图原先**连 document.title 都没设** ——
+ * 标签页永远停在 home.html 里那句静态的「Xalor 的个人主页」，
+ * 而 og:title / description / og:image / canonical 一个都没有，
+ * 分享出去只有链接、没有任何卡片。
+ * （博客入口那七个页面早就写了，这里是另一半，之前漏了。）
+ */
+watchEffect(() => {
+  const s = home.summary || {};
+  const siteName = s.site_name || 'Xalor 的个人主页';
+  document.title = `${'手记'} · ${siteName}`;
+  applyPageMeta({
+    title: '手记',
+    description: s.site_desc || '把日常、想法与正在发生的事留在时间线上',
+    path: '/notes',
+    site: { settings: { site_name: siteName } },
+  });
+});
 onMounted(() => {
   home.load();
   fetchPage(1);

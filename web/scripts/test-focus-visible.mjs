@@ -370,6 +370,27 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【个人主页入口也要有 page meta】');
+{
+  // 实测：#/notes 与手记详情原先**连 document.title 都没设** —— 标签页永远停在
+  // home.html 那句静态标题，og:* / canonical 全缺，分享出去只有裸链接。
+  // 博客入口那七个页面早就写了，个人主页这三个视图是漏掉的另一半。
+  const files = { 'Home': '/', 'Notes': '/notes' };
+  const missing = [];
+  for (const [f, path] of Object.entries(files)) {
+    const src = read(`../src/views/home/${f}.vue`);
+    if (!/applyPageMeta/.test(src)) { missing.push(`${f}: 无 applyPageMeta`); continue; }
+    if (!src.includes(`path: '${path}'`)) missing.push(`${f}: path 不是 ${path}`);
+    if (!/document\.title\s*=/.test(src)) missing.push(`${f}: 没设 document.title`);
+  }
+  ok('个人主页 Home / Notes 都写全 meta', missing.length === 0, missing.join('; '));
+  // 详情页的 description 要用手记自身内容，不能是站点级那句话
+  const nd = read('../src/views/home/NoteDetail.vue');
+  ok('手记详情有 applyPageMeta', /applyPageMeta/.test(nd));
+  ok('详情 description 取自手记本身', /n\.excerpt|n\.content/.test(nd));
+  ok('详情 canonical 指向 /notes/:id', /path: `\/notes\/\$\{n\.id\}`/.test(nd));
+}
+
 console.log('\n【滑动动画的容器必须裁剪】');
 {
   const rp = read('../src/components/ui/RouteProgress.vue');
