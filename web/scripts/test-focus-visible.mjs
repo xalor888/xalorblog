@@ -370,6 +370,27 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【保存必须走完「写库 → 关框 → 刷新」三步】');
+{
+  // 实测：改分类名 → 保存 → 数据库里确实是新值，
+  // 表格刷新为新值，overlay 变成 display:none（Element Plus 关闭后节点保留）。
+  // 注意：**不能用 DOM 是否存在判断对话框关闭** —— 节点一直在，
+  // 我前两次就是这么误判成「保存后不关框」的。
+  const cat = read('../src/views/admin/CategoryManage.vue');
+  const fn = (cat.match(/async function saveEdit\(\)[\s\S]{0,700}/) || [''])[0];
+  ok('保存调用了 update 接口', /categoryApi\.update/.test(fn));
+  ok('成功后关对话框', /dialogVisible\.value\s*=\s*false/.test(fn), fn.slice(0, 60));
+  ok('成功后刷新列表', /load\(\)/.test(fn));
+  // 顺序：写库 → 提示 → 关框 → 刷新
+  const iUpdate = fn.indexOf('categoryApi.update');
+  const iClose = fn.indexOf('dialogVisible.value = false');
+  const iLoad = fn.indexOf('load()');
+  ok('先写库再关框', iUpdate >= 0 && iClose > iUpdate);
+  ok('关框后刷新列表', iLoad > iClose);
+  // 失败时不能关框（否则用户输入丢失且不知道没存上）
+  ok('失败分支不关框', /catch/.test(fn) && !/catch[\s\S]{0,80}dialogVisible\.value\s*=\s*false/.test(fn));
+}
+
 console.log('\n【批量删除：必须报数量，且说清不可恢复】');
 {
   // 实测：勾选 2 条评论点批量删除，确认框文案是
