@@ -1835,6 +1835,19 @@ select:focus-visible,
   .el-loading-spinner {
     animation: none !important;
   }
+
+  /* 入场位移类动画：时长已被压到 0.01ms，实测 playState 已是 finished、
+     transform 归零，用户看不到任何位移。
+     但 `.fade-up` 这类是**进场即带 translateY** 的 ——
+     少数浏览器在首帧仍会合成一次位移。
+     reduced-motion 的语义是「我这会儿不想看到位移」，
+     所以把位移从源头去掉，只保留最终状态，比依赖「压时长」更彻底。 */
+  .fade-up,
+  .reveal {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
 /* ============================================================

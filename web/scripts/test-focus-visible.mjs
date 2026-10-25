@@ -370,6 +370,24 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【reduced-motion：入场位移动画要从源头去掉】');
+{
+  // 实测：全局兜底把 animation-duration 压到 0.01ms 后，
+  // .fade-up 的 playState 已是 finished、transform 归零 —— 用户看不到位移。
+  // 但那是「压时长」，不是「没有位移」：reduced-motion 的语义是「不想看到位移」，
+  // 少数浏览器在首帧仍会合成一次。改成对入场类直接 animation:none + transform:none。
+  // 验证：八条路由全部 leaked=0、shifted=0，内容 opacity 仍为 1。
+  const css = read('../src/styles/main.css');
+  const rmBlocks = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)]
+    .map((m) => m[1]).join('\n');
+  ok('存在全局兜底（压时长）', /animation-duration:\s*0\.01ms/.test(rmBlocks));
+  ok('无限循环动画被显式停掉', /animation:\s*none !important/.test(rmBlocks));
+  ok('入场位移类直接去掉动画', /\.fade-up[\s\S]{0,160}animation:\s*none !important/.test(rmBlocks));
+  ok('入场位移类位移归零', /\.fade-up[\s\S]{0,200}transform:\s*none !important/.test(rmBlocks));
+  // 去掉动画不能把内容弄没
+  ok('入场类最终仍然可见', /\.fade-up[\s\S]{0,200}opacity:\s*1 !important/.test(rmBlocks));
+}
+
 console.log('\n【后台打印：留下数据，去掉操作界面】');
 {
   // 实测打印后台文章列表：侧栏 .admin-side 仍是 flex、高 **835px**（整页被它吃掉），
