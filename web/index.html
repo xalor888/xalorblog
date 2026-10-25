@@ -45,7 +45,26 @@
     <script src="/anti-debug.js?v=20261018c"></script>
   </head>
   <body>
-    <div id="app"></div>
+    <!-- 启动骨架：放在 #app 内部，Vue 挂载时会整体替换掉。
+         为什么需要：实测在慢速网络（1.5s 延迟 / 20KB/s）下，
+         JS bundle 下载完之前 #app 是**纯空白**，读者看到的是一片白，
+         没有任何「正在加载」的迹象。骨架让首屏立刻有东西。
+         关键约束：
+         - 只用内联样式（此时还没有 CSS，引用外部类等于没样式）；
+         - 不依赖任何脚本；
+         - 用系统字体，不触发额外下载；
+         - 尊重 prefers-reduced-motion，关掉动画。 -->
+    <div id="app">
+      <div class="boot-skeleton" aria-hidden="true" style="max-width:760px;margin:0 auto;padding:88px 20px 40px;">
+        <div style="height:26px;width:42%;border-radius:6px;background:rgba(128,128,128,0.16);margin-bottom:28px;"></div>
+        <div style="height:14px;width:100%;border-radius:5px;background:rgba(128,128,128,0.11);margin-bottom:11px;"></div>
+        <div style="height:14px;width:92%;border-radius:5px;background:rgba(128,128,128,0.11);margin-bottom:11px;"></div>
+        <div style="height:14px;width:64%;border-radius:5px;background:rgba(128,128,128,0.11);margin-bottom:34px;"></div>
+        <div style="height:150px;width:100%;border-radius:14px;background:rgba(128,128,128,0.09);margin-bottom:18px;"></div>
+        <div style="height:150px;width:100%;border-radius:14px;background:rgba(128,128,128,0.09);"></div>
+      </div>
+      <p class="boot-sr" role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">正在加载页面…</p>
+    </div>
     <!-- 右下角浮层栈：静态容器，全局工具/文章互动/问 AI 都 teleport 进这一列。
          放在 #app 之外是为了让它先于任何组件存在（同源组件内的目标在挂载时还查不到） -->
     <div id="float-dock" class="float-dock"></div>

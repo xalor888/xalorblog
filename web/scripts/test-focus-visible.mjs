@@ -304,6 +304,25 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【首屏启动态：JS 到达前不能是纯白】');
+{
+  // 实测：慢速网络下（1.2s 延迟 / 25KB/s），JS bundle 下载完之前
+  // #app 是**纯空白**，读者看到的是一片白，没有任何「正在加载」的迹象。
+  // 阻断 JS 复测确认修复：博客 7 个骨架块 / 598px；个人主页 6 块 / 478px。
+  for (const [file, label] of [['../index.html', '博客'], ['../home.html', '个人主页']]) {
+    const html = read(file);
+    ok(`${label}入口的 #app 内有启动骨架`, /<div id="app">\s*<div[^>]*aria-hidden="true"/.test(html) || /boot-skeleton/.test(html));
+    ok(`${label}入口不再有空的 app div`, !/<div id="app"><\/div>/.test(html), '#app 空着就等于首屏纯白');
+    ok(`${label}入口有启动播报`, /正在加载页面/.test(html), '读屏用户需要知道页面在加载');
+    ok(
+      `${label}骨架用内联样式（此时还没有 CSS）`,
+      /style="[^"]*background:/.test(html),
+      '引外部类名等于没样式 —— JS 没跑起来时 CSS 也可能没好'
+    );
+    ok(`${label}骨架对读屏隐藏（纯装饰）`, /aria-hidden="true"/.test(html));
+  }
+}
+
 console.log('\n【列表滚动位置：由路由 scrollBehavior 负责】');
 {
   // 实测：从列表点进文章、浏览器后退 → 页面回到顶部。

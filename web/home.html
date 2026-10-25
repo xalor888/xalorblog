@@ -39,7 +39,18 @@
     <script src="/anti-debug.js?v=20261018c"></script>
   </head>
   <body>
-    <div id="app"></div>
+    <!-- 启动骨架（同 index.html）：慢速网络下 #app 原本是纯空白，
+         读者看不到任何加载迹象。Vue 挂载时整体替换。只用内联样式。 -->
+    <div id="app">
+      <div aria-hidden="true" style="max-width:620px;margin:0 auto;padding:96px 20px 40px;">
+        <div style="height:76px;width:76px;border-radius:50%;background:rgba(128,128,128,0.16);margin-bottom:22px;"></div>
+        <div style="height:24px;width:48%;border-radius:6px;background:rgba(128,128,128,0.16);margin-bottom:16px;"></div>
+        <div style="height:14px;width:88%;border-radius:5px;background:rgba(128,128,128,0.11);margin-bottom:10px;"></div>
+        <div style="height:14px;width:66%;border-radius:5px;background:rgba(128,128,128,0.11);margin-bottom:34px;"></div>
+        <div style="height:132px;width:100%;border-radius:14px;background:rgba(128,128,128,0.09);"></div>
+      </div>
+      <p role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">正在加载页面…</p>
+    </div>
     <div id="float-dock" class="float-dock"></div>
     <script type="module" src="/src/main-home.js"></script>
   </body>
