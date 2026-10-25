@@ -107,7 +107,48 @@ app.config.errorHandler = (err) => {
 const theme = useThemeStore();
 theme.apply();
 
-app.mount('#app');
+/**
+ * 挂载。
+ *
+ * ⚠ 必须包 try/catch，而且失败时要**手动清掉启动骨架**。
+ *
+ * `index.html` / `home.html` 的 `#app` 里放了启动骨架（慢网时避免纯白）。
+ * Vue 正常挂载会整体替换它；但**挂载失败时不会** ——
+ * 读者看到的就是一个永远「正在加载」的骨架，没有任何错误提示，
+ * 比白屏更糟：白屏至少让人怀疑网络，这个让人以为在加载。
+ *
+ * 这与第 40 轮那批「页面看起来能用、其实半死」是同一类问题，
+ * 只是这次的表现是「永远在加载」。
+ */
+try {
+  app.mount('#app');
+} catch (e) {
+  console.error('[boot error]', e);
+  const host = document.getElementById('app');
+  if (host) {
+    host.innerHTML = '';
+    const box = document.createElement('div');
+    box.setAttribute('role', 'alert');
+    box.style.cssText =
+      'max-width:560px;margin:96px auto;padding:24px;text-align:center;'
+      + 'font:15px/1.6 system-ui,-apple-system,sans-serif;color:#444;';
+    const title = document.createElement('p');
+    title.style.cssText = 'font-size:1.05rem;font-weight:600;margin:0 0 8px;';
+    title.textContent = '页面没能启动';
+    const desc = document.createElement('p');
+    desc.style.cssText = 'margin:0 0 18px;opacity:.72;';
+    desc.textContent = '可能是浏览器版本过旧或脚本被拦截。刷新一次通常能解决。';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '刷新页面';
+    btn.style.cssText =
+      'padding:9px 20px;border-radius:9px;border:1px solid rgba(128,128,128,.36);'
+      + 'background:transparent;font:inherit;cursor:pointer;';
+    btn.addEventListener('click', () => location.reload());
+    box.append(title, desc, btn);
+    host.appendChild(box);
+  }
+}
 
 // 后台预热反爬安全通道（PoW 换票据）——不阻塞渲染，仅提前开始计算
 ensurePass().catch(() => {});

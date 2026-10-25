@@ -323,6 +323,35 @@ console.log('\n【首屏启动态：JS 到达前不能是纯白】');
   }
 }
 
+console.log('\n【启动失败兜底：不能永远停在「加载中」】');
+{
+  // 实测：阻断 vue 依赖后 main.js 整个 import 失败，一行都不会执行，
+  // 于是启动骨架永远停在「正在加载页面…」—— 比白屏更糟（白屏至少让人怀疑网络）。
+  // 所以兜底必须在 HTML 层，且**必须是外部脚本**：
+  // CSP 是 script-src 'self'，内联 <script> 会被拒绝执行（这条我踩过）。
+  const guard = read('../public/boot-guard.js');
+  ok('有独立的 boot-guard.js', guard.length > 400);
+  ok('超时时清掉骨架并给出 role=alert', /role', 'alert'/.test(guard));
+  ok('只在骨架仍在时介入（Vue 成功挂载就不管）', guard.includes("querySelector('.boot-skeleton')") && guard.includes('return;'));
+  ok('提供刷新按钮', /location\.reload\(\)/.test(guard));
+
+  for (const [file, label] of [['../index.html', '博客'], ['../home.html', '个人主页']]) {
+    const html = read(file);
+    ok(`${label}入口引用了 boot-guard.js`, /boot-guard\.js/.test(html));
+    ok(
+      `${label}入口**没有内联兜底脚本**（CSP script-src 'self' 会拒绝）`,
+      !/<script>\s*\(function/.test(html) && !/setTimeout\(function/.test(html),
+      '写了内联版会构建通过但运行时不生效'
+    );
+  }
+
+  // main.js 的 try/catch 仍要保留：骨架被替换后组件才抛错时，它还能兜住
+  ok(
+    'main.js 保留 app.mount 的 try/catch',
+    /try \{\s*\n\s*app\.mount\('#app'\);/.test(read('../src/main.js'))
+  );
+}
+
 console.log('\n【列表滚动位置：由路由 scrollBehavior 负责】');
 {
   // 实测：从列表点进文章、浏览器后退 → 页面回到顶部。
