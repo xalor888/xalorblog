@@ -84,7 +84,22 @@ marked.use({ renderer });
  */
 export function renderMarkdown(md = '') {
   const raw = marked.parse(md, { breaks: true, gfm: true });
-  return DOMPurify.sanitize(raw);
+  return DOMPurify.sanitize(demoteH1(raw));
+}
+
+/**
+ * 把正文里的 <h1> 降为 <h2>。
+ *
+ * 为什么：文章页已经有自己的 <h1 class="detail-title">{{ article.title }}</h1>。
+ * 作者在正文里写 `# 标题` 时，marked 会再产出第二个 <h1> ——
+ * 实测详情页因此有 **2 个 h1**，屏幕阅读器按标题导航时会看到两个页面级标题，
+ * 无法判断哪个才是这篇文档的主标题。文档大纲里「一篇文章一个 h1」是硬约束。
+ *
+ * 顺带把 H20/H30 这些没被引用的标题空出来：降级后 h5/h6 可能变成 h6/h7，
+ * 这里只降一级且最低到 h6，不会越界。
+ */
+function demoteH1(html) {
+  return String(html || '').replace(/<h1(\b[^>]*)>([\s\S]*?)<\/h1>/gi, '<h2$1>$2</h2>');
 }
 
 // 外链加固：所有渲染出的 <a> 统一注入安全 rel（站内链接保留权重，外链 nofollow 防 SEO

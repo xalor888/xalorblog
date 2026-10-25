@@ -154,7 +154,9 @@
                   <span v-else class="row-cat muted">未分类</span>
                   <span class="row-date">{{ formatDate(a.published_at) }}</span>
                 </div>
-                <h3 class="row-title" v-html="highlight(a.title)"></h3>
+                <!-- 文章标题用 h2：本页 h1 是页面标题，中间没有分区标题，
+                     用 h3 会造成 h1→h3 跳级（实测如此）。 -->
+                <h2 class="row-title" v-html="highlight(a.title)"></h2>
                 <p v-if="a.summary" class="row-summary" v-html="highlight(a.summary)"></p>
                 <div class="row-tags" v-if="a.tags && a.tags.length">
                   <span v-for="t in a.tags.slice(0, 3)" :key="t.id" class="row-tag"># {{ t.name }}</span>
@@ -189,7 +191,7 @@
                   <span v-else class="grid-cat muted">未分类</span>
                   <span class="grid-date">{{ formatDate(a.published_at) }}</span>
                 </div>
-                <h3 class="grid-title" v-html="highlight(a.title)"></h3>
+                <h2 class="grid-title" v-html="highlight(a.title)"></h2>
                 <p v-if="a.summary" class="grid-summary" v-html="highlight(a.summary)"></p>
                 <div class="grid-foot">
                   <div class="grid-tags" v-if="a.tags && a.tags.length">

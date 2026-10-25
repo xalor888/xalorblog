@@ -366,6 +366,43 @@ console.log('\n【移动端抽屉：焦点与状态关联】');
   ok('抽屉 nav 有 aria-label', /id="mobile-nav"[^>]*aria-label="移动端导航"/.test(layout));
 }
 
+console.log('\n【标题大纲：每页一个 h1、不跳级】');
+{
+  // 实测：首页与列表页 h1 后直接跳 h3；详情页与关于页各有 2 个 h1
+  // （正文里作者写的 `# 标题` 被 marked 渲染成第二个 h1）。
+  const md = read('../src/utils/markdown.js');
+  ok(
+    '正文里的 <h1> 被降为 <h2>（不产出第二个页面级标题）',
+    md.includes('function demoteH1') && md.includes("'<h2$1>$2</h2>'"),
+    '文章页已有自己的 h1，正文再来一个会让读屏看到两个主标题'
+  );
+  ok(
+    'demoteH1 在 sanitize 之前/之内生效',
+    /DOMPurify\.sanitize\(demoteH1\(raw\)\)/.test(md)
+  );
+
+  const card = read('../src/components/site/ArticleCard.vue');
+  ok(
+    '文章卡片标题层级可配置（不写死 h3）',
+    /headingLevel: \{ type: \[Number, String\], default: 3 \}/.test(card)
+      && card.includes('`h${headingLevel}`')
+  );
+
+  const home = read('../src/views/site/Home.vue');
+  ok('首页给卡片传 h2（h1 后第一个内容块）', home.includes('heading-level="2"'));
+  ok(
+    '首页侧栏的站点名不再用 h2（与页面 h1 同名，重复占层级）',
+    !/<h2>\{\{ site\.settings\.site_name/.test(home)
+  );
+
+  const list = read('../src/views/site/ArticleList.vue');
+  ok(
+    '列表页文章标题用 h2（h1 后无分区标题，用 h3 会跳级）',
+    list.includes('<h2 class="row-title"') && list.includes('<h2 class="grid-title"')
+  );
+  ok('列表页不再有 h3 文章标题', !list.includes('<h3 class="row-title"') && !list.includes('<h3 class="grid-title"'));
+}
+
 console.log('\n【全库扫描：watch 源不能是新建的数组/对象字面量】');
 {
   // 这是 ArticleList 翻页失效的根因，而且是**模式性**问题 ——

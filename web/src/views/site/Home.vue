@@ -47,7 +47,7 @@
           </div>
           <ul v-else class="feed-list" v-reveal="'stagger'">
             <li v-for="a in feedArticles" :key="a.id">
-              <ArticleCard :article="a" variant="feed" />
+              <ArticleCard :article="a" variant="feed" heading-level="2" />
             </li>
           </ul>
 
@@ -65,7 +65,7 @@
               <div class="author-halo">
                 <img class="author-avatar" :src="site.settings.avatar || '/logo-256.webp'" alt="" />
               </div>
-              <h2>{{ site.settings.site_name || 'Xalor' }}</h2>
+              <h3>{{ site.settings.site_name || 'Xalor' }}</h3>
               <p>{{ site.settings.site_desc || '记录技术、生活与思考' }}</p>
               <div class="author-stats">
                 <span><b>{{ site.stats.article_count || 0 }}</b>文章</span>

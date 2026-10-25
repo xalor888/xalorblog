@@ -25,7 +25,12 @@
         <span class="date">{{ formatDate(article.published_at) }}</span>
       </div>
 
-      <h3 class="title">{{ article.title }}</h3>
+      <!-- 标题层级由调用方决定。
+           同一个卡片在首页是「h1 之后的第一个内容块」，必须是 h2；
+           在列表页它上面已经有 h2 分区标题，用 h3 才对。
+           写死 h3 会让首页出现 1→3 的跳级（实测如此），
+           读屏用户按标题导航时会以为漏了一整节。 -->
+      <component :is="`h${headingLevel}`" class="title">{{ article.title }}</component>
       <p class="summary">{{ article.summary }}</p>
 
       <div class="tags" v-if="article.tags && article.tags.length">
@@ -61,6 +66,9 @@ import { formatDate } from '@/utils/format';
 defineProps({
   article: { type: Object, required: true },
   variant: { type: String, default: 'card' },
+  // 标题层级由调用方按所在页面的大纲决定（默认 h3）。
+  // 写死 h3 会让首页出现 h1→h3 的跳级 —— 实测首页确实是 1→3。
+  headingLevel: { type: [Number, String], default: 3 },
 });
 </script>
 
