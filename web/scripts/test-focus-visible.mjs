@@ -370,6 +370,29 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【主页设置：那个「重置」其实不是重置，而且一按就执行】');
+{
+  // 实测原状：按钮叫「重置」，但 `load()` 是**重新拉服务端配置**，
+  // 也就是「丢弃未保存的改动」而不是「清空表单」——这个词默认会被读成后者。
+  // 且它**没有任何确认**，与站点设置页的「放弃修改」不一致（那边有确认）。
+  // 改完之后实测：
+  //   无改动 → 「当前没有未保存的修改」（不弹框）；
+  //   有改动 → 「将丢弃所有未保存的修改，恢复到上次保存的主页设置。继续？」；
+  //   确认后 → 值恢复为已保存的、提示「已恢复为上次保存的设置」。
+  // 顺带记一个探针踩坑：`#/fe.../home` 是 404，正确路径是 `home-settings`。
+  const hs = read('../src/views/admin/HomeSettings.vue');
+  // 按钮名改成与行为一致的「放弃修改」
+  ok('按钮不再叫「重置」', !/>\s*重\s*置\s*</.test(hs) && /放弃修改/.test(hs), '仍叫重置');
+  const fn = (hs.match(/async function revertChanges[\s\S]{0,900}/) || [''])[0];
+  ok('无改动时短路', /if \(!dirty\.value\)/.test(fn));
+  ok('有改动时确认', /ElMessageBox\.confirm/.test(fn));
+  ok('确认说明会丢弃修改', /丢弃所有未保存的修改/.test(fn));
+  // 复用 load() 从服务端拉，而不是清空 form
+  ok('复用 load 重新拉取', /await load\(\)/.test(fn));
+  // 原有的脏追踪与守卫不能被拆掉
+  ok('保留 dirty 与路由守卫', /const dirty = ref\(false\)/.test(hs) && /onBeforeRouteLeave/.test(hs));
+}
+
 console.log('\n【设置的脏状态判定：改回原值要自动变干净，真实导航要拦住】');
 {
   // 实测三件事：

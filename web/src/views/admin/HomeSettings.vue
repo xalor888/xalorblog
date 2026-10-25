@@ -85,7 +85,10 @@
 
     <div class="save-bar">
       <el-button type="primary" :loading="saving" @click="save">保存主页设置</el-button>
-      <el-button @click="load">重置</el-button>
+      <!-- 原按钮叫「重置」，但它的行为是「丢弃未保存的改动、回到已保存的状态」，
+           不是「清空表单」。这个词默认会被读成后者，而它一按就执行、没有确认 ——
+           与站点设置页的「放弃修改」也不一致。 -->
+      <el-button @click="revertChanges">放弃修改</el-button>
     </div>
   </div>
 </template>
@@ -170,6 +173,28 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload)
 function addSocial() {
   if (socialExtra.value.length >= 8) return;
   socialExtra.value.push({ label: '', url: '' });
+}
+
+/**
+ * 放弃未保存的修改（原来这个按钮叫「重置」，语义容易被读成「清空表单」）。
+ * 与站点设置页保持一致：无改动时短路、有改动时确认、复用已有的 dirty/baseline。
+ */
+async function revertChanges() {
+  if (!dirty.value) {
+    ElMessage.info('当前没有未保存的修改');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '将丢弃所有未保存的修改，恢复到上次保存的主页设置。继续？',
+      '放弃修改',
+      { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }
+    );
+  } catch (e) {
+    return;
+  }
+  await load();
+  ElMessage.success('已恢复为上次保存的设置');
 }
 
 async function load() {
