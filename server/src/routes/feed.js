@@ -236,7 +236,10 @@ async function homeRssXml(req) {
   const items = notes
     .map((n) => {
       const s = noteSummary(n);
-      const link = `${esc(siteUrl)}/#/notes/${n.id}`;
+      // 指向手记列表的分享页（真实路径）。
+      // hash URL 在 RSS 里还能被点开，但搜索引擎收录时 # 之后会被丢弃，
+      // 与新 sitemap 的口径保持一致更好排查。
+      const link = `${esc(siteUrl)}/api/share-page/notes`;
       const date = String(s.published_at || s.created_at || '').slice(0, 10);
       return `    <item>
       <title>${esc(`手记 · ${date}`)}</title>
@@ -349,21 +352,20 @@ async function homeSitemapXml(req) {
     { path: 'notes', priority: '0.8' },
   ]
     .map((p) => `  <url>
-    <loc>${esc(siteUrl)}/#/${p.path}</loc>
+    <loc>${esc(siteUrl)}/api/share-page${p.path ? '/' + p.path : ''}</loc>
     <priority>${p.priority}</priority>
   </url>`)
     .join('\n');
 
-  const noteUrls = notes
-    .map((n) => {
-      const lastmod = String(n.updated_at || n.published_at || '').slice(0, 10);
-      return `  <url>
-    <loc>${esc(siteUrl)}/#/notes/${n.id}</loc>
-    <lastmod>${lastmod}</lastmod>
+  // 手记：暂无独立分享页，指向手记列表的分享页。
+  // 用 hash URL 的话搜索引擎只会看到首页，等于没提交。
+  const noteUrls = notes.length
+    ? `  <url>
+    <loc>${esc(siteUrl)}/api/share-page/notes</loc>
+    <lastmod>${String(notes[0].updated_at || notes[0].published_at || '').slice(0, 10)}</lastmod>
     <priority>0.6</priority>
-  </url>`;
-    })
-    .join('\n');
+  </url>`
+    : '';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -393,17 +395,20 @@ router.get('/sitemap.xml', async (req, res) => {
           .select('slug', 'updated_at'),
       ]);
 
-      // 首页 + 归档/标签/关于/收藏等常驻页（hash 路由，分享页为真实 HTML 供抓取）
+      // 首页 + 归档/标签/关于/收藏等常驻页。
+      // ⚠ 必须用 `/api/share-page/*` 这种**真实路径**，不能用 `/#/xxx`：
+      // 搜索引擎会丢弃 `#` 之后的部分，hash URL 等于全部指向首页，
+      // 整份 sitemap 形同虚设（实测 11 条记录全部无效）。
       const staticPages = ['', 'archive', 'tags', 'about', 'bookmarks', 'links', 'messages']
         .map((p) => `  <url>
-    <loc>${esc(siteUrl)}/#/${p}</loc>
+    <loc>${esc(siteUrl)}/api/share-page${p ? '/' + p : ''}</loc>
     <priority>${p ? '0.4' : '1.0'}</priority>
   </url>`)
         .join('\n');
 
       const catUrls = categories
         .map((c) => `  <url>
-    <loc>${esc(siteUrl)}/#/articles?category=${encodeURIComponent(c.slug)}</loc>
+    <loc>${esc(siteUrl)}/api/share-page/articles?category=${encodeURIComponent(c.slug)}</loc>
     <lastmod>${String(c.updated_at || '').slice(0, 10)}</lastmod>
     <priority>0.5</priority>
   </url>`)

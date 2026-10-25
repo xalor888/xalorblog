@@ -132,4 +132,87 @@ router.get('/share/:slug', async (req, res) => {
   }
 });
 
+/**
+ * 静态页面分享页：/api/share-page/:page
+ *
+ * 为什么需要：sitemap 里原本给静态页（首页/归档/标签/关于…）写的是
+ * `${siteUrl}/#/archive` 这类 **hash URL**。而搜索引擎**会丢弃 # 之后的部分** ——
+ * 也就是说那 11 条 sitemap 记录实际全部指向同一个首页，等于没提交。
+ * 文章有 `/api/share/:slug` 这种真实 URL 可用，静态页却一个都没有。
+ *
+ * 这里给静态页同样提供一个**服务端可渲染、有完整 meta 的真实地址**，
+ * sitemap 改指向它，搜索引擎才拿得到不同内容。
+ */
+const STATIC_PAGES = {
+  '': { title: '首页', desc: '记录技术、生活与思考的个人博客' },
+  archive: { title: '归档', desc: '按时间浏览全部文章' },
+  tags: { title: '标签云', desc: '全部标签，按文章数量排序' },
+  about: { title: '关于', desc: '关于我，以及这个站点' },
+  bookmarks: { title: '我的收藏', desc: '我在本站收藏的文章' },
+  links: { title: '友情链接', desc: '友链与申请方式' },
+  messages: { title: '留言板', desc: '欢迎在这里留言' },
+  articles: { title: '全部文章', desc: '按分类、标签或关键词筛选的博客文章列表' },
+  notes: { title: '手记', desc: '短一点的记录与想法' },
+};
+
+router.get('/share-page/:page?', async (req, res) => {
+  try {
+    const key = String(req.params.page || '').replace(/\/$/, '');
+    const page = STATIC_PAGES[key];
+    if (!page) return res.status(404).send('页面不存在');
+
+    const settings = await getAllSettings();
+    const siteUrl = settings.site_url
+      ? String(settings.site_url).replace(/\/+$/, '')
+      : `${req.protocol}://${req.get('host')}`;
+    const siteName = esc(settings.site_name || 'Xalor的小站');
+    const toAbs = (p) => (!p ? '' : (String(p).startsWith('http') ? String(p) : siteUrl + String(p)));
+    // 与文章分享页同一条回退链，避免两处配图不一致
+    const image = toAbs(settings.og_image) || toAbs(settings.avatar) || `${siteUrl}/og-image.png`;
+
+    // 带 query 的规范地址：分类页各自是不同内容，不能全都指向同一个 URL
+    //（否则 4 个分类在 sitemap 里是 1 条重复记录）
+    const qs = req.query.category ? `?category=${encodeURIComponent(String(req.query.category))}` : '';
+    const selfUrl = `${siteUrl}/api/share-page${key ? '/' + key : ''}${qs}`;
+    const spaUrl = `${siteUrl}/#/${key}`;
+    const catLabel = req.query.category ? ` · ${String(req.query.category)}` : '';
+    const fullTitle = `${page.title}${catLabel} - ${siteName}`;
+
+    const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${fullTitle}</title>
+<meta property="og:type" content="website">
+<meta property="og:title" content="${fullTitle}">
+<meta property="og:description" content="${esc(page.desc)}">
+<meta property="og:site_name" content="${siteName}">
+<meta property="og:url" content="${selfUrl}">
+<meta property="og:image" content="${esc(image)}">
+<meta property="og:locale" content="zh_CN">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${fullTitle}">
+<meta name="twitter:description" content="${esc(page.desc)}">
+<meta name="twitter:image" content="${esc(image)}">
+<meta name="description" content="${esc(page.desc)}">
+<meta http-equiv="refresh" content="0;url=${spaUrl}">
+<link rel="canonical" href="${selfUrl}">
+</head>
+<body>
+<noscript>
+<p>正在跳转…如未自动跳转，请<a href="${spaUrl}">点击这里</a>。</p>
+</noscript>
+</body>
+</html>`;
+
+    res.set('Cache-Control', 'public, max-age=300');
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    return res.send(html);
+  } catch (e) {
+    console.error('[share-page]', e.message);
+    return res.status(500).send('生成分享页失败');
+  }
+});
+
 module.exports = router;

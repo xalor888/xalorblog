@@ -353,6 +353,45 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【sitemap 必须是引擎能收录的真实 URL】');
+{
+  const feed = read('../../server/src/routes/feed.js');
+  // 实测：sitemap 原本给静态页写的是 /#/archive 这类 hash URL，
+  // 而搜索引擎**丢弃 # 之后的部分** → 11 条记录全部指向首页，等于没提交。
+  const sitemap = feed;
+  ok(
+    'sitemap 静态页用 /api/share-page/* 而非 hash URL',
+    /api\/share-page/.test(sitemap),
+    'hash URL 会被引擎丢弃 # 之后的内容'
+  );
+  ok(
+    '博客 sitemap 里不再有 /#/ 的 loc',
+    !/<loc>\$\{esc\(siteUrl\)\}\/#\//.test(sitemap),
+    '一条都不该留 —— 留一条就等于少收录一页'
+  );
+  ok(
+    '分类 URL 带 category 参数（否则 4 个分类是同一条重复记录）',
+    /articles\?category=\$\{encodeURIComponent/.test(sitemap)
+  );
+
+  const share = read('../../server/src/routes/share.js');
+  ok('有 /share-page 端点', /router\.get\('\/share-page/.test(share));
+  ok('静态页列表覆盖常驻页面', /archive:/.test(share) && /tags:/.test(share) && /about:/.test(share));
+  ok(
+    '规范地址带上 category（避免分类页重复）',
+    /req\.query\.category/.test(share)
+  );
+
+  // 关键：新端点必须在免闸门白名单里，否则爬虫拿不到（实测 403）
+  const app = read('../../server/src/app.js');
+  ok(
+    'GATE_SKIP 显式包含 /share-page',
+    /GATE_SKIP = \[[^\]]*'\/share-page'/.test(app),
+    "startsWith('/share/') 匹配不到 '/share-page' —— 漏了就是全线 403"
+  );
+  ok('GATE_SKIP 仍包含 RSS/Sitemap/robots', /'\/rss\.xml'/.test(app) && /'\/sitemap\.xml'/.test(app));
+}
+
 console.log('\n【分享卡片的配图链路】');
 {
   // 实测：无封面的文章，分享页 og:image 退回 settings.avatar = /logo.png（646KB 头像），

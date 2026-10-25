@@ -263,7 +263,11 @@ app.use(api, fetchMetaGuard);
  */
 // /home/summary 是唯一有意放行的免票读接口（主页首屏名片/友链/关于/最近文章标题）：
 // 字段为固定白名单，且自带独立限流 + antiBot；手记与文章接口防护强度不变。
-const GATE_SKIP = ['/anti', '/health', '/rss.xml', '/sitemap.xml', '/robots.txt', '/share/', '/home/summary'];
+// 免闸门白名单：这些是**给爬虫/订阅器**的公开只读端点。
+// 爬虫不执行 JS、不会算 PoW，所以必须放行，否则 sitemap / RSS / 分享页全部 403。
+// ⚠ `/share-page` 必须显式列出：`startsWith('/share/')` 匹配不到它
+// （前者结尾是 `/`），实测新端点因此被闸门拦成 403 —— 而 sitemap 正指向它。
+const GATE_SKIP = ['/anti', '/health', '/rss.xml', '/sitemap.xml', '/robots.txt', '/share/', '/share-page', '/home/summary'];
 app.use(api, async (req, res, next) => {
   try {
     if (GATE_SKIP.some((p) => req.path.startsWith(p))) return next();
