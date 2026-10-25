@@ -172,7 +172,10 @@ export function addHeadingIds(html) {
   let index = 0;
   return html.replace(/<h([2-4])\b/g, (m, level) => {
     index += 1;
-    return `<h${level} id="heading-${index - 1}"`;
+    // tabindex="-1"：让标题可以被**脚本**聚焦（不进 Tab 序列）。
+    // 目录跳转时把焦点送到目标标题，键盘用户和读屏才知道「现在到了哪一节」；
+    // 没有它 scrollIntoView 只是滚了一下，焦点仍留在目录链接甚至掉到 body。
+    return `<h${level} id="heading-${index - 1}" tabindex="-1"`;
   });
 }
 

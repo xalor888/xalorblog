@@ -825,8 +825,20 @@ async function doLike() {
   }
 }
 
+/**
+ * 目录跳转到某个标题。
+ *
+ * 为什么不能只 scrollIntoView：实测点目录后焦点会掉到 body ——
+ * 滚动发生了，但键盘用户和读屏都不知道「现在到了哪一节」，
+ * 下一次 Tab 会从页面顶部重新开始，人等于被扔回起点。
+ * 所以：滚动 + 把焦点送到目标标题（标题带 tabindex="-1"，可脚本聚焦）。
+ * 用 preventScroll 再手滚，避免 focus 的默认滚动和 smooth 冲突。
+ */
 function scrollToHeading(id) {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /** 键盘导航：← 上一篇 / → 下一篇 / ESC 关闭移动端目录 */

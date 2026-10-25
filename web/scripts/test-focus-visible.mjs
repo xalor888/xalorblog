@@ -304,6 +304,32 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【目录跳转要把焦点送到目标标题】');
+{
+  // 实测：点目录后滚动生效但焦点掉到 body ——
+  // 键盘/读屏用户不知道「现在到了哪一节」，下次 Tab 从页面顶部重来。
+  const md = read('../src/utils/markdown.js');
+  ok(
+    '标题带 tabindex="-1"（可脚本聚焦、不进 Tab 序列）',
+    /id="heading-\$\{index - 1\}" tabindex="-1"/.test(md),
+    '没有它 scrollIntoView 只是滚了一下，焦点留不住'
+  );
+
+  const detail = read('../src/views/site/ArticleDetail.vue');
+  const fn = detail.match(/function scrollToHeading\(id\)[\s\S]*?\n\}/);
+  ok('有 scrollToHeading', !!fn);
+  ok('跳转时聚焦目标标题', !!fn && /\.focus\(/.test(fn[0]));
+  ok(
+    'focus 用 preventScroll（避免与 smooth 滚动打架）',
+    !!fn && /preventScroll: true/.test(fn[0])
+  );
+  ok('仍然会滚动到目标', !!fn && /scrollIntoView/.test(fn[0]));
+  ok(
+    '滚动用 smooth（长文里瞬移会让人失去位置感）',
+    !!fn && /behavior: 'smooth'/.test(fn[0])
+  );
+}
+
 console.log('\n【skip-link：跳转不能破坏当前路由】');
 {
   // 实测严重缺陷：`href="#main-content"` 在 hash 路由下被当成路由地址，
