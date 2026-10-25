@@ -128,9 +128,25 @@ router.get('/share/:slug', async (req, res) => {
 <link rel="canonical" href="${selfUrl}">
 </head>
 <body>
-<noscript>
-<p>正在跳转…如未自动跳转，请<a href="${shareUrl}">点击这里</a>。</p>
-</noscript>
+<!--
+  这个页面是给爬虫看的，人到了这里靠上面的 meta refresh 立刻被送进 SPA。
+  但原来 body 是**空的**（只有 noscript 里一句话），于是：
+    · 禁用 JavaScript 的浏览器 / 装了拦截 refresh 的扩展 → 一片白屏，没有任何出路；
+    · 慢网络下 refresh 生效前那一瞬也是空白。
+  下面这段是给「跳转没发生」的人看的兜底：说清这是什么、标题是什么、往哪走。
+  对爬虫无害（正文本来就靠 JSON-LD 与 og:* 描述），对人是一根救命绳。
+-->
+<main style="max-width:40rem;margin:12vh auto;padding:0 1.25rem;font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#1a1814;background:#fff">
+  <p style="font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:#6b6456;margin:0 0 .5rem">${siteName}</p>
+  <h1 style="font-size:1.6rem;line-height:1.3;margin:0 0 .75rem">${title}</h1>
+  <p style="color:#4a463f;margin:0 0 1.5rem">${desc}</p>
+  <p style="margin:0">
+    <a href="${shareUrl}" style="display:inline-block;padding:.6rem 1.1rem;border-radius:8px;background:#bb4732;color:#fff;text-decoration:none;font-weight:600">继续阅读</a>
+  </p>
+  <noscript>
+    <p style="margin:1.5rem 0 0;color:#6b6456;font-size:.9rem">你的浏览器没有自动跳转过去，请点上面的按钮。</p>
+  </noscript>
+</main>
 </body>
 </html>`;
 
@@ -212,9 +228,19 @@ router.get('/share-page/:page?', async (req, res) => {
 <link rel="canonical" href="${selfUrl}">
 </head>
 <body>
-<noscript>
-<p>正在跳转…如未自动跳转，请<a href="${spaUrl}">点击这里</a>。</p>
-</noscript>
+<!-- 与文章分享页同理：body 不能是空的。
+     禁 JS / 拦 refresh / 慢网络时，这里就是用户唯一能看到的东西。 -->
+<main style="max-width:40rem;margin:12vh auto;padding:0 1.25rem;font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#1a1814;background:#fff">
+  <p style="font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:#6b6456;margin:0 0 .5rem">${siteName}</p>
+  <h1 style="font-size:1.6rem;line-height:1.3;margin:0 0 .75rem">${esc(page.title)}${esc(catLabel)}</h1>
+  <p style="color:#4a463f;margin:0 0 1.5rem">${esc(page.desc)}</p>
+  <p style="margin:0">
+    <a href="${spaUrl}" style="display:inline-block;padding:.6rem 1.1rem;border-radius:8px;background:#bb4732;color:#fff;text-decoration:none;font-weight:600">进入站点</a>
+  </p>
+  <noscript>
+    <p style="margin:1.5rem 0 0;color:#6b6456;font-size:.9rem">你的浏览器没有自动跳转过去，请点上面的按钮。</p>
+  </noscript>
+</main>
 </body>
 </html>`;
 

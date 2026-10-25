@@ -353,6 +353,24 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【分享页的 body 不能是空的】');
+{
+  const share = read('../../server/src/routes/share.js');
+  // 实测：两类分享页的 <body> 原本只有一句 noscript 提示，
+  // 正常访问时 body 是**空的** ——
+  // 禁用 JS、装了拦截 meta refresh 的扩展、或慢网络时，用户看到的是纯白页，无任何出路。
+  const mains = (share.match(/<main style=/g) || []).length;
+  ok('文章页与站点页都补了可见兜底内容', mains >= 2, `找到 ${mains} 个 <main>`);
+  ok('兜底内容有标题（h1）', (share.match(/<h1 style=/g) || []).length >= 2);
+  ok('兜底内容有可点的「继续阅读 / 进入站点」', /继续阅读/.test(share) && /进入站点/.test(share));
+  // 兜底里插入的值必须已经转义
+  ok('兜底内容里的值都经过 esc()', /\$\{esc\(page\.title\)\}/.test(share) && /\$\{esc\(page\.desc\)\}/.test(share));
+
+  // 补内容不能破坏爬虫抓到的东西
+  ok('JSON-LD 未被破坏', /application\/ld\+json/.test(share));
+  ok('og:url 仍指向 selfUrl（上一轮的修复没被回退）', /property="og:url" content="\$\{selfUrl\}"/.test(share));
+}
+
 console.log('\n【分享页：og:url 必须与 canonical 一致】');
 {
   const share = read('../../server/src/routes/share.js');
@@ -364,7 +382,8 @@ console.log('\n【分享页：og:url 必须与 canonical 一致】');
   ok('og:url 与 canonical 同为 selfUrl', /property="og:url" content="\$\{selfUrl\}"/.test(share));
   // 但人类重定向仍然必须走 hash URL
   ok('refresh 仍指向 hash URL（人类落点）', /http-equiv="refresh" content="0;url=\$\{shareUrl\}"/.test(share));
-  ok('noscript 兜底链接也用 hash URL', /<a href="\$\{shareUrl\}">/.test(share));
+  // 兜底按钮现在带 style，不能钉死 `">`（上一轮那条断言因此失配过）
+  ok('兜底按钮仍指向 hash URL（人类落点）', /<a href="\$\{shareUrl\}"/.test(share));
   // 站点级分享页本来就一致，别被改坏
   ok('站点分享页 og:url 仍是 selfUrl', (share.match(/property="og:url" content="\$\{selfUrl\}"/g) || []).length >= 2);
 }
