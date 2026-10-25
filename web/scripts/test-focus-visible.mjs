@@ -370,6 +370,22 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【分享页要声明 Vary: Host】');
+{
+  const share = read('../../server/src/routes/share.js');
+  // siteUrl = settings.site_url || req.get('host') ——
+  // 没配 site_url 时整页的 og:url / canonical / og:image 都跟着 Host 变，
+  // 而响应是 public 可缓存 5 分钟的：共享缓存只按 URL 归档，
+  // 会把 A 域渲染的版本喂给 B 域，B 域的分享卡片指向 A 域。
+  ok('conditionalSendHtml 追加了 Vary: Host', /res\.append\('Vary', 'Host'\)/.test(share));
+  // 必须用 append 而不是 set：set 会覆盖全局中间件写的 Vary
+  const helper = (share.match(/function conditionalSendHtml[\s\S]*?\n\}/) || [''])[0];
+  ok('用 append 保留已有的 Vary（set 会覆盖）', !/res\.set\('Vary'/.test(helper));
+  // feed.js 的同类处理别被改坏
+  const feed = read('../../server/src/routes/feed.js');
+  ok('feed.js 的 Vary: Host 仍在', /res\.append\('Vary', 'Host'\)/.test(feed));
+}
+
 console.log('\n【分享页的 body 不能是空的】');
 {
   const share = read('../../server/src/routes/share.js');

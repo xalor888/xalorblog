@@ -26,6 +26,19 @@ function conditionalSendHtml(req, res, html) {
   res.set('ETag', etag);
   // 文章修改后最多 5 分钟生效
   res.set('Cache-Control', 'public, max-age=300');
+  /**
+   * 必须声明 Vary: Host。
+   *
+   * siteUrl 的取值是 `settings.site_url || req.protocol + '://' + req.get('host')` ——
+   * 站点没配 site_url 时，**整页的 og:url / canonical / og:image 都跟着 Host 变**。
+   * 而响应是 `public` 可缓存 5 分钟的：共享缓存（CDN / 中间代理）只按 URL 归档，
+   * 会把 A 域渲染的版本喂给 B 域，B 域的分享卡片于是指向 A 域。
+   * 这与 feed.js 里 sitemap/RSS 的处理是同一类问题、同一种解法。
+   *
+   * 用 append 而不是 set —— 全局 gzip / CORS 中间件已写入 Vary，
+   * set 会把它覆盖掉（feed.js 的注释里也记过这一条）。
+   */
+  res.append('Vary', 'Host');
   if (req.headers['if-none-match'] === etag) {
     return res.status(304).end();
   }
