@@ -339,6 +339,10 @@
     <!-- 保存与备份 -->
     <div class="save-bar">
       <el-button type="primary" size="large" :loading="saving" @click="save">保存全部设置</el-button>
+      <!-- 33 个字段，改坏了没法一键回到上次保存的状态 ——
+           原先只能自己回忆原值、或者想到「刷新页面」这个隐晦办法。
+           这里给一个显式的出口：重新拉一次服务端配置覆盖表单。 -->
+      <el-button size="large" plain :loading="reverting" @click="revertChanges">放弃修改</el-button>
       <el-button size="large" plain :loading="backupLoading" @click="exportBackup">
         <template #icon><XIcon name="Download" :size="15" /></template>
         导出备份
@@ -680,6 +684,43 @@ async function doUpload({ file }) {
     /* 拦截器已提示 */
   } finally {
     uploading.value = false;
+  }
+}
+
+const reverting = ref(false);
+
+/**
+ * 放弃未保存的修改：重新拉一次服务端配置覆盖表单。
+ *
+ * 为什么需要：这一页有 33 个字段。改坏其中一个之后，
+ * 原先没有任何显式出口 —— 只能自己回忆原值，或者想到「刷新页面」这个隐晦办法
+ * （刷新确实会丢弃改动，但那是浏览器的行为，不是页面告诉你的）。
+ * 这里复用它本来就有的一套东西：`dirty` 判断有没有改动、`setBaseline` 重置基线，
+ * 所以不会在这个已经很绕的状态机上再加一套独立逻辑。
+ */
+async function revertChanges() {
+  if (!dirty.value) {
+    ElMessage.info('当前没有未保存的修改');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '将丢弃所有未保存的修改，恢复到上次保存的设置。继续？',
+      '放弃修改',
+      { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }
+    );
+  } catch (e) {
+    return;
+  }
+  reverting.value = true;
+  try {
+    form.value = await settingsApi.get();
+    setBaseline(form.value);
+    ElMessage.success('已恢复为上次保存的设置');
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    reverting.value = false;
   }
 }
 

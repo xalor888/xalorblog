@@ -370,6 +370,31 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【站点设置：33 个字段，改坏了要有一键回到上次保存的出口】');
+{
+  // 实测原状：这一页只有一个「保存全部设置」，**没有任何重置/取消**。
+  // 改坏 33 个字段里的一个之后，唯一办法是自己回忆原值，
+  // 或者想到「刷新页面」——刷新确实会丢弃改动，但那是浏览器的行为，不是页面告诉你的。
+  // 补「放弃修改」后实测：
+  //   无改动 → 「当前没有未保存的修改」（不弹无意义的确认框）；
+  //   有改动 → 确认「将丢弃所有未保存的修改，恢复到上次保存的设置。继续？」；
+  //   确认后 → 值恢复为上次保存的、提示「已恢复为上次保存的设置」。
+  // 另外验了保存链路本身：改 site_desc → 提示「设置已保存」→ **库里真的变了** → 刷新回填正确。
+  const st = read('../src/views/admin/Settings.vue');
+  ok('有放弃修改按钮', /放弃修改/.test(st));
+  const fn = (st.match(/async function revertChanges[\s\S]{0,1000}/) || [''])[0];
+  // 无改动要短路，别拿一个空确认框烦人
+  ok('无改动时短路', /if \(!dirty\.value\)/.test(fn));
+  // 复用已有的基线机制，不另起一套状态
+  ok('复用 setBaseline', /setBaseline\(form\.value\)/.test(fn));
+  // 确认文案要说清后果
+  ok('确认说明会丢弃修改', /丢弃所有未保存的修改/.test(fn));
+  // 重新从服务端拉，而不是用内存里的副本
+  ok('从服务端重新拉取', /settingsApi\.get\(\)/.test(fn));
+  // 原页面就有未保存拦截（路由 + beforeunload），别被新按钮抢了逻辑
+  ok('保留原有未保存拦截', /beforeunload/.test(st) && /dirty/.test(st));
+}
+
 console.log('\n【手记图集（notes.images）是 JSON 字符串，扫描要能从中认出 URL】');
 {
   // 上一轮把手记补进扫描，但我没验过 images 列的真实格式。
