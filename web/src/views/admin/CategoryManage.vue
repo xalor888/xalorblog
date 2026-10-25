@@ -136,6 +136,11 @@ async function load() {
 }
 
 async function create() {
+  // 重入保护：:loading 让按钮在响应式更新后才禁用，快速连点时第二次调用会在
+  // 同一个 tick 内进入。实测连点 3 次只建了 1 条 —— 但那是**数据库唯一约束**兜住的
+  // （第 2、3 次回「分类名称已存在」），不是前端主动拦的。
+  // 换成没有唯一约束的资源，连点就会真的建出多条。
+  if (creating.value) return;
   if (!newCat.value.name.trim()) return ElMessage.warning('请输入分类名称');
   creating.value = true;
   try {

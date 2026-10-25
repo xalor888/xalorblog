@@ -370,6 +370,30 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【创建按钮要自己防重入，别只靠数据库唯一约束】');
+{
+  // 实测：连点 3 次「创建」只建出 1 条，但**第 2、3 次是被数据库唯一约束挡的**
+  // （回「分类名称已存在」），前端并没有主动拦。
+  // 换成没有唯一约束的资源，连点就会真的建出多条 —— 所以补了 creating 重入判断。
+  // 另外 TagManage 原来空名称时 `if (!name) return;` **什么都不说**，
+  // 点了「创建」毫无反应，用户不知道是没生效还是没填名字。
+  for (const [f, label] of [['CategoryManage', '分类'], ['TagManage', '标签']]) {
+    const src = read(`../src/views/admin/${f}.vue`);
+    const fn = (src.match(/async function create\(\)[\s\S]{0,900}/) || [''])[0];
+    ok(`${label}创建有重入保护`, /if \(creating\.value\) return;/.test(fn), fn.slice(0, 60));
+    // 空名称必须给提示，不能静默 return
+    ok(`${label}空名称会给提示`, new RegExp(`请输入${label}名称`).test(fn));
+    // 提示要在 return 里，不能只是算了不用
+    ok(`${label}提示真的返回了`, /return ElMessage\.warning/.test(fn));
+    // 按钮侧也必须有防护（双保险）。两种写法都算：
+    // Element Plus 的 :loading，或原生 button 的 :disabled（后者更严，空名称时就禁用）
+    ok(
+      `${label}按钮在请求中不可再点`,
+      /:loading="creating"/.test(src) || /:disabled="creating\b/.test(src)
+    );
+  }
+}
+
 console.log('\n【非法输入要么拦、要么安全降级，不能原样落库】');
 {
   // 实测六种非法输入，四种直接拒绝、两种安全降级：

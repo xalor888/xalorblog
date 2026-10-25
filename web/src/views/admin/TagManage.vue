@@ -82,8 +82,12 @@ async function load() {
 }
 
 async function create() {
+  // 原来这里 `if (!name) return;` —— **什么都不说就返回**，
+  // 用户点了「创建」看到毫无反应，不知道是没生效还是没填名字。
+  // 与 CategoryManage 的「请输入分类名称」保持一致。
+  if (creating.value) return;
   const name = newName.value.trim();
-  if (!name) return;
+  if (!name) return ElMessage.warning('请输入标签名称');
   creating.value = true;
   try {
     await tagApi.create({ name });
