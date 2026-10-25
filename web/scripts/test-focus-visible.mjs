@@ -370,6 +370,31 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【失效校验的缓存：24h 内不重复请求，但网络错误绝不缓存】');
+{
+  // 两个列表页都在挂载时逐条 detail(slug)，足迹上限 20 → 每进一次页面就是二十来个
+  // 语义完全重复的请求。实测首轮：3 条足迹发出 3 次请求、缓存写入 ok/gone；
+  // 第二轮进页 **fetch 调用 0 次**，而失效条目照样被清掉（从缓存读 gone）。
+  const sc = read('../src/utils/slugCheck.js');
+  ok('缓存模块存在', sc.length > 0);
+  ok('TTL 是 24 小时', /24 \* 3600 \* 1000/.test(sc));
+  // 只接受 ok/gone —— 网络错误必须挡在外面，否则一次抖动会把收藏标成失效
+  ok('只缓存 ok/gone（拒收其他状态）',
+     /status !== 'ok' && status !== 'gone'/.test(sc),
+     (sc.match(/if \(!slug \|\| \(status[^\n]*/) || [''])[0].slice(0, 60));
+  // 超量/过期要清理，否则这个键会无限长
+  ok('清理过期与超量项', /now - v\.ts <= TTL/.test(sc) && /slice\(-200\)/.test(sc));
+
+  for (const [name, p] of [['足迹页', '../src/views/site/History.vue'],
+                            ['收藏页', '../src/views/site/Bookmarks.vue']]) {
+    const src = read(p);
+    ok(`${name}先查缓存再请求`, /getCachedStatus\(b\.slug\)/.test(src), p);
+    ok(`${name}成功后写缓存`, /setCachedStatus\(b\.slug, 'ok'\)/.test(src), p);
+    // 只有 404 才写 gone
+    ok(`${name}仅 404 写 gone`, /status === 404[\s\S]{0,120}setCachedStatus\(b\.slug, 'gone'\)/.test(src), p);
+  }
+}
+
 console.log('\n【新页面要穿同一套皮肤：结构、深色、无溢出、按钮可聚焦】');
 {
   // 实测：足迹页与收藏页根类名同为 .bookmarks-page、.bm-grid 同为 grid、条目数一致；

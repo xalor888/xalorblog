@@ -36,6 +36,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import ArticleCard from '@/components/site/ArticleCard.vue';
 import { getHistory, removeHistory, clearHistory, onHistoryChange } from '@/utils/history';
 import { articleApi } from '@/api';
+import { getCachedStatus, setCachedStatus } from '@/utils/slugCheck';
 import { useSiteStore } from '@/stores/site';
 import { applyPageMeta } from '@/utils/pageMeta';
 
@@ -91,10 +92,20 @@ async function pruneStale() {
   checking.value = true;
   const stale = [];
   for (const b of history.value) {
+    // 先看缓存：24 小时内问过的 slug 不再重复请求。
+    // 不这么做的话，每进一次页面就是二十来个（足迹上限 20）语义完全重复的请求。
+    const cached = getCachedStatus(b.slug);
+    if (cached === 'gone') { stale.push(b.slug); continue; }
+    if (cached === 'ok') continue;
     try {
       await articleApi.detail(b.slug);
+      setCachedStatus(b.slug, 'ok');
     } catch (e) {
-      if (e?.response?.status === 404) stale.push(b.slug);
+      // 只有明确的 404 才算失效；网络错误/超时一律不缓存，下次还会再问
+      if (e?.response?.status === 404) {
+        setCachedStatus(b.slug, 'gone');
+        stale.push(b.slug);
+      }
     }
   }
   if (stale.length) {
