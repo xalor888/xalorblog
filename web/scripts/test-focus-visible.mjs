@@ -370,6 +370,23 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【三种排序：置顶永远在前，其余按各自维度降序】');
+{
+  // 实测（排除置顶那篇）：
+  //   默认/最新 → 08-17 08-15 08-12 08-06 08-01（按发布时间降序）
+  //   最热      → 08-06 08-01 08-15 08-12 08-17（按 **views** 降序，
+  //               不是 likes —— 我一开始拿 likes 对，顺序"不对"，读代码才确认是 views）
+  //   热议      → 按已审评论数降序（当前 0 条评论，退化为时间序）
+  // 三者共同点：is_top 永远排第一。
+  const art = read('../../server/src/routes/articles.js');
+  ok('三种排序都有 is_top 前置', (art.match(/column: 'a\.is_top', order: 'desc'/g) || []).length >= 3,
+     `找到 ${(art.match(/column: 'a\.is_top'/g) || []).length} 处`);
+  ok('最热按 views 降序', /sort === 'hot'[\s\S]{0,200}column: 'a\.views', order: 'desc'/.test(art));
+  ok('热议按评论数降序', /COUNT\(cm\.id\)/.test(art));
+  // 热议的 groupBy 只能加在数据查询上，否则 count 查询的 total 恒为 1、翻页失效
+  ok('groupBy 只加在数据查询（不影响计数）', /groupBy 只加在数据查询/.test(art));
+}
+
 console.log('\n【文章列表：筛选、排序、清空，且徽章随状态变】');
 {
   // 实测：点分类 → h1 变分类名、篇数 6→3、eyebrow 变 CATEGORY、URL 带 ?category=slug；
