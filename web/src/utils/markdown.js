@@ -185,7 +185,26 @@ function demoteH1(html) {
 
 // 外链加固：所有渲染出的 <a> 统一注入安全 rel（站内链接保留权重，外链 nofollow 防 SEO
 // 垃圾与 window.opener 劫持）；DOMPurify 钩子在净化完成后执行，覆盖文章/关于页全部 markdown 链接
+// 内联 style 收紧：实测 `<div style="background:url(javascript:alert(1))">x</div>`
+// 过完 DOMPurify 后 **style 原样保留**（hasJs 仍为 true）。
+// 现代浏览器不会执行 url(javascript:)，实测 computed background-image 为 none ——
+// 所以这不是可利用漏洞，但留着一个注定被浏览器丢弃的无效值没有意义，
+// 而且这类"看着危险、实际无效"的残留会让以后的安全审计反复回到这里。
+// 处理：把 style 里的 url(...) 整体剥掉，其余样式保留（表格对齐、图片宽度等还在用）。
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  const style = node.getAttribute && node.getAttribute('style');
+  if (style && /url\s*\(/i.test(style)) {
+    const cleaned = style
+      .split(';')
+      .map((decl) => decl.trim())
+      .filter(Boolean)
+      // 整条声明里只要出现 url( 就丢掉 —— 不能只删 url(...) 本身，
+      // 否则会留下 `background:)` 这种半截声明（实测就是这样）
+      .filter((decl) => !/url\s*\(/i.test(decl))
+      .join(';');
+    if (cleaned) node.setAttribute('style', cleaned);
+    else node.removeAttribute('style');
+  }
   if (node.tagName !== 'A') return;
   const href = node.getAttribute('href') || '';
   const isExternal =

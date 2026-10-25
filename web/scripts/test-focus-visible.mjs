@@ -370,6 +370,26 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【Markdown 净化：七种载荷全挡，内联 style 里的 url() 也剥掉】');
+{
+  // 实测 7 种载荷过 renderMarkdown：
+  // <script>→空 / <img onerror>→去掉 onerror / <a javascript:>→去掉 href /
+  // <iframe>→空 / <svg onload>→空 svg / [x](javascript:)→去掉 href /
+  // **<div style="url(javascript:)">→ style 原样保留（hasJs 仍 true）** ← 唯一残留
+  // 浏览器实际不执行它（computed background-image 为 none），不是可利用漏洞，
+  // 但留着"看着危险、实际无效"的残留会让以后的安全审计反复回到这里，所以剥掉。
+  // 修完 7/7 的 hasScript / hasOn / hasJs 全为 false，且纯样式（text-align 等）保留。
+  const md = read('../src/utils/markdown.js');
+  ok('用 DOMPurify 净化', /DOMPurify\.sanitize/.test(md));
+  // 有安全钩子，且链接加固到位
+  ok('有 afterSanitizeAttributes 钩子', /addHook\('afterSanitizeAttributes'/.test(md));
+  ok('外链加 nofollow noopener ugc', /nofollow noopener ugc/.test(md));
+  ok('站内链接加 noopener', /setAttribute\('rel', 'noopener'\)/.test(md));
+  // style 里出现 url() 时整条声明丢掉（不是只删 url(...)，否则留下半截 background:)
+  ok('剥掉含 url() 的整条声明', /url\\s\*\\\(/i.test(md) && /filter\(\(decl\) => !/.test(md),
+     (md.match(/filter\(\(decl\)[^\n]*/) || [''])[0].slice(0, 60));
+}
+
 console.log('\n【高亮只有一份实现：两处共用，不再各自分叉】');
 {
   // 第 125 轮修了搜索弹层的顺序问题，第 126 轮发现 ArticleList.vue 里有**逐字相同的第二份**，
