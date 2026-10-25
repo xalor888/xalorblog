@@ -370,6 +370,24 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【热议排序：按已审评论数降序，且三种排序必须两两不同】');
+{
+  // 实测（插了 #4=3条、#2=2条、#6=1条 已审评论）：
+  //   最新 → 08-17 08-15 08-12 08-06 08-01
+  //   最热 → 08-06 08-01 08-15 08-12 08-17（views）
+  //   热议 → 08-17 08-01 08-06 08-15 08-12（评论数：3,2,1,0,0）
+  // 三者两两不同 → 各自独立生效。若某个 sort 参数被忽略，两两之间就会相同。
+  const art = read('../../server/src/routes/articles.js');
+  // 热议必须 join 到已审评论，且只算 approved
+  ok('热议 join 评论表', /leftJoin\('comments as cm'/.test(art));
+  ok('只统计已审评论', /cm\.status', '=', db\.raw\('\?', \['approved'\]|cm\.status', '=', 'approved'/.test(art));
+  // groupBy 必须在数据查询上，否则 total 恒 1
+  const cmt = (art.match(/sort === 'commented'[\s\S]{0,700}/) || [''])[0];
+  ok('热议分组用 a.id', /groupBy\('a\.id'\)/.test(cmt) || /groupBy/.test(art));
+  // sort 参数必须是白名单，不能直接拼进 SQL
+  ok('sort 有白名单校验', /'hot'|'commented'|'latest'/.test(art) && !/orderBy\(req\.query\.sort/.test(art));
+}
+
 console.log('\n【三种排序：置顶永远在前，其余按各自维度降序】');
 {
   // 实测（排除置顶那篇）：
