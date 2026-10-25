@@ -370,6 +370,26 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【搜索弹层的键盘导航：↑↓ 移动、Enter 跳转、边界不越界】');
+{
+  // 实测 3 条结果：初始选中 0；↓↓ 到 2；↑ 回到 1；Enter 跳到文章且弹层关闭。
+  // 注意选择器是 `.result-item.active` —— 我最初用 `.active` 命中了导航项，
+  // 又用 `[class*=result]` 数错了节点，两次都误判成「方向键没反应」。
+  const sm = read('../src/components/ui/SearchModal.vue');
+  ok('有 activeIndex 状态', /const activeIndex = ref/.test(sm));
+  ok('↓ 键移动选中', /ArrowDown/.test(sm) && /activeIndex\.value \+ 1/.test(sm));
+  ok('↑ 键移动选中', /ArrowUp/.test(sm) && /activeIndex\.value - 1/.test(sm));
+  // Enter 要跳转，且必须有结果才跳（空结果回车不能报错）
+  ok('Enter 跳转（有结果才跳）', /results\.value\[activeIndex\.value\]/.test(sm));
+  // 边界必须夹住：↓ 到底不能越界，↑ 到顶不能变负
+  const dn = (sm.match(/ArrowDown[\s\S]{0,160}/) || [''])[0];
+  const up = (sm.match(/ArrowUp[\s\S]{0,160}/) || [''])[0];
+  ok('↓ 越界夹住', /Math\.min\([^)]*results\.value\.length - 1/.test(dn), dn.slice(0, 60));
+  // 只匹配 `e.key === 'ArrowUp'` 分支 —— 用 /ArrowUp/ 会命中 `<XIcon name="ArrowUpRight">`
+  const upBranch = (sm.match(/e\.key === 'ArrowUp'[\s\S]{0,180}/) || [''])[0];
+  ok('↑ 不变成负数', /Math\.max\([^)]*0\)/.test(upBranch), upBranch.slice(0, 60));
+}
+
 console.log('\n【归档页：按年→月分组，跨年时月份归属不能错】');
 {
   // 实测插入跨月/跨年数据后：2026(8篇) 在 2025(1篇) 之前（年倒序）；
