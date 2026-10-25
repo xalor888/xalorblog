@@ -370,6 +370,34 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【设置的脏状态判定：改回原值要自动变干净，真实导航要拦住】');
+{
+  // 实测三件事：
+  //   1) 把值改回原值后点「放弃修改」→ 「当前没有未保存的修改」
+  //      （说明 dirty 用的是**深比较**，不是「碰过就算脏」）；
+  //   2) 两次 settingsApi.get() 的键顺序与内容完全一致（42 个键），
+  //      所以用 JSON.stringify 比较是可靠的 —— 若键序会变，dirty 会永远为 true；
+  //   3) 有未保存改动时点侧边栏真实导航 → 弹
+  //      「站点设置还有尚未保存的修改，离开将丢失本次更改，是否确定离开？」且停在原页。
+  //      （直接改 location.hash 会绕过守卫，那是 vue-router 的已知行为，不是本项目的问题；
+  //       真实用户点的是链接，会被拦住 —— 我就是先用 hash 试出假阳性才改用点击的。）
+  const st = read('../src/views/admin/Settings.vue');
+  const watch = (st.match(/watch\(\s*form[\s\S]{0,420}/) || [''])[0];
+  ok('脏状态用深比较', /JSON\.stringify\(form\.value\) !== baseline/.test(watch), watch.slice(0, 80));
+  ok('未加载完不算脏', /if \(!baseline\) return/.test(watch));
+  ok('watch 是 deep', /deep: true/.test(watch));
+  ok('有路由离开拦截', /onBeforeRouteLeave/.test(st));
+  ok('有 beforeunload 拦截', /beforeunload/.test(st));
+  // 卸载时要摘掉监听，否则离开页面后还挂着
+  ok('卸载时摘掉 beforeunload', /removeEventListener\('beforeunload'/.test(st));
+
+  // 设置项与界面控件的对应关系：websearch_provider 后端只允许 tavily 一种值，
+  // 所以不给选择器是合理的 —— 但它必须仍在后端白名单里被校验着
+  const se = read('../../server/src/utils/settings.js');
+  ok('websearch_provider 有白名单校验', /websearch_provider[\s\S]{0,80}\[\s*'tavily'\s*\]/.test(se),
+     (se.match(/websearch_provider[^\n]*/) || [''])[0].slice(0, 50));
+}
+
 console.log('\n【站点设置：33 个字段，改坏了要有一键回到上次保存的出口】');
 {
   // 实测原状：这一页只有一个「保存全部设置」，**没有任何重置/取消**。
