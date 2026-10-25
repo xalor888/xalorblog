@@ -353,6 +353,29 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【每个站点页都要写全 page meta】');
+{
+  // 实测：#/messages 原本只手动设了 document.title，
+  // og:title 落回站点通用值（缺页面名）、description 也是站点级那句 ——
+  // 分享留言板时卡片写的是「Xalor的小站」而不是「留言板」。
+  const pages = { ArticleList: '/articles', Tags: '/tags', About: '/about',
+                  Archive: '/archive', Links: '/links', Bookmarks: '/bookmarks',
+                  Messages: '/messages' };
+  const missing = [];
+  for (const [f, path] of Object.entries(pages)) {
+    const src = read(`../src/views/site/${f}.vue`);
+    if (!/applyPageMeta/.test(src)) { missing.push(`${f}: 没有 applyPageMeta`); continue; }
+    if (!new RegExp(`path: '${path.replace('/', '\\/')}'`).test(src)) missing.push(`${f}: path 不是 ${path}`);
+  }
+  ok('所有站点页都调用 applyPageMeta 且 path 正确', missing.length === 0, missing.join('; '));
+
+  // applyPageMeta 不管 <title>，页面必须自己写
+  const msgs = read('../src/views/site/Messages.vue');
+  ok('留言板自己写 document.title', /document\.title = `留言板 · \$\{siteName\}`/.test(msgs));
+  const pm = read('../src/utils/pageMeta.js');
+  ok('applyPageMeta 只写 meta，不越权改 document.title', !/document\.title\s*=/.test(pm));
+}
+
 console.log('\n【归档页的年月要是真标题】');
 {
   const arc = read('../src/views/site/Archive.vue');

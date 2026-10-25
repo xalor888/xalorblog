@@ -146,9 +146,20 @@ import { useSiteStore } from '@/stores/site';
 
 const site = useSiteStore();
 
+// 与其他站点页一致：一次写全 title / description / og:* / canonical。
+// 原来这里只手动设了 document.title，
+// 于是 og:title 落回站点通用值（缺页面名）、description 也是站点级的那句 ——
+// 分享留言板链接时卡片显示的是「Xalor的小站」而不是「留言板」。
 watchEffect(() => {
+  // document.title 由页面自己写（applyPageMeta 只管 meta 标签，不管 <title>）
   const siteName = site.settings.site_name || 'Xalor的小站';
   document.title = `留言板 · ${siteName}`;
+  applyPageMeta({
+    title: '留言板',
+    description: '有什么想说的，都可以留在这里',
+    path: '/messages',
+    site: site.settings,
+  });
 });
 const mailNotify = computed(() => !!site.settings.mail_notify);
 const messages = ref([]);
@@ -180,6 +191,7 @@ function toggleEmoji() {
 
 // ---------- 留言草稿本地保存（防误关/刷新丢内容） ----------
 import { saveDraft, loadDraft, clearDraft as clearLocalDraft } from '@/utils/localDraft';
+import { applyPageMeta } from '@/utils/pageMeta';
 const DRAFT_KEY = 'xalor_mdraft';
 let draftTimer = null;
 
