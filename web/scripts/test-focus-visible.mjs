@@ -370,6 +370,33 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【收藏：存全字段、页面正确列出、清空要确认且文案带数量】');
+{
+  // 实测：点收藏 → aria-label 变「取消收藏」、localStorage 存了完整对象
+  // （id/slug/title/summary/cover/category/tags/published_at/ts）、
+  // toast 引导「已收藏，可在页脚"我的收藏"查看」；
+  // 收藏页「共 1 篇」、条目与分类都对；
+  // 「清空全部」弹确认「确定清空全部 1 篇收藏吗？此操作不可恢复。」——**带数量**，
+  // 确认后 storage 归 0、空状态有「去逛逛文章」引导而不是死胡同。
+  const ad = read('../src/views/site/ArticleDetail.vue');
+  ok('收藏按钮有 aria-label 且随状态变', /bookmarked \? '取消收藏' : '收藏本文'/.test(ad));
+  ok('收藏后给出可去处的提示', /我的收藏/.test(ad));
+
+  const bm = read('../src/views/site/Bookmarks.vue');
+  ok('收藏页存在', bm.length > 0);
+  // 存在 localStorage 里的快照要够渲染整张卡片，否则离线打开是空壳
+  for (const field of ['title', 'slug', 'published_at']) {
+    ok(`快照含 ${field}`, new RegExp(field).test(bm) || new RegExp(field).test(ad));
+  }
+  // 清空是破坏性操作，必须二次确认，且文案要说明数量与不可恢复
+  ok('清空有确认框', /ElMessageBox\.confirm|confirm\(/.test(bm));
+  ok('确认文案带数量', /篇收藏|\$\{/.test(bm),
+     (bm.match(/确定清空[^'"`]*/) || [''])[0].slice(0, 50));
+  ok('确认文案说明不可恢复', /不可恢复/.test(bm));
+  // 空状态要给出下一步，不能只有一句「没有」
+  ok('空状态有引导', /去逛逛|还没有收藏/.test(bm));
+}
+
 console.log('\n【上一篇/下一篇：键盘 ← → 可翻，但在输入框里不能翻】');
 {
   // 实测：→ 到 recent-books-self-and-time、← 回到 welcome-to-xalor-blog，两侧 scrollY 均归 0；
