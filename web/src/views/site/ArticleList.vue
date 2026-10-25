@@ -130,6 +130,13 @@
         </div>
       </template>
       <template v-else>
+        <!-- 结果更新播报：翻页 / 切排序 / 换筛选都是**局部刷新**，页面不跳转、
+             标题不变，读屏用户完全感知不到内容已经换了。
+             role=status + aria-live=polite：读屏会念出结果条数，但不打断当前朗读。
+             把 aria-busy 绑在 loading 上，读屏可以据此判断「还在加载」。 -->
+        <p class="sr-only" role="status" aria-live="polite" :aria-busy="loading ? 'true' : 'false'">
+          {{ resultAnnouncement }}
+        </p>
         <div v-if="articles.length" class="list" :class="viewMode" v-reveal="'stagger'">
           <!-- 列表视图：紧凑行式 -->
           <template v-if="viewMode === 'list'">
@@ -219,8 +226,8 @@
       </template>
 
       <!-- 分页 -->
-      <div v-if="total > pageSize" class="pagination-wrap">
-        <button class="page-btn" :disabled="page <= 1" @click="load(page - 1)" title="上一页">
+      <nav v-if="total > pageSize" class="pagination-wrap" aria-label="文章分页">
+        <button class="page-btn" :disabled="page <= 1" @click="load(page - 1)" title="上一页" aria-label="上一页">
           <XIcon name="ChevronLeft" :size="16" />
         </button>
         <template v-for="(p, i) in pageList" :key="i">
@@ -230,25 +237,27 @@
             class="page-btn page-num"
             :class="{ current: p === page }"
             :disabled="p === page"
+            :aria-current="p === page ? 'page' : undefined"
+            :aria-label="p === page ? `第 ${p} 页，当前页` : `第 ${p} 页`"
             @click="load(p)"
           >{{ p }}</button>
         </template>
-        <button class="page-btn" :disabled="page >= totalPages" @click="load(page + 1)" title="下一页">
+        <button class="page-btn" :disabled="page >= totalPages" @click="load(page + 1)" title="下一页" aria-label="下一页">
           <XIcon name="ChevronRight" :size="16" />
         </button>
-        <span class="page-info">{{ page }} / {{ totalPages }}</span>
+        <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
 
         <!-- 每页条数切换（偏好本地记忆） -->
-        <span class="page-size">
+        <label class="page-size">
           每页
-          <select v-model="pageSize" class="page-size-select" title="每页条数" @change="onPageSizeChange">
+          <select v-model="pageSize" class="page-size-select" title="每页条数" aria-label="每页条数" @change="onPageSizeChange">
             <option :value="8">8</option>
             <option :value="16">16</option>
             <option :value="32">32</option>
           </select>
           条
-        </span>
-      </div>
+        </label>
+      </nav>
     </div>
   </div>
 </template>
@@ -270,16 +279,26 @@ const articles = ref([]);
 const categories = ref([]);
 const tags = ref([]);
 const total = ref(0);
-const page = ref(Number(route.query.page) || 1); // 页码随 URL 持久化（刷新/分享保持）
+// 页码：初值只给 1，真实值在 onMounted 里从 route 读取。
+// 为什么不在模块顶层读 route.query —— 实测这里拿到的是 undefined：
+// 组件 setup 执行时 hash 路由的 query 还没解析完（日志见 onMounted:init 里
+// route.query.page 为 "undefined"），于是带 ?page=2 的分享链接永远停在第一页。
+const page = ref(1);
 // 空态文案区分：有筛选 → 无匹配；无筛选 → 全站尚无文章
 const hasFilter = computed(() => !!(route.query.keyword || route.query.category || route.query.tag));
 // 每页条数：URL 参数优先（分享保持），其次本地记忆（8/16/32）
-const urlSize = Number(route.query.pageSize);
-const pageSize = ref([8, 16, 32].includes(urlSize) ? urlSize : (() => {
-  try { return Number(localStorage.getItem('xalor_page_size')) || 8; } catch (e) { return 8; }
+// 每页条数：URL 参数优先（分享保持），其次本地记忆（8/16/32）。
+// 与 page 同理，初值不读 route（时序不可靠），统一在 onMounted 里校正。
+const pageSize = ref((() => {
+  try {
+    const saved = Number(localStorage.getItem('xalor_page_size'));
+    return [8, 16, 32].includes(saved) ? saved : 8;
+  } catch (e) { return 8; }
 })());
-if (![8, 16, 32].includes(pageSize.value)) pageSize.value = 8;
+// 程序化校正 pageSize 时不允许走 onPageSizeChange（它会重置页码并清 URL 的 page）
+let suppressPageSizeChange = false;
 function onPageSizeChange() {
+  if (suppressPageSizeChange) return;
   try {
     localStorage.setItem('xalor_page_size', String(pageSize.value));
   } catch (e) { /* 隐私模式忽略 */ }
@@ -356,6 +375,25 @@ function setViewMode(m) {
 }
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)));
+
+/**
+ * 结果播报（给读屏用，视觉上不可见）。
+ *
+ * 为什么需要：翻页、切排序、换筛选都是**局部刷新** —— URL 变了但页面不跳转，
+ * 标题不变，焦点也没有移动。读屏用户按「下一页」之后，听到的只是按钮被点击，
+ * 内容换了这件事完全没有声音。
+ *
+ * 文案只报「多少条 / 第几页」，不报具体标题 —— 否则读屏会把整页标题念一遍。
+ */
+const resultAnnouncement = computed(() => {
+  if (loading.value) return '正在加载文章…';
+  if (loadFailed.value) return '加载失败';
+  if (!total.value) return emptyTitle.value;
+  const from = (page.value - 1) * pageSize.value + 1;
+  const to = Math.min(page.value * pageSize.value, total.value);
+  return `共 ${total.value} 篇文章，当前显示第 ${from}–${to} 篇，第 ${page.value} / ${totalPages.value} 页`;
+});
+
 
 // 数字页码（两端 + 当前页前后各一页，中间省略号）
 const pageList = computed(() => {
@@ -485,15 +523,29 @@ function highlight(text = '') {
   return safe.replace(new RegExp(`(${escaped})`, 'gi'), '<mark>$1</mark>');
 }
 
-watch(
-  () => [route.query.category, route.query.tag, route.query.keyword, route.query.sort],
-  () => {
-    page.value = 1;
-    keyword.value = kw.value; // 前进/后退改变 ?keyword= 时搜索框同步（否则显示旧关键词）
-    load(1);
-    window.scrollTo({ top: 0 });
-  }
+/**
+ * 筛选条件指纹（稳定字符串）。
+ *
+ * ⚠ 这里**不能**写成 `() => [a, b, c, d]`：getter 每次运行都会返回一个新数组，
+ * 而 Vue 对 getter 的返回值是按引用比较的（Object.is），新数组永远"不等于"旧数组
+ * —— 结果就是**只要 route.query 有任何变化（包括翻页写入 ?page=2）watcher 就会触发**，
+ * 然后执行 page.value = 1; load(1)，把刚翻过去的页码冲回第一页。
+ *
+ * 这正解释了「点下一页没反应」「分享链接带 ?page=2 却停在第 1 页」：
+ * 翻页 → replace 写入 page=2 → 该 watcher 误触发 → load(1) → replace 删掉 page。
+ *
+ * 用一个字符串把四个值拼起来，值没变时字符串就不变，watcher 不会触发。
+ */
+const filterKey = computed(() =>
+  [route.query.category || '', route.query.tag || '', route.query.keyword || '', route.query.sort || 'latest'].join('\u0000')
 );
+
+watch(filterKey, () => {
+  page.value = 1;
+  keyword.value = kw.value; // 前进/后退改变 ?keyword= 时搜索框同步（否则显示旧关键词）
+  load(1);
+  window.scrollTo({ top: 0 });
+});
 
 // 浏览器标签页标题与当前筛选联动
 watchEffect(() => {
@@ -517,7 +569,33 @@ onMounted(async () => {
   categories.value = cats.status === 'fulfilled' && Array.isArray(cats.value) ? cats.value : [];
   tags.value = tg.status === 'fulfilled' && Array.isArray(tg.value) ? tg.value : [];
   keyword.value = kw.value;
-  await load(1);
+  // 初始页码必须取 URL 里的 page —— 否则带 ?page=2 的分享链接永远停在第一页。
+  // （page ref 在文件顶部已从 route.query 读过，但这里曾经硬编码 load(1) 把它覆盖；
+  //  同时也解释了「点下一页没反应」：watch 里任何筛选变化都会 load(1)，
+  //  而分页按钮依赖 route.replace 之后的稳定状态。）
+  // 到这里路由的 query 才是可靠的：先用 URL 校正页码与每页条数。
+  //
+  // ⚠ 校正 pageSize 时必须**绕过 @change**：v-model 绑定会触发 change，
+  // 而 onPageSizeChange() 里有 router.replace（删掉 page）与 load(1)。
+  // 直接赋值会让「带 ?page=2 的分享链接」在挂载瞬间被重置回第一页 ——
+  // 这就是「点下一页没反应 / 分享链接永远回第 1 页」的真正原因。
+  // 用 suppressPageSizeChange 标记把校正与用户操作区分开。
+  const urlSize = Number(route.query.pageSize);
+  if ([8, 16, 32].includes(urlSize) && urlSize !== pageSize.value) {
+    suppressPageSizeChange = true;
+    pageSize.value = urlSize;
+    suppressPageSizeChange = false;
+  }
+  const urlPage = Number(route.query.page);
+  page.value = Number.isFinite(urlPage) && urlPage > 0 ? Math.floor(urlPage) : 1;
+  await load(page.value);
+  // 把 URL 与真实页码对齐（后端可能把越界页码纠正到最后一页）
+  if (page.value !== (Number(route.query.page) || 1)) {
+    const q = { ...route.query };
+    if (page.value > 1) q.page = String(page.value);
+    else delete q.page;
+    router.replace({ path: '/articles', query: q });
+  }
 });
 </script>
 

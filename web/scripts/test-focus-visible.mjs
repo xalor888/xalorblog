@@ -139,6 +139,109 @@ console.log('\n【关键控件逐个点名】');
   );
 }
 
+console.log('\n【局部刷新的结果变化要被播报】');
+{
+  const list = read('../src/views/site/ArticleList.vue');
+  const css = read('../src/styles/main.css');
+
+  // 翻页 / 切排序 / 换筛选都是局部刷新：URL 变了但页面不跳转、标题不变、
+  // 焦点也不移动。没有 aria-live 的话，读屏用户按「下一页」后听不到任何变化。
+  ok(
+    '结果区有 role=status + aria-live=polite 的播报点',
+    /role="status"\s+aria-live="polite"/.test(list) || /aria-live="polite"[\s\S]{0,80}role="status"/.test(list)
+  );
+  ok(
+    '播报内容包含条数与页码（不是空壳）',
+    /共 \$\{total\.value\} 篇文章/.test(list) && /第 \$\{page\.value\}/.test(list)
+  );
+  ok(
+    '加载中用 aria-busy 告诉读屏「还在加载」',
+    /:aria-busy="loading \? 'true' : 'false'"/.test(list)
+  );
+  ok(
+    '播报点用 sr-only 而不是 display:none（后者会从无障碍树移除）',
+    /class="sr-only"\s+role="status"/.test(list) || /sr-only[^>]*role="status"/.test(list)
+  );
+  ok(
+    'sr-only 用 1px 裁剪实现，且没有 display:none',
+    /\.sr-only\s*\{[\s\S]{0,400}?clip:\s*rect\(0, 0, 0, 0\)/.test(css)
+    && !/\.sr-only\s*\{[^}]*display:\s*none/.test(css)
+  );
+
+  // 分页语义
+  // 属性顺序不固定（v-if 在 class 前），不能用固定顺序的正则
+  {
+    // 注意：`v-if="total > pageSize"` 里有个 `>`，用 [^>]* 会在那里截断。
+    // 改为取「从 <nav 到行尾」这一段。
+    const line = (list.split('\n').find((l) => l.includes('<nav') && l.includes('pagination-wrap')) || '');
+    ok('分页容器是 nav 且带 aria-label', /aria-label="文章分页"/.test(line), line.trim().slice(0, 80));
+    ok('分页 nav 正确闭合（不是把 div 改了一半）', /<\/nav>/.test(list));
+  }
+  ok(
+    '当前页标 aria-current="page"',
+    /:aria-current="p === page \? 'page' : undefined"/.test(list)
+  );
+  ok(
+    '上一页/下一页有 aria-label（只有图标，没有可读文字）',
+    /aria-label="上一页"/.test(list) && /aria-label="下一页"/.test(list)
+  );
+  ok(
+    '每页条数用 label 包裹（点文字也能选中下拉）',
+    /<label class="page-size">/.test(list)
+  );
+  ok(
+    '页码按钮有可读标签（避免只念一个数字）',
+    /:aria-label="p === page \? `第 \$\{p\} 页，当前页` : `第 \$\{p\} 页`"/.test(list) || /aria-label="第 / .test(list)
+  );
+
+  // 依赖顺序：resultAnnouncement 用到 totalPages，必须声明在其后
+  const iTotal = list.indexOf('const totalPages = computed');
+  const iAnn = list.indexOf('const resultAnnouncement = computed');
+  ok(
+    'resultAnnouncement 声明在 totalPages 之后（依赖顺序）',
+    iTotal !== -1 && iAnn !== -1 && iTotal < iAnn
+  );
+}
+
+console.log('\n【翻页不能被筛选 watcher 冲掉】');
+{
+  const list = read('../src/views/site/ArticleList.vue');
+
+  // 真实 bug：watch 的 getter 写成 `() => [a,b,c,d]` 时，每次运行都返回新数组，
+  // Vue 按引用比较 → 永远判定"变了" → 只要 route.query 有变化（包括翻页写入
+  // ?page=2）就触发 page.value = 1; load(1)，把刚翻过去的页码冲回第 1 页。
+  // 症状：点下一页没反应、带 ?page=2 的分享链接永远停在第 1 页。
+  ok(
+    '筛选 watcher 的源是稳定字符串（filterKey computed），不是每次新建的数组',
+    /const filterKey = computed\(\(\) =>/.test(list) && /watch\(filterKey,/.test(list)
+  );
+  ok(
+    '不再存在 "watch(() => [route.query...])" 这种数组 getter',
+    !/watch\(\s*\n?\s*\(\) => \[route\.query\.category/.test(list),
+    '数组 getter 会因引用不等而每次触发'
+  );
+  ok(
+    'filterKey 只由筛选条件构成（不含 page / pageSize）',
+    (() => {
+      const m = list.match(/const filterKey = computed\(\(\) =>[\s\S]{0,400}?\);/);
+      if (!m) return false;
+      const body = m[0];
+      return body.includes('route.query.category') && !/route\.query\.page\b/.test(body);
+    })(),
+    '页码变化不该触发"筛选变了"'
+  );
+
+  // 页码初始化：不能只在 setup 顶层读 route.query（那时 query 还没解析完）
+  ok(
+    'onMounted 里从 URL 校正页码与每页条数',
+    /const urlPage = Number\(route\.query\.page\)/.test(list) && /const urlSize = Number\(route\.query\.pageSize\)/.test(list)
+  );
+  ok(
+    '程序化校正 pageSize 时不走 @change（否则会重置页码并清掉 URL 的 page）',
+    /suppressPageSizeChange = true/.test(list) && /if \(suppressPageSizeChange\) return;/.test(list)
+  );
+}
+
 console.log('\n【鼠标点击不应被焦点环打扰】');
 {
   const css = read('../src/styles/main.css');
