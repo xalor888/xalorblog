@@ -304,6 +304,35 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【快捷键帮助弹层：模态语义与焦点陷阱】');
+{
+  const help = read('../src/components/ui/ShortcutHelp.vue');
+  // 实测修前：有 role=dialog 但缺 aria-modal；打开后焦点不进面板；
+  // Tab 5/5 全部逃到背景（skip-link、导航链接）。和搜索弹窗同一个坑。
+  ok('有 role=dialog', /role="dialog"/.test(help));
+  ok('配了 aria-modal="true"', /aria-modal="true"/.test(help), '只有 role 的话读屏仍把背景当可读内容');
+  ok('用 aria-labelledby 指向标题', /aria-labelledby="help-title"/.test(help) && /id="help-title"/.test(help));
+  ok('有 Tab 焦点陷阱', /function onTabTrap/.test(help) && /@keydown\.tab="onTabTrap"/.test(help));
+  ok(
+    '焦点陷阱无条件拉回（不依赖「是否正好在首尾」）',
+    /if \(!panel\.contains\(active\)\) \{[\s\S]{0,80}?e\.preventDefault\(\)/.test(help),
+    '搜索弹窗就是这么漏的'
+  );
+  ok(
+    '打开时把焦点送进面板',
+    /nextTick\(\(\) => closeBtnRef\.value\?\.focus\?\.\(\)\)/.test(help)
+  );
+  ok(
+    '关闭时还原焦点（body 不作为有效返回点）',
+    /lastFocused = active && active !== document\.body \? active : null/.test(help)
+  );
+  ok(
+    '还原前确认元素仍在 DOM（导航后触发元素可能已消失）',
+    /document\.contains\(back\)/.test(help)
+  );
+  ok('Shift+/ 也能打开（实测这是唯一真正可用的组合）', /e\.key === '\?' \|\| \(e\.key === '\/' && e\.shiftKey\)/.test(help));
+}
+
 console.log('\n【代码块复制：播报要落在独立的状态元素上】');
 {
   const md = read('../src/utils/markdown.js');
