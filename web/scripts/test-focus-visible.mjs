@@ -304,6 +304,26 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【关于页与个人主页的一致性】');
+{
+  // 关于页只走 renderMarkdown、不走 addHeadingIds —— 没有 TOC 就不需要锚点，
+  // 但必须确认它的标题大纲仍然合法（第 19 轮降级后不能冒出第二个 h1）。
+  const about = read('../src/views/site/About.vue');
+  ok('关于页用 renderMarkdown 渲染正文', /renderMarkdown\(/.test(about));
+  ok(
+    '关于页不接 addHeadingIds（没有 TOC，不需要 heading-N 锚点）',
+    !/addHeadingIds/.test(about),
+    '接了反而会产出无处可跳的 id'
+  );
+
+  // 个人主页两个布局都要有主题切换（曾怀疑缺，实测两处都在）
+  const home = read('../src/views/home/Layout.vue');
+  ok('个人主页有主题切换', /toggleTheme/.test(home));
+  ok('个人主页也用了 useThemeStore', /useThemeStore/.test(home));
+  ok('个人主页有 skip-link（第 28 轮补的）', /class="skip-link"/.test(home));
+  ok('个人主页主内容可聚焦', /id="home-main"[^>]*tabindex="-1"/.test(home));
+}
+
 console.log('\n【TOC 编号必须与正文标题一一对应】');
 {
   // 第 19 轮加 h1 降级时引入的回归，第 37 轮才发现：
