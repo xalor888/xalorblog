@@ -370,6 +370,22 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【上一篇/下一篇：键盘 ← → 可翻，但在输入框里不能翻】');
+{
+  // 实测：→ 到 recent-books-self-and-time、← 回到 welcome-to-xalor-blog，两侧 scrollY 均归 0；
+  // 在评论区 textarea 里按 ←/→ **不翻页**，焦点仍留在 TEXTAREA。
+  const ad = read('../src/views/site/ArticleDetail.vue');
+  ok('支持 ← 上一篇', /ArrowLeft/.test(ad) && /prev/.test(ad));
+  ok('支持 → 下一篇', /ArrowRight/.test(ad) && /next/.test(ad));
+  // 关键防护：输入中按方向键是移动光标，绝不能翻页
+  const guard = (ad.match(/function onKeydown[\s\S]{0,700}/) || [''])[0];
+  ok('输入框内不触发翻页',
+     /tag === 'INPUT' \|\| tag === 'TEXTAREA' \|\| e\.target\.isContentEditable/.test(guard),
+     guard.slice(0, 90));
+  // 没有相邻文章时不能跳到空
+  ok('无相邻文章时不跳转', /neighbors\.value\.prev|neighbors\.value\.next/.test(guard));
+}
+
 console.log('\n【深链锚点：带 #heading-N 进来要真的滚过去】');
 {
   // 缺陷：`#/article/slug#heading-2` 这类分享链接**不会跳** ——
