@@ -370,6 +370,24 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【评论点赞：乐观更新、防连点、单向不可撤销】');
+{
+  // 实测：5 → 点击即时变 6 并加 liked 类（乐观更新），服务端确认后仍是 6；
+  // 同会话连点 3 次**只加一次**；再点一次**不会取消**（liked 仍 true）——
+  // 这是单向点赞，不是 toggle。刷新后从 localStorage 恢复 liked。
+  const ci = read('../src/components/site/CommentItem.vue');
+  const fn = (ci.match(/async function likeComment[\s\S]{0,900}/) || [''])[0];
+  ok('点赞有防重复（已赞或进行中直接返回）', /if \(liked\.value \|\| liking\.value\) return;/.test(fn));
+  ok('乐观更新：先加一', /props\.comment\.likes = \(props\.comment\.likes \|\| 0\) \+ 1/.test(fn));
+  // 失败必须回滚，否则请求挂了界面会永远多一个赞
+  ok('失败回滚赞数', /catch[\s\S]{0,160}props\.comment\.likes = Math\.max\(0/.test(fn));
+  ok('失败也重置 liked', /catch[\s\S]{0,220}liked\.value = false/.test(fn));
+  // 用服务端返回值校正，避免多点/并发下有偏差
+  ok('用服务端返回的 likes 校正', /typeof res\.likes === 'number'/.test(fn));
+  // 记住已赞，刷新后不让人重复点
+  ok('localStorage 记住已赞', /xalor_clike_/.test(ci));
+}
+
 console.log('\n【回复：进入/取消/嵌套与 @ 指向】');
 {
   // 实测：点「回复」→ 占位符变 `回复 @昵称：`、焦点自动进 textarea；
