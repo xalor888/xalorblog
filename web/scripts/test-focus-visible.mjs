@@ -370,6 +370,22 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【内联创建表单：成功后要清空，才能连着建】');
+{
+  // 实测：分类管理用**内联表单**（不是弹框）—— 我先按弹框去测，白跑两轮。
+  // 填入 __探针分类 → 创建：行数 4→5、列表出现新项、提示「分类创建成功」、**输入框清空**。
+  const cat = read('../src/views/admin/CategoryManage.vue');
+  const fn = (cat.match(/async function create\(\)[\s\S]{0,900}/) || [''])[0];
+  ok('创建调用了 create 接口', /categoryApi\.create/.test(fn));
+  ok('成功后刷新列表', /load\(\)/.test(fn));
+  // 清空输入是关键：不清空就没法连着建第二个
+  ok('成功后清空表单（可连续创建）', /newCat\.value\s*=\s*\{/.test(fn) || /resetNew/.test(fn), fn.slice(0, 70));
+  // 同名/空名应在客户端先挡一次，别直接打到接口
+  ok('创建前有基本校验', /trim\(\)|if \(!/.test(fn));
+  // 这张页面必须是内联表单，不是 el-dialog（避免以后被改成弹框而断言失效）
+  ok('分类创建是内联表单', /@click="create"/.test(cat) && !/el-dialog[\s\S]{0,200}@click="create"/.test(cat));
+}
+
 console.log('\n【保存必须走完「写库 → 关框 → 刷新」三步】');
 {
   // 实测：改分类名 → 保存 → 数据库里确实是新值，
