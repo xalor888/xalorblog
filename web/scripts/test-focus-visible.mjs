@@ -370,6 +370,24 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【文章点赞的限速：10 秒窗口，超限 429 且文案友好】');
+{
+  // 实测：同一 IP 对同一文章连发 3 次点赞 ——
+  // 第 1 次成功（返回 likes），第 2、3 次都是 **429**
+  // 「点赞太频繁啦，歇一会儿再点吧」。窗口 10 秒。
+  const art = read('../../server/src/routes/articles.js');
+  ok('有 likeGuard 限速器', /const likeGuard = new Map\(\)/.test(art));
+  ok('窗口是 10 秒', /LIKE_WINDOW = 10 \* 1000/.test(art));
+  // 键必须含 ip + articleId —— 只按 ip 会让「赞了一篇就不能赞别的」
+  ok('限速键含 IP 与文章 id', /\$\{ip\}:\$\{articleId\}/.test(art));
+  // 先判断后写入：写反了会让第一次就被拒
+  const fn = (art.match(/function canLike[\s\S]{0,420}/) || [''])[0];
+  ok('先查后写（顺序不能反）', /if \(now < expireAt\) return false;[\s\S]{0,80}likeGuard\.set/.test(fn));
+  // 必须有清理，否则 Map 会随访问量无限涨
+  ok('有定期清理防内存泄漏', /likeGuard\.size > 5000/.test(fn));
+  ok('超限提示友好', /点赞太频繁/.test(art));
+}
+
 console.log('\n【评论点赞：乐观更新、防连点、单向不可撤销】');
 {
   // 实测：5 → 点击即时变 6 并加 liked 类（乐观更新），服务端确认后仍是 6；
