@@ -370,6 +370,28 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【非法输入要么拦、要么安全降级，不能原样落库】');
+{
+  // 实测六种非法输入，四种直接拒绝、两种安全降级：
+  //   空分类名 / 纯空格 → 「分类名称不能为空」
+  //   空文章标题 → 「标题不能为空」；非法文章状态 → 「非法状态」
+  //   300 字分类名 → **截断到 50**（cleanLine(name,50)）
+  //   非法颜色 → **回退默认 #e4573d**（validHexColor）
+  // 后两种没有报错，但也没把脏值写进去 —— 这比报错更友好，值得钉住。
+  const san = read('../../server/src/utils/sanitize.js');
+  ok('cleanLine 按 maxLen 截断', /function cleanLine\(input, maxLen/.test(san) && /\.slice\(0, maxLen\)/.test(san));
+  // validHexColor 定义在 admin.js 内部，不在 sanitize.js
+  ok('有颜色白名单校验 validHexColor', /function validHexColor/.test(read('../../server/src/routes/admin.js')));
+
+  const adm = read('../../server/src/routes/admin.js');
+  ok('分类名截断到 50', /cleanLine\(name, 50\)/.test(adm));
+  ok('描述截断到 255', /cleanLine\(description, 255\)/.test(adm));
+  ok('文章标题截断到 200', /cleanLine\(title, 200\)/.test(adm));
+  ok('正文有长度上限', /cleanMarkdown\(content, 100000\)/.test(adm));
+  ok('状态走白名单，不接受任意值', /\['draft', 'published'\]\.includes\(status\)/.test(adm));
+  ok('评论状态走白名单', /\['pending', 'approved', 'rejected'\]\.includes\(status\)/.test(adm));
+}
+
 console.log('\n【更新接口必须和创建接口一样拦住空名称】');
 {
   // 实测缺陷：PUT /categories/:id 传 {name:''} 时，
