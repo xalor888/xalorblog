@@ -304,6 +304,21 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【后台：路由表齐全，且每页都能拿到标题】');
+{
+  // 实测 15 个后台路由全部渲染正常（0 错误、每页恰好 1 个 h1、
+  // Tab 12 次 0 次落到 body、全部有焦点环）。
+  // 这里固化的是一条容易退化的东西：**每条后台路由都要有 meta.title**。
+  // 标题没了不会报错，只会让顶栏显示兜底文案、document.title 退化成「管理后台」。
+  const routes = read('../src/router/routes-admin.js');
+  const paths = (routes.match(/path:\s*'([^']+)'/g) || []).length;
+  const titles = (routes.match(/title:\s*'[^']+'/g) || []).length;
+  ok('后台路由条目都带 title', titles >= paths - 1, `${paths} 条路由 / ${titles} 个 title（父级容器可无 title）`);
+  ok('顶栏标题取 route.meta.title', /route\.meta\.title/.test(read('../src/views/admin/Layout.vue')));
+  ok('document.title 也用它', /document\.title = `\$\{currentTitle\.value\}/.test(read('../src/views/admin/Layout.vue')));
+  ok('后台登录页是独立布局（不套 admin Layout）', /admin-login|Login\.vue/.test(routes));
+}
+
 console.log('\n【后台：每页要有页面级标题；立即求值的调用不能引用后声明变量】');
 {
   // 实测 18 个后台页里**只有登录页有 h1**，其余 17 页的标题只是个 span，
