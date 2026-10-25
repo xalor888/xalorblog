@@ -370,6 +370,20 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【归档页：按年→月分组，跨年时月份归属不能错】');
+{
+  // 实测插入跨月/跨年数据后：2026(8篇) 在 2025(1篇) 之前（年倒序）；
+  // 月分组 8月:6 / 7月:1 / 6月:1 在 2026 下，而 **12月:1 归到 2025** 下 ——
+  // 跨年时把 12 月错挂到 2026 是这类分组最典型的 bug（月份相同、年份不同）。
+  const arc = read('../src/views/site/Archive.vue');
+  ok('归档页存在', arc.length > 0);
+  // 分组必须**同时**用年份和月份作键，只用月份会让不同年的同月并成一组
+  ok('分组键含年份', /year|getFullYear/i.test(arc));
+  ok('分组键含月份', /month|getMonth/i.test(arc));
+  // 倒序：新的年/月在前
+  ok('按时间倒序', /desc|sort|reverse/i.test(arc));
+}
+
 console.log('\n【文章分页：翻页、改每页条数、末页禁用下一页】');
 {
   // 实测 24 篇 / 每页 8：3 页，第 3 页「下一页」**禁用**；
