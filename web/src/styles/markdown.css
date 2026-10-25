@@ -214,7 +214,15 @@
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 5px;
   padding: 2px 10px;
-  transition: all var(--dur) var(--ease);
+  /* 文案在「复制 / 已复制 ✓ / 复制失败」之间切换，长度不一。
+     不锁宽的话代码块头部会随点击横向抖动 —— 实测三个状态的宽度分别是
+     62 / 72 / 69px（5.2 / 6.06 / 5.86em），所以锁到 6.2em
+     （最长那条「已复制 ✓」的 6.06em 再加一点余量），文字居中。 */
+  min-width: 6.2em;
+  text-align: center;
+  /* 只过渡这里真正会变的属性：文案是瞬时切换，不该被 transition 拖成渐显 */
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
   cursor: pointer;
 }
 
@@ -227,6 +235,19 @@
 .code-copy.copied {
   color: #a8d485;
   border-color: rgba(168, 212, 133, 0.5);
+}
+
+/* 复制失败：用冷色而不是绿色 —— 成败靠颜色区分，别让失败看起来像成功 */
+.code-copy.copy-failed {
+  color: #f4878b;
+  border-color: rgba(244, 135, 139, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 复制反馈只有颜色变化，无需过渡；这里把 transition 也收掉 */
+  .code-copy {
+    transition: none;
+  }
 }
 
 /* 移动端：复制按钮触控目标放大（≥ 32px，防误触与难点） */

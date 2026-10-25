@@ -20,6 +20,9 @@ const { getConfig, saveConfig, isValidIpOrCidr } = require('../utils/securitySet
 const { RULE_INDEX, scanText, scanAll } = require('../middleware/waf');
 const { saveSettings, getAllSettings, ALLOWED_KEYS } = require('../utils/settings');
 const { parseImages, serializeImages, buildExcerpt, noteSummary } = require('../utils/notes');
+// 阅读统计缓存失效：任何「文章内容 / 发布状态变了」的写操作之后都要调用，
+// 否则主页与侧栏的字数、阅读时长最多陈旧 60 秒（cacheInvalidation.test.js 锁死全部路径）。
+const { invalidateReadingCache } = require('./stats');
 
 const router = express.Router();
 
@@ -223,6 +226,7 @@ router.post('/articles', async (req, res) => {
       await trx.rollback();
       throw e;
     }
+    invalidateReadingCache();
     return ok(res, { id }, '文章创建成功');
   } catch (e) {
     // 并发创建同标题/同 slug 时的唯一约束冲突：给出明确提示而非笼统 500
@@ -309,6 +313,7 @@ router.put('/articles/:id', async (req, res) => {
       await trx.rollback();
       throw e;
     }
+    invalidateReadingCache();
     return ok(res, null, '文章更新成功');
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
@@ -356,6 +361,7 @@ router.post('/articles/:id/duplicate', async (req, res) => {
       }
       return aid;
     });
+    invalidateReadingCache();
     return ok(res, { id: newId }, '已复制为新草稿');
   } catch (e) {
     return fail(res, '复制失败', 500);
@@ -372,6 +378,7 @@ router.delete('/articles/:id', async (req, res) => {  try {
       await trx('comments').where('article_id', id).del();
       await trx('articles').where('id', id).del();
     });
+    invalidateReadingCache();
     return ok(res, null, '文章已删除');
   } catch (e) {
     return fail(res, '删除文章失败', 500);
@@ -391,6 +398,7 @@ router.post('/articles/batch-delete', async (req, res) => {
       await trx('comments').whereIn('article_id', safeIds).del();
       await trx('articles').whereIn('id', safeIds).del();
     });
+    invalidateReadingCache();
     return ok(res, { deleted: safeIds.length }, `已删除 ${safeIds.length} 篇文章`);
   } catch (e) {
     return fail(res, '批量删除失败', 500);
@@ -424,6 +432,7 @@ router.post('/articles/batch-update', async (req, res) => {
         await trx.rollback();
         throw e;
       }
+      invalidateReadingCache();
       return ok(res, { affected: safeIds.length }, `已发布 ${safeIds.length} 篇文章`);
     }
     else if (action === 'draft') patch.status = 'draft';
@@ -461,6 +470,7 @@ router.post('/articles/batch-update', async (req, res) => {
     else return fail(res, '未知操作');
     patch.updated_at = db.fn.now();
     await db('articles').whereIn('id', safeIds).update(patch);
+    invalidateReadingCache();
     return ok(res, { affected: safeIds.length }, `已更新 ${safeIds.length} 篇文章`);
   } catch (e) {
     return fail(res, '批量操作失败', 500);
@@ -562,6 +572,7 @@ router.post('/articles/admin/import', async (req, res) => {
         imported += 1;
       }
     });
+    invalidateReadingCache();
     return ok(res, { imported, skipped }, `导入完成：新增 ${imported} 篇，跳过 ${skipped} 篇`);
   } catch (e) {
     return fail(res, '导入失败', 500);

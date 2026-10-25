@@ -455,7 +455,10 @@ const copyrightText = computed(() => String(site.settings.copyright_text || '').
 function onContentClick(e) {
   const img = e.target.closest('img');
   if (img && img.closest('.markdown-body')) {
-    lightboxRef.value?.open(img.src, img.alt);
+    // alt 优先；缺 alt 时用 addImgAttrs 兜底的 aria-label（文件名），
+    // 让灯箱底部也有名字可念，而不是一片空白
+    const caption = img.alt || img.getAttribute('aria-label') || '';
+    lightboxRef.value?.open(img.src, caption);
   }
 }
 
@@ -865,6 +868,36 @@ function onScroll() {
  */
 let tocObserver = null;
 
+/**
+ * 把当前高亮项滚进目录自身的可视区。
+ *
+ * 为什么不能省：`.toc-list` 有 `max-height` + `overflow-y: auto`，长文时目录是
+ * 一个独立滚动区。正文往下读，高亮项会一路走出这个小区间，读者就再也看不到
+ * 「我现在在哪一节」—— 目录的全部价值就是这条跟随高亮。
+ *
+ * 用 `block: 'nearest'` 而不是 'center'：'nearest' 在元素已可见时**什么都不做**，
+ * 不会因为每次高亮变化都把目录「吸」到中间来回晃。
+ *
+ * 为什么不传 `behavior: 'smooth'`：不传时按 CSS `scroll-behavior` 解析，而
+ * `.toc-list` 上并没有设它（该属性不继承，`main.css` 里那条 smooth 在 `html` 上），
+ * 所以这里是**瞬时**滚动。正文本来就在滚，目录再叠一段动画等于双重运动，
+ * 读者会觉得目录在追着跑 —— 跟随动作越不显眼越好。
+ * `prefers-reduced-motion` 下 `main.css` 另有 `scroll-behavior: auto !important` 兜底。
+ */
+let tocScrollTick = null;
+function revealActiveTocItem() {
+  if (tocScrollTick) return; // 同一帧内多次高亮变化只跟随一次
+  tocScrollTick = requestAnimationFrame(() => {
+    tocScrollTick = null;
+    const el = document.querySelector('.toc-list .toc-item.active');
+    if (!el) return;
+    // 折叠状态下 `.toc-list` 不可见，硬滚会把 hidden 容器算成 0 高度、
+    // 造成下次展开时位置错乱，所以直接跳过
+    if (tocCollapsed.value) return;
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+}
+
 function setupTocObserver() {
   tocObserver?.disconnect();
   tocObserver = new IntersectionObserver(
@@ -877,7 +910,11 @@ function setupTocObserver() {
         const rect = v.target.getBoundingClientRect();
         if (!best || rect.top < best.top) best = { id: v.target.id, top: rect.top };
       }
-      if (best) activeHeading.value = best.id;
+      if (best) {
+        const changed = activeHeading.value !== best.id;
+        activeHeading.value = best.id;
+        if (changed) revealActiveTocItem();
+      }
     },
     { rootMargin: '-110px 0px -70% 0px', threshold: 0 }
   );
@@ -1584,6 +1621,9 @@ onUnmounted(() => {
   color: var(--text-2);
   border-left: 2px solid transparent;
   transition: all var(--dur) var(--ease);
+  /* 与 .toc-item 同理：`.td-list` 是 flex column 滚动容器，
+     不锁 shrink 会在标题极多时被压扁（现在靠内容超出才滚动，属侥幸） */
+  flex-shrink: 0;
 }
 
 .td-item.lvl-3 {
@@ -2008,6 +2048,13 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 必须禁止收缩：`.toc-list` 是 flex column + max-height 的滚动容器，
+     而本项的 `overflow: hidden`（单行省略号需要）会让 `min-height: auto`
+     按规范失效归零 —— 于是 flex-shrink 把每一项压到 13.6px，
+     长文（27 个标题）文字被纵向裁掉，且压缩后总高恰好等于容器高，
+     scrollHeight === clientHeight，`overflow-y: auto` 永远不触发、目录根本滚不动。
+     实测：1280×600 视口下 27 项全被压成 13.6px（自然高 34px）。 */
+  flex-shrink: 0;
 }
 
 .toc-item.lvl-3 {

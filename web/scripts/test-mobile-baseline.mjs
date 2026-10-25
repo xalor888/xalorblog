@@ -170,5 +170,57 @@ for (const f of scrollContainers) {
   );
 }
 
+// ---------- 10. 触摸目标：44×44 是下限，且热区不能被祖先裁掉 ----------
+// 实测（390×844 视口逐页扫描）：公告关闭按钮只有 22×22，热榜切换 28×20，
+// 表情按钮 30×30 —— 真机上几乎点不中。
+{
+  const layout = read('src/views/site/Layout.vue');
+  const siteHomeCss = siteHome;
+  const commentSection = read('src/components/site/CommentSection.vue');
+  const messages = read('src/views/site/Messages.vue');
+
+  ok(
+    '公告关闭按钮的可点盒子是 44×44（视觉圆点仍 22px）',
+    /\.ticker-close \{[\s\S]{0,1200}?width:\s*44px[\s\S]{0,200}?height:\s*44px/.test(layout),
+    '原来 22×22，低于 iOS HIG / WCAG 2.5.5 的下限'
+  );
+  ok(
+    '公告关闭按钮的视觉圆点用伪元素单独画（不把 44px 的空盒子画成实心）',
+    /\.ticker-close::before\s*\{[\s\S]{0,300}?width:\s*22px/.test(layout)
+  );
+  // 这条是本次的真实事故：ticker 的 overflow:hidden 把 44px 热区上下各裁 4px，
+  // 且 22px 的间距让热区上沿钻进导航条（z 更高）下面，上半部分永远点不到。
+  ok(
+    '公告条不裁剪子元素（否则热区被 overflow:hidden 切掉）',
+    /\.ticker \{[\s\S]{0,1200}?overflow:\s*visible/.test(layout),
+    'overflow:hidden 会把关闭按钮的 44px 热区裁掉'
+  );
+  ok(
+    '公告条与导航之间留出热区越界的余量（33px，不是 22px）',
+    /top:\s*calc\(var\(--nav-h\)\s*\+\s*33px/.test(layout),
+    '22px 会让 44px 热区的上沿钻进导航条下方'
+  );
+  ok(
+    '容器不再裁剪后，公告文字自己负责省略号',
+    /\.ticker-text \{[\s\S]{0,400}?text-overflow:\s*ellipsis/.test(layout)
+  );
+  ok(
+    '热榜切换按钮加高到可点（vertical padding 8px）',
+    /\.hot-tabs button \{[\s\S]{0,300}?padding:\s*8px/.test(siteHomeCss)
+  );
+  ok(
+    '标签云链接有最小高度 32px',
+    /\.tag-cloud a \{[\s\S]{0,400}?min-height:\s*32px/.test(siteHomeCss)
+  );
+  ok(
+    '评论表情按钮 ≥36px',
+    /\.emoji-toggle \{[\s\S]{0,300}?width:\s*36px/.test(commentSection)
+  );
+  ok(
+    '留言页表情按钮 ≥36px',
+    /\.emoji-toggle \{[\s\S]{0,300}?width:\s*36px/.test(messages)
+  );
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);

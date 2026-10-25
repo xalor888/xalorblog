@@ -128,6 +128,38 @@
               </router-link>
             </div>
 
+            <!-- 阅读统计：只在拿到真实数据时渲染（site.reading 为 null 时整块不出现），
+                 宁可不显示也不要给读者一排「0 字 / 0 分钟」。 -->
+            <div v-if="site.reading && site.reading.total_articles" class="side-card reading-card">
+              <h3>阅读统计</h3>
+              <p class="rc-lead">
+                全站 <b>{{ formatNumber(site.reading.total_words) }}</b> 字，
+                约 <b>{{ site.reading.total_reading_minutes }}</b> 分钟读完
+              </p>
+              <!-- dt 在前 dd 在后：这里要做的是「值大、标签小」，
+                   所以视觉顺序反过来，DOM 顺序保持语义（先标签后值）。 -->
+              <dl class="rc-stats">
+                <div>
+                  <dd>{{ site.reading.total_articles }}</dd>
+                  <dt>篇文章</dt>
+                </div>
+                <div>
+                  <dd>{{ formatNumber(site.reading.avg_words) }}</dd>
+                  <dt>篇均字数</dt>
+                </div>
+              </dl>
+              <router-link
+                v-if="site.reading.longest"
+                :to="`/article/${site.reading.longest.slug}`"
+                class="rc-longest"
+                :title="`最长一篇：${site.reading.longest.title}`"
+              >
+                <XIcon name="ScrollText" :size="13" />
+                <span class="rc-longest-title">{{ site.reading.longest.title }}</span>
+                <span class="rc-longest-words">{{ formatNumber(site.reading.longest.words) }} 字</span>
+              </router-link>
+            </div>
+
             <div v-if="tags.length" class="side-card">
               <h3>标签</h3>
               <div class="tag-cloud">
@@ -693,6 +725,79 @@ onUnmounted(() => {
   -webkit-backdrop-filter: var(--sg-blur-soft);
 }
 
+/* ============ 阅读统计卡 ============
+   内容只有三行信息，用竖排 + 分隔线而不是塞表格：
+   侧栏宽度 280px，表格会挤成一团。 */
+.rc-lead {
+  margin-top: 10px;
+  font-size: 0.84rem;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+
+.rc-lead b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-stats {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.rc-stats > div {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.rc-stats dt {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+
+.rc-stats dd {
+  margin: 2px 0 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-longest {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-size: 0.78rem;
+  color: var(--text-2);
+  min-width: 0;
+}
+
+.rc-longest:hover {
+  color: var(--accent);
+}
+
+.rc-longest-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-longest-words {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
 .side-card h3 {
   font-size: 0.82rem;
   letter-spacing: 0.16em;
@@ -812,10 +917,15 @@ onUnmounted(() => {
 }
 
 .hot-tabs button {
-  padding: 2px 8px;
+  /* 触摸目标：纵向 padding 从 2px 提到 8px，实际高度 20px → 32px。
+     视觉上仍是同一个小胶囊（字号未变），但手指点得中了。
+     窄屏再进一步提到 36px（见下方 640px 断点）。 */
+  padding: 8px 11px;
   border-radius: 999px;
   font-size: 0.72rem;
+  line-height: 1;
   color: var(--text-3);
+  min-width: 32px;
 }
 
 .hot-tabs button.active {
@@ -867,7 +977,11 @@ onUnmounted(() => {
 }
 
 .tag-cloud a {
-  padding: 4px 10px;
+  /* 同上：标签云是最常被点的导航之一，30px 高在手机上手感发飘 */
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 12px;
   border-radius: 999px;
   background: var(--bg-soft);
   font-size: 0.78rem;

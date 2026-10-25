@@ -30,6 +30,17 @@ import {
 
 let pass = 0;
 let fail = 0;
+/** 真值断言（用于「满足条件」而不是「等于某值」的场景） */
+function ok(name, cond, detail) {
+  if (cond) {
+    pass += 1;
+    console.log(`  ✓ ${name}`);
+  } else {
+    fail += 1;
+    console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ''}`);
+  }
+}
+
 function eq(name, got, want) {
   if (Object.is(got, want)) {
     pass += 1;
@@ -168,6 +179,66 @@ console.log('\n【接线：文章页真的用上了这些偏好】');
     /\.rt-btn\.rt-toggle\s*\{\s*display:\s*none/.test(detail), true);
   eq('正文版心不再做 max-width 过渡（每帧重排上万字）',
     /transition:\s*max-width/.test(detail), false);
+}
+
+console.log('\n【代码块复制 / 图片属性 / 目录滚动】');
+{
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, resolve } = await import('node:path');
+  const here = dirname(fileURLToPath(import.meta.url));
+  const md = readFileSync(resolve(here, '../src/utils/markdown.js'), 'utf8');
+  const detail = readFileSync(resolve(here, '../src/views/site/ArticleDetail.vue'), 'utf8');
+  const mdCss = readFileSync(resolve(here, '../src/styles/markdown.css'), 'utf8');
+
+  // --- 代码块复制 ---
+  // 旧实现丢弃了 execCommand 的返回值，并在 catch 里静默 → 非安全上下文点了没反应。
+  eq('复制走 execCommand 时读取真实返回值（不能只看有没有抛异常）',
+    /execCommand\(['"]copy['"]\)/.test(md) && /return\s+\w*(ok|success|result)/i.test(md), true);
+  eq('复制成功与失败都有反馈（不是静默）',
+    /已复制/.test(md) && /复制失败/.test(md), true);
+  eq('复制反馈 1.6s 后复位',
+    /COPY_FEEDBACK_MS\s*=\s*1600/.test(md), true);
+  // innerText 会把缩进塌成单空格，代码块复制最要紧的正是缩进
+  eq('读代码用 textContent 而不是 innerText（保缩进）',
+    /textContent/.test(md) && !/code\.innerText/.test(md), true);
+  eq('连点不会叠定时器（用 WeakMap 按按钮存）',
+    /copyTimers\s*=\s*new WeakMap/.test(md), true);
+
+  // --- 图片属性 ---
+  eq('loading 与 decoding 独立补齐（eager 的图也要有 decoding）',
+    /attrs\.loading === undefined/.test(md) && /attrs\.decoding === undefined/.test(md), true);
+  // 语义修正：alt="" 是作者声明的装饰图，不该被 aria-label 覆盖
+  eq('只给「连 alt 属性都没有」的图补 aria-label（alt="" 是装饰图）',
+    /attrs\.alt === undefined/.test(md), true);
+  eq('手写 aria-label / aria-hidden 不被覆盖',
+    /attrs\['aria-label'\] === undefined/.test(md) && /attrs\['aria-hidden'\] === undefined/.test(md), true);
+  eq('灯箱 caption 有 alt 缺失兜底', /aria-label/.test(detail), true);
+
+  // --- 目录 ---
+  // 真实缺陷：.toc-item 的 overflow:hidden 让 flex 子项的 min-height:auto 归零，
+  // 27 项被压成 13.6px，总高恰好等于容器高 → scrollHeight===clientHeight → 永远滚不动
+  eq('目录项不被 flex 压扁（flex-shrink: 0）',
+    /\.toc-item[\s\S]{0,400}?flex-shrink:\s*0/.test(detail), true);
+  eq('手机抽屉目录项同样锁死',
+    /\.td-item[\s\S]{0,400}?flex-shrink:\s*0/.test(detail), true);
+  eq('高亮项会滚入目录视口（block: nearest，不叠动画）',
+    /scrollIntoView\(\{[^}]*block:\s*['"]nearest['"]/.test(detail), true);
+  eq('目录跟随用 rAF 合并同帧多次高亮变化',
+    /requestAnimationFrame/.test(detail), true);
+
+  // --- 样式 ---
+  eq('复制失败态有独立配色（不能长得像成功）',
+    /\.code-copy\.copy-failed/.test(mdCss), true);
+  // 实测：三个状态的文字宽度是 62 / 72 / 69px，5.2em 不够，必须 >=6em，
+  // 且文件里不能有更窄的重复声明把它的效果覆盖掉（dist 里后写的赢）。
+  eq('复制按钮锁宽 >=6em（实测「已复制 ✓」需 6.06em）',
+    /\.code-copy[\s\S]{0,600}?min-width:\s*([6-9]|[1-9]\d)(\.\d+)?em/.test(mdCss), true);
+  {
+    const all = [...mdCss.matchAll(/min-width:\s*([\d.]+)em/g)].map((m) => Number(m[1]));
+    const minEm = all.length ? Math.min(...all) : Infinity;
+    ok('没有更窄的重复 min-width 覆盖它', minEm >= 6, all.length ? `最小 ${minEm}em` : '未声明');
+  }
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

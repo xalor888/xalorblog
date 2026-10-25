@@ -329,6 +329,10 @@ export const hitokotoApi = {
 export const statsApi = {
   record: () => request.post('/stats/record'),
   summary: () => request.get('/stats/summary'),
+  // 整站阅读统计（总字数 / 篇数 / 篇均 / 最长一篇 / 累计时长）。
+  // 走带签名的 request 实例：/stats/reading 不在 gate 的 GATE_SKIP 白名单里，
+  // 裸 fetch 一定 403（与 /stats/summary 完全同级）。
+  reading: () => request.get('/stats/reading'),
   dashboard: (days) => adminGet('/stats/dashboard', days ? { days } : {}),
 };
 

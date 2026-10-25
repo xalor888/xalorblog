@@ -337,6 +337,44 @@ summary {
   touch-action: manipulation;
 }
 
+/* ============================================================
+   触摸目标下限
+   ============================================================
+   实测逐页扫描（390×844）：排序按钮 31px、阅读工具栏 30px、热榜切换 28px、
+   分类 chip 27px —— 都低于 44×44 的通行下限（iOS HIG / WCAG 2.5.5）。
+   逐个组件改容易漏，这里给「小号控件」一个统一下限：
+   桌面 32px（不破坏已有的紧凑排版），触摸设备 40px。
+   已经更大的控件（hero 按钮 44、dock-btn 40）不受影响。 */
+.sort-btn,
+.view-btn,
+.chip,
+.rt-btn,
+.hot-tabs button,
+.head-cat,
+.d-tag,
+.mobile-action,
+.ticker-close,
+.emoji-toggle,
+.search-btn,
+.cc-btn {
+  min-height: 32px;
+}
+
+@media (pointer: coarse) {
+  .sort-btn,
+  .view-btn,
+  .chip,
+  .rt-btn,
+  .hot-tabs button,
+  .head-cat,
+  .d-tag,
+  .mobile-action,
+  .search-btn,
+  .cc-btn {
+    min-height: 40px;
+  }
+}
+
 /* 控件文字不该被长按选中（内容文字必须保持可选——绝不能加到 body 上）。
    -webkit-touch-callout 同时压掉 iOS 长按弹出的「拷贝/共享」气泡。 */
 button,

@@ -475,8 +475,10 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  /* 30px → 36px：表情按钮紧挨着输入框，点偏了会直接聚焦到输入框，
+     手感上像「按钮没反应」。36px 是既能点中又不挤占表单行的折中。 */
+  width: 36px;
+  height: 36px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: transparent;

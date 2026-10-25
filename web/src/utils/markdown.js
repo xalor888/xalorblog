@@ -70,7 +70,7 @@ renderer.code = ({ text, lang: langInfo }) => {
       <span class="code-dots"><i></i><i></i><i></i></span>
       <span class="code-lang">${escapeHtml(lang)}</span>
     </span>
-    <button type="button" class="code-copy" data-copy>复制</button>
+    <button type="button" class="code-copy" data-copy aria-live="polite">复制</button>
   </div>
   <pre><code class="hljs language-${escapeHtml(lang)}">${body}</code></pre>
 </div>`;
@@ -161,9 +161,172 @@ export function addHeadingIds(html) {
   });
 }
 
-/** 给渲染后的 HTML 中的图片添加懒加载与解码提示（长文性能） */
+/**
+ * 从图片 URL 推一个可朗读的名字（缺 alt 时的兜底）。
+ * `/uploads/2026/knex-join-diagram.png` → `knex join diagram`
+ *
+ * 为什么要有：缺 alt 的 <img> 在读屏里会念整条 URL（或者只念「图像」），
+ * 读者听到一长串路径等于没有信息。文件名至少能说清「这是什么图」。
+ */
+function imgNameFromSrc(src) {
+  let path = String(src || '').split(/[?#]/)[0];
+  try {
+    path = decodeURIComponent(path);
+  } catch (e) {
+    /* 非法百分号编码：按原样用 */
+  }
+  const base = path.split('/').pop() || '';
+  const stem = base.replace(/\.[a-z0-9]{1,5}$/i, '');
+  const label = stem.replace(/[-_+.]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return label || '文章图片';
+}
+
+/** 解析一个 <img> 标签上的属性（只做存在性判断与取值，不重建其它属性） */
+function parseImgAttrs(tag) {
+  const attrs = {};
+  const re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+  // 跳过标签名本身
+  const body = tag.replace(/^<img\b/i, '');
+  let m;
+  while ((m = re.exec(body))) {
+    const name = m[1].toLowerCase();
+    const raw = m[3] === undefined ? '' : (m[4] ?? m[5] ?? m[6] ?? '');
+    attrs[name] = raw;
+  }
+  return attrs;
+}
+
+/**
+ * 给渲染后的 HTML 中的图片统一补属性。
+ *
+ * 1. **可访问性：只补「属性完全缺失」的图，不覆盖空 alt。**
+ *    语义上 `alt=""` 是作者明确声明「这是装饰图，读屏请跳过」，而属性缺失
+ *    （`<img>` 上根本没有 alt）是「忘了写」。这两者的正确补救方式不同：
+ *    给装饰图强塞 aria-label，会让读屏念出一串文件名，比沉默更糟。
+ *    所以判定条件收窄到「连 alt 属性都不存在」才补 aria-label：
+ *      - `![](x.png)`（marked 渲染为 alt=""）→ 尊重作者，不补
+ *      - 手写 `<img src=...>` 无 alt → 补 role/aria-label（文件名兜底）
+ *      - 已有 aria-label / aria-hidden → 一律不碰
+ *    （早先版本把空 alt 也当「未描述」补了标签；考虑到本站内容里
+ *      装饰性配图是常见用法，收窄到属性缺失更安全。全站实际图片数为 0，
+ *      所以这条改动的风险面本来就很小。）
+ * 2. **一致性**：`loading` / `decoding` 必须各自独立补齐。旧实现只在缺 loading 时
+ *    整段注入，于是作者写了 `loading="eager"` 的图会**漏掉 decoding**，
+ *    同一篇文章里图片解码策略不一致 —— 长文滚动时个别图会同步解码卡住主线程。
+ */
 export function addImgAttrs(html) {
-  return html.replace(/<img\b(?![^>]*\bloading=)/g, '<img loading="lazy" decoding="async" ');
+  return String(html).replace(/<img\b[^>]*>/gi, (tag) => {
+    const attrs = parseImgAttrs(tag);
+    const extra = [];
+
+    if (attrs.loading === undefined) extra.push('loading="lazy"');
+    if (attrs.decoding === undefined) extra.push('decoding="async"');
+
+    // 已有的 aria-label（作者手写）优先，不覆盖
+    // 只对「连 alt 属性都没有」的图补标签：alt="" 是作者声明的装饰图，
+    // 给它加 aria-label 等于把装饰图变成读屏噪音（见上方注释）。
+    const needsLabel =
+      attrs['aria-label'] === undefined &&
+      attrs['aria-hidden'] === undefined &&
+      attrs.alt === undefined;
+    if (needsLabel) {
+      const label = imgNameFromSrc(attrs.src || '').replace(/"/g, '&quot;');
+      if (attrs.role === undefined) extra.push('role="img"');
+      extra.push(`aria-label="${label}"`);
+    }
+
+    if (!extra.length) return tag;
+    return tag.replace(/^<img\b/i, `<img ${extra.join(' ')}`);
+  });
+}
+
+/** 复制按钮的反馈时长（任务口径 1.6s，足够读完两个字又不至于一直挂着旧状态） */
+const COPY_FEEDBACK_MS = 1600;
+/** 每个按钮各自的复位定时器：连点时后一次覆盖前一次，不会留下永不归位的「已复制」 */
+const copyTimers = new WeakMap();
+
+/**
+ * 把文本写进剪贴板，返回**真实结果**。
+ *
+ * 两条路径都必须把结论交回来：
+ * 1. `navigator.clipboard.writeText` —— 只在安全上下文（https / localhost）且用户
+ *    授权时可用；局域网 IP 上打开、或权限被拒时会 reject。
+ * 2. `document.execCommand('copy')` —— 老浏览器与非安全上下文的兜底，它**返回布尔值**
+ *    且失败时可能不抛异常（只是返回 false），所以必须读返回值，不能只看有没有异常。
+ */
+async function copyToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      // 落到下面的兜底路径
+    }
+  }
+  return legacyCopy(text);
+}
+
+/** execCommand 兜底：返回它真实给出的成功与否 */
+function legacyCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  // 固定在视口内但不可见：display:none / visibility:hidden 会让 select() 失效
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.top = '0';
+  ta.style.left = '0';
+  ta.style.width = '1px';
+  ta.style.height = '1px';
+  ta.style.padding = '0';
+  ta.style.border = 'none';
+  ta.style.opacity = '0';
+  ta.style.pointerEvents = 'none';
+  document.body.appendChild(ta);
+  const prevFocus = document.activeElement;
+  let ok = false;
+  try {
+    ta.select();
+    // iOS Safari 只认 range 选中，仅 select() 会复制出空串
+    ta.setSelectionRange(0, ta.value.length);
+    ok = document.execCommand('copy') === true;
+  } catch (e) {
+    ok = false;
+  } finally {
+    ta.remove();
+    // 把焦点还给原来的元素（按钮），否则键盘用户会掉回 body
+    if (prevFocus && typeof prevFocus.focus === 'function') {
+      try {
+        prevFocus.focus({ preventScroll: true });
+      } catch (e) {
+        /* 老浏览器不认 options 参数 */
+      }
+    }
+  }
+  return ok;
+}
+
+/** 按钮回到「复制」状态（复位文案与状态标记） */
+function resetCopyButton(btn) {
+  btn.textContent = '复制';
+  btn.classList.remove('copied', 'copy-failed');
+}
+
+/**
+ * 给一个复制按钮播放结果反馈：成功显示「已复制」，失败显示「复制失败」。
+ * 两种结果都必须在 1.6s 后复位 —— 失败状态挂着不消失同样会让读者以为按钮坏了。
+ */
+function showCopyResult(btn, ok) {
+  clearTimeout(copyTimers.get(btn));
+  btn.textContent = ok ? '已复制 ✓' : '复制失败';
+  btn.classList.toggle('copied', ok);
+  btn.classList.toggle('copy-failed', !ok);
+  copyTimers.set(
+    btn,
+    setTimeout(() => {
+      copyTimers.delete(btn);
+      resetCopyButton(btn);
+    }, COPY_FEEDBACK_MS)
+  );
 }
 
 /**
@@ -171,42 +334,25 @@ export function addImgAttrs(html) {
  * - 代码块复制按钮
  */
 export function initMarkdownInteractions() {
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-copy]');
-    if (!btn) return;
+  document.addEventListener('click', async (e) => {
+    // 委托在 document 上，target 理论上永远是元素；但合成事件/文档级点击可能是
+    // 非元素节点，`.closest` 不存在会抛错 —— 一个复制按钮的边界不该打断整页脚本
+    const el = e.target;
+    if (!el || typeof el.closest !== 'function') return;
+    const btn = el.closest('[data-copy]');
+    if (!btn || btn.dataset.copying === '1') return; // 连点不加倍复制，也不叠定时器
     const block = btn.closest('.code-block');
     const code = block?.querySelector('pre code');
     if (!code) return;
-    const text = code.innerText;
-    const done = () => {
-      btn.classList.add('copied');
-      const original = btn.textContent;
-      btn.textContent = '已复制 ✓';
-      setTimeout(() => {
-        btn.classList.remove('copied');
-        btn.textContent = original;
-      }, 1600);
-    };
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
-    } else {
-      fallbackCopy(text, done);
+    // 必须取代码文本的原始内容：innerText 会受白空格折叠影响（缩进全变单空格）
+    const text = code.textContent ?? '';
+    if (!text) return;
+
+    btn.dataset.copying = '1';
+    try {
+      showCopyResult(btn, await copyToClipboard(text));
+    } finally {
+      btn.dataset.copying = '0';
     }
   });
-}
-
-function fallbackCopy(text, done) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  try {
-    document.execCommand('copy');
-    done();
-  } catch (e) {
-    /* 忽略 */
-  }
-  document.body.removeChild(ta);
 }

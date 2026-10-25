@@ -808,15 +808,23 @@ onUnmounted(() => {
   box-shadow: var(--sg-shadow), var(--sg-inner);
   backdrop-filter: var(--sg-blur-soft);
   -webkit-backdrop-filter: var(--sg-blur-soft);
-  overflow: hidden;
+  /* 不能用 overflow: hidden：它会把关闭按钮 44×44 的热区上下各裁掉 4px，
+     实测圆环在 18px 处就点不中了。文字溢出的收口交给 .ticker-text 的
+     省略号（见下），这里放开裁剪。 */
+  overflow: visible;
 }
 
 /* 浮在首页头图上：换深色玻璃，白字才压得住，头图也能透进玻璃里 */
 .ticker.overlay {
   position: fixed;
-  /* 12px 导航上边距 + 10px 间隔 + 状态栏避让（导航本身也下移了 --sat，
-     公告条必须跟着走，否则刘海屏上会被导航条压住） */
-  top: calc(var(--nav-h) + 22px + var(--sat));
+  /* 12px 导航上边距 + 导航高度 + 10px 间隔 + 状态栏避让。
+     这里必须多让出 11px，而不是刚好贴着导航下沿：
+     关闭按钮是 44×44 的热区、以 22px 圆点为中心，所以盒子会向上越界 11px。
+     实测原来的 22px 间隔（+ 状态栏）只留出 4px 余量，按钮热区的上沿
+     正好钻进导航条（z-index 100 > 公告条 99）下方，被导航吃掉 ——
+     表现为「公告右上角那个 × 的上半部分点不到」。
+     加 11px 让热区完整落在导航下方，视觉间距也仍然克制。 */
+  top: calc(var(--nav-h) + 33px + var(--sat));
   left: 50%;
   transform: translateX(-50%);
   margin: 0;
@@ -844,7 +852,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 8px 6px 10px;
+  /* 右侧留 0：关闭按钮自带 44×44 的盒子（视觉圆点 22px），
+     padding 会把它的热区再往里挤，导致上下被 ticker 的 overflow:hidden 裁掉。
+     负 margin 已经让盒子「越界」，这里只需把文字的右侧收口。 */
+  padding: 6px 0 6px 10px;
 }
 
 /* 左侧「公告」标签：品牌色玻璃小胶囊，让这条通知一眼可辨 */
@@ -880,7 +891,9 @@ onUnmounted(() => {
 }
 
 .ticker-text {
-  min-width: 0; /* 配合 overflow 才能在本胶囊宽度内走省略号 */
+  /* 容器不再 overflow:hidden，省略号必须由文本自己负责
+     （min-width:0 是 flex 子项能收缩的前提，否则永远不换行也不省略） */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -888,20 +901,42 @@ onUnmounted(() => {
 
 .ticker-close {
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  /* 可点区域 44×44（iOS HIG / WCAG 2.5.5 的触摸下限），视觉圆点只有 22px。
+     为什么用「盒子撑大 + 伪元素画点」而不是给伪元素铺一层透明热区：
+     命中的是元素的盒子，透明伪元素不参与命中测试 —— 实测那样点下去
+     仍然是 22×22 的区域，在真机上几乎点不中（这是本次扫出来的问题）。
+     负 margin 抵消多出来的空间，公告条的行高不变。 */
+  width: 44px;
+  height: 44px;
+  margin: -11px -11px -11px 0;
   border-radius: 50%;
+  background: none;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-3);
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease), transform var(--dur) var(--ease);
+  position: relative;
+  transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+/* 视觉圆点：22px 居中，hover 高亮只画在它上面（不糊满 44px） */
+.ticker-close::before {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: transparent;
+  transition: background var(--dur) var(--ease);
 }
 
 .ticker-close:hover {
   color: #fff;
-  background: var(--accent);
   transform: rotate(90deg);
+}
+
+.ticker-close:hover::before {
+  background: var(--accent);
 }
 
 .ticker.overlay .ticker-close {
@@ -910,6 +945,9 @@ onUnmounted(() => {
 
 .ticker.overlay .ticker-close:hover {
   color: #fff;
+}
+
+.ticker.overlay .ticker-close:hover::before {
   background: rgba(255, 255, 255, 0.22);
 }
 
