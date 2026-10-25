@@ -1767,7 +1767,11 @@ select:focus-visible,
    ============================================================ */
 @media (max-width: 860px) {
   .container {
-    padding: 0 16px;
+    /* 用 max() 与左右安全区取较大值：
+       16px 的固定留白在竖屏够用，但**横屏时刘海跑到左侧（宽约 24~30px）**，
+       16px 挡不住，内容会被切进去。
+       max() 让竖屏维持原来的 16px（安全区为 0），横屏自动加宽到刘海之外。 */
+    padding: 0 max(16px, var(--sal)) 0 max(16px, var(--sar));
   }
   .page-head {
     padding: 44px 0 24px;

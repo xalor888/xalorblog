@@ -370,6 +370,36 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【安全区：--sal 定义了却零引用，横屏刘海在左时内容会被切】');
+{
+  // :root 里四个安全区变量都定义了：--sat / --sar / --sab / --sal。
+  // 实测使用次数：sat 6、sar 3、sab 4、**sal 0** ——
+  // 定义了没人用等于没定义，而横屏时刘海正好跑在左边。
+  //
+  // 两处补齐：
+  //   1) ArticleDetail 的抽屉 padding 原先只给了 上/右/下 三个值，
+  //      **左侧用的是初始值 0**；现在四值齐全。
+  //   2) 移动端 .container 是固定 `0 16px`，比刘海（约 24~30px）还窄；
+  //      改成 max(16px, var(--sal/sar))：竖屏保持 16px，横屏自动加宽。
+  // 验证方式：模拟器里 env() 恒为 0，所以我手动把 --sal/--sar 设成 30px，
+  // 实测 .container 的 padding 变成 `0px 30px` —— 证明 max() 分支真的会走。
+  const css = read('../src/styles/main.css');
+  ok('四个安全区变量都已定义', /--sat:[\s\S]{0,160}--sal:/.test(css));
+  // 移动端容器必须考虑左右安全区
+  const mob = (css.match(/@media \(max-width: 860px\)[\s\S]{0,320}/) || [''])[0];
+  ok('移动端 container 用 max() 兜住安全区', /max\(16px, var\(--sal\)\)/.test(mob), mob.slice(0, 90));
+  ok('右侧同理', /max\(16px, var\(--sar\)\)/.test(mob));
+
+  const ad = read('../src/views/site/ArticleDetail.vue');
+  // 四值 padding：左边不能省
+  ok('抽屉 padding 四值齐全', /calc\(20px \+ var\(--sat\)\)[^;]*var\(--sal\)/.test(ad),
+     (ad.match(/padding: calc\(20px[^;]*/) || [''])[0].slice(0, 70));
+
+  // --sal 现在必须至少被引用一次
+  const salUses = (css + ad).match(/var\(--sal\)/g) || [];
+  ok('--sal 已被真正使用', salUses.length >= 2, `只被引用 ${salUses.length} 次`);
+}
+
 console.log('\n【script-order 检查器：export const 的 TDZ 也必须抓到】');
 {
   // 缺陷（我实测出来的）：检查器只认行首的 const|let|var，

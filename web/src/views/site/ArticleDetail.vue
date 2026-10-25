@@ -1885,7 +1885,11 @@ onUnmounted(() => {
   flex-direction: column;
   /* 顶部让开刘海/灵动岛，底部让开 Home 指示条：抽屉是贴边全高的，
      不加这两项会把标题压在状态栏里、最后一项压在手势条下 */
-  padding: calc(20px + var(--sat)) calc(18px + var(--sar)) calc(20px + var(--sab));
+  /* 四个方向都要让：原先只给了 上/右/下 三个值，**左侧用的是初始值** ——
+     横屏时刘海在左边，抽屉左侧内容会被切掉。
+     --sal 在 :root 里一直是定义好的，但全项目 `var(--sal)` 的使用次数是 0：
+     定义了却没人用，等于没定义。 */
+  padding: calc(20px + var(--sat)) calc(18px + var(--sar)) calc(20px + var(--sab)) calc(18px + var(--sal));
   box-shadow: var(--lg-inner), var(--lg-shadow);
   backdrop-filter: var(--lg-blur);
   -webkit-backdrop-filter: var(--lg-blur);
