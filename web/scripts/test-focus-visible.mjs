@@ -353,6 +353,31 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【robots.txt 不能挡住 sitemap 里的 URL】');
+{
+  const feed = read('../../server/src/routes/feed.js');
+  // 实测：新增 /api/share-page 后，robots 仍只 Allow /api/share/，
+  // 而 sitemap 现在指向 /api/share-page —— 两边不一致，爬虫拿不到。
+  // 现在两条 robots（博客域/主页域）都显式放行它。
+  const allowCount = (feed.match(/Allow: \$\{apiPrefix\}\/share-page/g) || []).length;
+  ok('两个域的 robots 都放行 /share-page', allowCount === 2, `实际 ${allowCount} 处`);
+
+  // Disallow: /#/ 是无效规则：fragment 不进请求行，永远匹配不到
+  ok(
+    '没有无效的 `Disallow: /#/` 规则',
+    !/^Disallow: \/#\/$/m.test(feed),
+    '爬虫只发 path，fragment 从不发送 → 这条规则匹配不到任何请求'
+  );
+  ok(
+    '删除处留了说明（防止有人加回来）',
+    /不要加 `Disallow: \/#\/`/.test(feed)
+  );
+
+  // 博客域仍需保留 rss/sitemap 放行
+  ok('robots 仍放行 rss.xml 与 sitemap.xml',
+     /Allow: \$\{apiPrefix\}\/rss\.xml/.test(feed) && /Allow: \$\{apiPrefix\}\/sitemap\.xml/.test(feed));
+}
+
 console.log('\n【RSS 的频道信息与正文语义】');
 {
   const feed = read('../../server/src/routes/feed.js');

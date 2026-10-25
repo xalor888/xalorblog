@@ -208,21 +208,25 @@ Disallow: /uploads/
 # 放行：订阅源、站点地图与首屏摘要（真实内容，利于收录与社交预览）
 Allow: ${apiPrefix}/rss.xml
 Allow: ${apiPrefix}/sitemap.xml
+Allow: ${apiPrefix}/share-page
 Allow: ${apiPrefix}/home/summary
 
 Sitemap: ${siteUrl}${apiPrefix}/sitemap.xml
 `;
   }
+  // 注：不要加 `Disallow: /#/`。那条规则写在这里**匹配不到任何真实请求** ——
+  // 爬虫发请求时 fragment（`#` 之后）不会出现在请求行里，/#/articles 对它就是 `/`。
+  // 曾经有过这一行，是无效规则；删掉是因为它让人误以为 hash 路由已被处理。
   return `# Xalor的小站 robots.txt
 User-agent: *
 Disallow: ${apiPrefix}/
 Disallow: /uploads/
-Disallow: /#/
 
 # 放行：RSS / Sitemap / 分享页（真实 HTML，利于收录与社交预览）
 Allow: ${apiPrefix}/rss.xml
 Allow: ${apiPrefix}/sitemap.xml
 Allow: ${apiPrefix}/share/
+Allow: ${apiPrefix}/share-page
 
 Sitemap: ${siteUrl}${apiPrefix}/sitemap.xml
 `;
