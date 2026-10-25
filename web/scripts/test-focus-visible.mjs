@@ -370,14 +370,36 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【高亮只有一份实现：两处共用，不再各自分叉】');
+{
+  // 第 125 轮修了搜索弹层的顺序问题，第 126 轮发现 ArticleList.vue 里有**逐字相同的第二份**，
+  // 带着同一个缺陷（搜 `A & B` 命中却不亮）。现在两处都走 @/utils/highlight。
+  // 实测：列表页 ?keyword=A & B → 1 篇、1 处 mark；弹层 → 1 条、1 处 mark。
+  const util = read('../src/utils/highlight.js');
+  ok('共用高亮工具存在', util.length > 0);
+  ok('导出 highlightKeyword', /export function highlightKeyword/.test(util));
+  ok('导出 escHtml', /export function escHtml/.test(util));
+
+  for (const [name, p] of [['列表页', '../src/views/site/ArticleList.vue'],
+                            ['搜索弹层', '../src/components/ui/SearchModal.vue']]) {
+    const src = read(p);
+    ok(`${name}从共用工具导入`, /from '@\/utils\/highlight'/.test(src), p);
+    ok(`${name}调用 highlightKeyword`, /highlightKeyword\(/.test(src), p);
+    // 不能再留一份自己的转义+替换实现（那正是分叉的起点）
+    const dup = /replace\(\/&\.\/g, '&amp;'\)[\s\S]{0,120}new RegExp/.test(src);
+    ok(`${name}没有重复实现`, !dup, dup ? '仍存在本地实现' : '');
+  }
+}
+
 console.log('\n【搜索高亮：先匹配再转义，且不能因此放过 XSS】');
 {
   // 实测缺陷：标题 `__probe A & B 对比测试`，搜 `A & B` **能搜到但 0 处高亮**。
   // 原因是「整串先转义、再拿关键词去匹配转义后的串」——
   // 标题里的 & 已变成 &amp;，关键词里的 & 就匹配不上了。
   // 修法是 **在原文上匹配、只对命中的片段转义**（用 split 保留分隔符）。
-  const sm = read('../src/components/ui/SearchModal.vue');
-  const fn = (sm.match(/function highlight[\s\S]{0,900}/) || [''])[0];
+  // 实现已移到共用工具里（第 126 轮），所以读 highlight.js 而不是 SearchModal
+  const sm = read('../src/utils/highlight.js');
+  const fn = (sm.match(/export function highlightKeyword[\s\S]{0,900}/) || [''])[0];
   ok('高亮函数存在', !!fn);
   // split(re) 是关键：奇数位即命中片段
   ok('用 split 保留分隔符（先匹配）', /raw\.split\(re\)|\.split\(re\)/.test(fn), fn.slice(0, 50));
@@ -387,7 +409,7 @@ console.log('\n【搜索高亮：先匹配再转义，且不能因此放过 XSS�
   ok('转义正则元字符', /\[\.\*\+\?\^\(\)\|\[\]\\\]/.test(fn) || /replace\(\/\[\.\*/.test(fn), 
      (fn.match(/const pattern = [^\n]*/) || [''])[0].slice(0, 60));
   // escHtml 必须覆盖五个字符
-  ok('escHtml 覆盖 & < > " \'', /'&'/.test(sm) && /'<'/.test(sm) && /'&quot;'|'"/.test(sm));
+  ok('escHtml 覆盖 & < > " \'', /'&':/.test(sm) && /'<':/.test(sm) && /&quot;/.test(sm));
 }
 
 console.log('\n【搜索弹层的键盘导航：↑↓ 移动、Enter 跳转、边界不越界】');

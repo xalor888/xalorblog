@@ -294,6 +294,7 @@ import { useRoute, useRouter } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import SkeletonList from '@/components/ui/SkeletonList.vue';
 import { applyPageMeta } from '@/utils/pageMeta';
+import { highlightKeyword } from '@/utils/highlight';
 import { articleApi, categoryApi, tagApi } from '@/api';
 import { formatDate, formatNumber } from '@/utils/format';
 import { useSiteStore } from '@/stores/site';
@@ -568,15 +569,13 @@ async function randomArticle() {
   }
 }
 
-/** 搜索关键词高亮（已由后端返回纯文本，安全转义后高亮） */
+/**
+ * 搜索关键词高亮。走共用实现（见 @/utils/highlight）——
+ * 原先这里自带一份逐字复制的版本，和搜索弹层那份**带着同一个缺陷**：
+ * 转义跑在匹配之前，导致搜 `A & B` 命中文章却零高亮。两处现在统一。
+ */
 function highlight(text = '') {
-  const safe = String(text)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  const k = kw.value.trim();
-  if (!k) return safe;
-  const escaped = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return safe.replace(new RegExp(`(${escaped})`, 'gi'), '<mark>$1</mark>');
+  return highlightKeyword(text, kw.value);
 }
 
 /**

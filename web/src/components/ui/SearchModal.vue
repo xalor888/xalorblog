@@ -97,6 +97,7 @@ import { useRouter, useRoute } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import { articleApi } from '@/api';
 import { formatDate } from '@/utils/format';
+import { highlightKeyword } from '@/utils/highlight';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 
 const router = useRouter();
@@ -193,31 +194,9 @@ function goto(r) {
   router.push(`/article/${r.slug}`);
 }
 
-const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-const escHtml = (s) => String(s).replace(/[&<>"']/g, (c) => HTML_ESC[c]);
-
-/**
- * 高亮搜索词。
- *
- * ⚠ 顺序很重要：**先在原文上匹配，再逐段转义**。
- * 之前是「整串先转义、再拿关键词去匹配转义后的串」——
- * 于是标题里的 `&` 已变成 `&amp;`，关键词 `A & B` 里的 `&` 就匹配不上了：
- * 实测搜 `A & B` 能搜到文章（服务端正常），但**一处高亮都没有**。
- * 反过来「先匹配后转义」也不行 —— 匹配出的片段里可能带 `<`，
- * 必须只对片段做转义，`<mark>` 标签本身才不会被转义掉。
- */
+/** 高亮走共用实现（见 @/utils/highlight），两处不再各写一份 */
 function highlight(text = '') {
-  const raw = String(text);
-  const k = keyword.value.trim();
-  if (!k) return escHtml(raw);
-  // 关键词本身要转义正则元字符，否则 `(` `*` 这类会让 RegExp 抛错或贪婪匹配
-  const pattern = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`(${pattern})`, 'gi');
-  // 用 split 保留分隔符：奇数位即命中片段，逐段转义后包 mark
-  return raw
-    .split(re)
-    .map((part, i) => (i % 2 === 1 ? `<mark>${escHtml(part)}</mark>` : escHtml(part)))
-    .join('');
+  return highlightKeyword(text, keyword.value);
 }
 
 let lastFocused = null;
