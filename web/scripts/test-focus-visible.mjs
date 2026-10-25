@@ -353,6 +353,17 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【文章页的工具按钮：只有收藏漏了 aria】');
+{
+  const detail = read('../src/views/site/ArticleDetail.vue');
+  // 实测：相邻的「复制链接 / 导出 Markdown / 打印 / 分享」四个按钮都有 aria-label，
+  // **只有收藏按钮没有** —— 它在靠 title 兜底。
+  // 而收藏是有状态的开关，光靠 title 变文字不会被播报成状态变化。
+  ok('收藏按钮有 aria-label', /:aria-label="bookmarked \? '取消收藏' : '收藏本文'"/.test(detail));
+  ok('收藏按钮有 aria-pressed（状态变化会被播报）', /:aria-pressed="bookmarked \? 'true' : 'false'"/.test(detail));
+  ok('相邻工具按钮仍有 aria-label（未被破坏）', /aria-label="复制链接"/.test(detail) && /aria-label="分享"/.test(detail));
+}
+
 console.log('\n【手记的心情标签要说清是什么】');
 {
   const card = read('../src/components/home/NoteCard.vue');

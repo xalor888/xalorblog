@@ -59,6 +59,8 @@
                 class="share-btn"
                 :class="{ active: bookmarked }"
                 :title="bookmarked ? '取消收藏' : '收藏本文'"
+                :aria-label="bookmarked ? '取消收藏' : '收藏本文'"
+                :aria-pressed="bookmarked ? 'true' : 'false'"
                 @click="toggleBookmark"
               >
                 <XIcon name="Bookmark" :size="15" :fill="bookmarked" :stroke-width="bookmarked ? 0 : 1.8" />
