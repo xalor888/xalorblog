@@ -28,13 +28,14 @@
 </template>
 
 <script setup>
-import { ref, watchEffect } from 'vue';
+import { ref, watchEffect , onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import ArticleCard from '@/components/site/ArticleCard.vue';
 import { getBookmarks, removeBookmark, clearBookmarks } from '@/utils/bookmark';
 import { useSiteStore } from '@/stores/site';
 import { applyPageMeta } from '@/utils/pageMeta';
+import { articleApi } from '@/api';
 
 const site = useSiteStore();
 
@@ -49,6 +50,36 @@ watchEffect(() => {
 });
 
 const bookmarks = ref(getBookmarks());
+
+// 失效条目清理：收藏快照存在 localStorage 里，文章被删除/改 slug 之后它不会自动消失，
+// 于是收藏页会一直展示一条**点进去是 404** 的卡片（实测：注入 slug=deleted-article-xyz
+// 的条目，页面照常显示「共 1 篇」并给出链接）。
+// 这里做一次轻校验：只对**当前可见**的条目去请求详情，返回 404 的就剔掉。
+// 注意三点：
+//   1) 失败要区分「404 真的没了」和「网络抖动」—— 后者不能删用户的收藏；
+//   2) 逐条清理**不能并发打一堆请求**，收藏多了会被限流（本站有速率限制）；
+//   3) 清理是**静默**的，只更新本地列表，不弹提示打扰。
+const checking = ref(false);
+async function pruneStale() {
+  if (checking.value || !bookmarks.value.length) return;
+  checking.value = true;
+  const stale = [];
+  for (const b of bookmarks.value) {
+    try {
+      await articleApi.detail(b.slug);
+    } catch (e) {
+      // 只有明确的 404 才算失效；超时/网络错误一律保留
+      if (e?.response?.status === 404) stale.push(b.id);
+    }
+  }
+  if (stale.length) {
+    stale.forEach((id) => removeBookmark(id));
+    bookmarks.value = getBookmarks();
+  }
+  checking.value = false;
+}
+
+onMounted(pruneStale);
 
 /** 把书签对象包装成文章卡片所需结构 */
 function toArticle(b) {

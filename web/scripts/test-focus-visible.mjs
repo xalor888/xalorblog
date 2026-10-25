@@ -370,6 +370,29 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【收藏的失效条目：会被静默清掉，但有效条目一条都不能误删】');
+{
+  // 缺陷：收藏快照只存 localStorage、从不校验，文章被删后收藏页照常显示一条
+  // **点进去是 404** 的卡片（实测注入 slug=deleted-article-xyz 后页面仍写「共 1 篇」）。
+  // 修：挂载时逐条轻校验，只剔 404。
+  // 实测（一有效 + 一失效）：存储里只剩有效的那个，失效的不再渲染，有效的一条不少。
+  const bm = read('../src/views/site/Bookmarks.vue');
+  ok('挂载时会校验失效条目', /onMounted\(pruneStale\)/.test(bm));
+  // 只认 404：网络抖动/超时绝不能删用户的收藏
+  ok('只按 404 判失效', /status === 404/.test(bm),
+     (bm.match(/if \(e\?\.response\?\.status === 404\)[^\n]*/) || [''])[0].slice(0, 50) || '未找到');
+  // 串行清理，避免收藏多了并发打爆限速
+  const fn = (bm.match(/async function pruneStale[\s\S]{0,900}/) || [''])[0];
+  ok('逐条串行校验（不并发）', /for \(const b of/.test(fn) && /await articleApi\.detail/.test(fn));
+  // 有重入锁，避免重复请求
+  ok('有重入锁', /checking\.value/.test(fn));
+  // 清理要静默 —— 不该因为后台清理弹 toast 打扰读者。
+  // 注意：只截到函数结束（到下一个 function/onMounted），否则会把后面 remove() 的
+  // ElMessage.success('已取消收藏') 一起算进来，误判成「清理弹了提示」。
+  const fnBody = fn.split(/\nfunction |\nonMounted\(/)[0];
+  ok('清理是静默的', !/ElMessage/.test(fnBody), fnBody.includes('ElMessage') ? '清理里弹了提示' : '');
+}
+
 console.log('\n【收藏：存全字段、页面正确列出、清空要确认且文案带数量】');
 {
   // 实测：点收藏 → aria-label 变「取消收藏」、localStorage 存了完整对象
