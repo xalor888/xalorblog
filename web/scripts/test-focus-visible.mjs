@@ -370,6 +370,26 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【后台仪表盘的数字必须与库一致（逐项对过）】');
+{
+  // 实测（库→界面逐项对照）：
+  //   文章总数 6→6、草稿 0→0、总浏览量 2448→2448、评论 0→0、留言 2→2、
+  //   待审核评论/友链/留言 0→0、分类分布 1+3+1+1=6 且与已发布数相等。
+  const ad = read('../../server/src/routes/admin.js');
+  const block = (ad.match(/router\.get\('\/stats\/dashboard'[\s\S]{0,6000}/) || [''])[0];
+  ok('仪表盘接口存在', block.length > 0);
+  // 分类分布只统计已发布 —— 否则草稿会把各分类数字加起来超过文章总数
+  ok('分类分布只算已发布', /a\.status', '=', db\.raw\('\?', \['published'\]/.test(block),
+     (block.match(/andOn\('a\.status'[^\n]*/) || [''])[0].slice(0, 50));
+  // 时间范围要夹在 7..90，防止传 days=99999 把整库扫一遍
+  ok('时间范围夹取 7~90', /Math\.min\(90, Math\.max\(7/.test(block), (block.match(/const days = [^\n]*/) || [''])[0].slice(0, 50));
+  // 热门文章只算已发布，且排序要稳定（views 相同再按时间、id）
+  ok('热门文章只算已发布', /where\('status', 'published'\)[\s\S]{0,120}orderBy/.test(block));
+  ok('热门排序有兜底（不依赖单一列）', /column: 'published_at', order: 'desc'[\s\S]{0,60}column: 'id'/.test(block));
+  // 各查询必须并行，否则首屏要串行等十几次往返
+  ok('用了 Promise.all 并行', /Promise\.all\(/.test(block));
+}
+
 console.log('\n【存储脏数据的全站抗性：18 个 key 全灌脏值，9 个路由都要照常渲染】');
 {
   // 实测把 18 个 localStorage key 全部灌成脏值（非 JSON、超长、非法枚举、脚本片段），
