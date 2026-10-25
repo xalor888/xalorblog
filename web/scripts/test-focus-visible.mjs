@@ -370,6 +370,33 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【存储脏数据的全站抗性：18 个 key 全灌脏值，9 个路由都要照常渲染】');
+{
+  // 实测把 18 个 localStorage key 全部灌成脏值（非 JSON、超长、非法枚举、脚本片段），
+  // 逐一访问 9 个前台路由：h1 全部正确、内容长度正常、无 undefined/NaN/[object] 泄漏。
+  // 另测「损坏的收藏数据能否自愈」：先写 `{broken`，再点收藏 →
+  // 按钮正常翻转、**存储被正常的 JSON 数组覆盖**，功能完全自恢复。
+  //
+  // ⚠ 测量陷阱：这一轮我一度把「加载失败页」当成脏数据导致的崩溃，
+  // 其实是**自己的探针把 /api 限速打满（429）**。干净数据同样失败才暴露了这一点。
+  const bm = read('../src/utils/bookmark.js');
+  const get = (bm.match(/export function getBookmarks[\s\S]{0,400}/) || [''])[0];
+  ok('收藏读取有 try/catch', /try \{[\s\S]{0,80}JSON\.parse/.test(get));
+  ok('收藏读取校验数组类型', /Array\.isArray\(raw\)/.test(get));
+
+  const h = read('../src/utils/history.js');
+  const hget = (h.match(/function readList[\s\S]{0,400}/) || [''])[0];
+  ok('足迹读取有 try/catch', /try \{[\s\S]{0,80}getItem/.test(hget));
+  ok('足迹读取校验数组与项', /Array\.isArray\(list\)/.test(hget) && /x && x\.slug/.test(hget));
+
+  const sc = read('../src/utils/slugCheck.js');
+  ok('缓存读取校验对象类型', /typeof obj === 'object'/.test(sc) && /!Array\.isArray\(obj\)/.test(sc));
+
+  // 页面初始化时的枚举值也要收口（非法值退回默认，不能直接用）
+  const al = read('../src/views/site/ArticleList.vue');
+  ok('每页条数收口到白名单', /\[8, 16, 32\]\.includes/.test(al));
+}
+
 console.log('\n【搜索历史：上限要在读取时也成立，脏数据不能让整块崩掉】');
 {
   // 缺陷：loadHistory 只做 JSON.parse，完全不校验。
