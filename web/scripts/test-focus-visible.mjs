@@ -370,6 +370,30 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【Markdown 正常语法不被误伤，任务列表的 aria-label 不能二次转义】');
+{
+  // 实测十种语法全部正常：标题降级(data-demoted)、代码块(code-block/code-head)、
+  // 行内 code、表格(tabindex + th scope=col)、任务列表(aria-label)、
+  // 引用、链接(rel 加固)、图片、粗斜体、删除线。
+  // 缺陷：`- [ ] 他说"你好"` 得到 `未完成：他说&amp;quot;你好&amp;quot;` ——
+  // 因为 marked 已把 " 转成 &quot;，escapeHtml 又把 & 转成 &amp;，**二次转义**。
+  // 修法：先 decodeEntities 取回纯文本，再统一转义一次。
+  const md = read('../src/utils/markdown.js');
+  ok('有 decodeEntities', /function decodeEntities/.test(md));
+  // & 必须最后解，否则 &amp;lt; 会被先解成 &lt; 再当成标签
+  const dec = (md.match(/function decodeEntities[\s\S]{0,320}/) || [''])[0];
+  const idxAmp = dec.lastIndexOf("&amp;");
+  const idxLt = dec.indexOf("&lt;");
+  ok('&amp; 最后才解（否则会解出假标签）', idxAmp > idxLt && idxLt > 0, `&lt;@${idxLt} &amp;@${idxAmp}`);
+  // 任务列表标签要带上状态与描述
+  ok('任务列表 aria-label 带状态', /已完成/.test(md) && /未完成/.test(md));
+  ok('描述做长度截断', /slice\(0, 80\)/.test(md));
+  // 表格补 scope，读屏才知道是表头
+  ok('表头补 scope', /scope/.test(md));
+  // 标题降级（文章页 h1 只能有一个）
+  ok('h1 降级为 h2', /demoteH1|data-demoted/.test(md));
+}
+
 console.log('\n【Markdown 净化：七种载荷全挡，内联 style 里的 url() 也剥掉】');
 {
   // 实测 7 种载荷过 renderMarkdown：

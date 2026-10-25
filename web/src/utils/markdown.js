@@ -49,6 +49,17 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+/** 把 marked 输出里已转义的实体解回纯文本（只处理它实际会产出的那几个） */
+function decodeEntities(s) {
+  return String(s)
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    // & 必须**最后**解，否则 `&amp;lt;` 会被先解成 `&lt;` 再当成标签
+    .replace(/&amp;/g, '&');
+}
+
 // 自定义渲染器：代码块高亮 + 语言标签 + 复制按钮
 // marked v13+ 渲染器改为接收 token 对象（{ text, lang, escaped }），不再用位置参数
 const renderer = new marked.Renderer();
@@ -112,11 +123,18 @@ function annotateTaskItems(html) {
     /<li>\s*(<input\b[^>]*type="checkbox"[^>]*>)\s*([\s\S]*?)<\/li>/gi,
     (whole, input, rest) => {
       // 去掉末尾可能的嵌套列表，只把本项的文字当描述
-      const text = String(rest)
-        .replace(/<ul\b[\s\S]*$/i, '')
-        .replace(/<[^>]+>/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
+      // ⚠ 这里拿到的是 **marked 已经转义过的 HTML**（引号已是 `&quot;`、`&` 已是 `&amp;`）。
+      // 直接把这串丢给 escapeHtml 会**二次转义**：`"` → `&quot;` → `&amp;quot;`，
+      // 读屏念出来就是「amp quot」。实测 `- [ ] 他说"你好"` 得到
+      // `未完成：他说&amp;quot;你好&amp;quot;`。
+      // 所以先解回实体、拿到纯文本，再统一转义一次。
+      const text = decodeEntities(
+        String(rest)
+          .replace(/<ul\b[\s\S]*$/i, '')
+          .replace(/<[^>]+>/g, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+      )
         .slice(0, 80);
       const done = /\bchecked\b/i.test(input);
       const label = text
