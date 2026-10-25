@@ -10,8 +10,20 @@
       <!-- 留言表单 -->
       <div class="msg-form card" v-reveal>
         <div class="form-row">
-          <input v-model="form.nickname" class="form-input" placeholder="昵称 *" maxlength="50" autocomplete="nickname" aria-label="昵称"
-            @keydown.enter.prevent="onFieldEnter" />
+          <input
+            ref="nicknameRef"
+            v-model="form.nickname"
+            class="form-input"
+            :class="{ 'is-invalid': fieldErrors.nickname }"
+            placeholder="昵称 *"
+            maxlength="50"
+            autocomplete="nickname"
+            aria-label="昵称"
+            :aria-invalid="fieldErrors.nickname ? 'true' : undefined"
+            :aria-describedby="fieldErrors.nickname ? 'msg-err-nickname' : undefined"
+            @input="clearFieldError('nickname')"
+            @keydown.enter.prevent="onFieldEnter"
+          />
           <input
             v-if="mailNotify"
             v-model="form.email"
@@ -24,6 +36,12 @@
             @keydown.enter.prevent="onFieldEnter"
           />
         </div>
+        <!-- 字段级错误：就地显示并与输入框 aria-describedby 关联。
+             只弹 toast 是不够的 —— 读屏用户听到一句提示，却不知道是哪个框错、
+             也不知道焦点该往哪去。这里让错误「贴在该改的地方」。 -->
+        <p v-if="fieldErrors.nickname" id="msg-err-nickname" class="field-error" role="alert">
+          {{ fieldErrors.nickname }}
+        </p>
         <!-- 随机蜜罐字段：字段名由服务端动态签发 -->
         <input
           v-model="form[hpField]"
@@ -37,14 +55,22 @@
           <EmojiPicker v-if="showEmoji" @insert="insertEmoji" />
         </transition>
         <textarea
+          ref="contentRef"
           v-model="form.content"
           class="form-textarea"
+          :class="{ 'is-invalid': fieldErrors.content }"
           rows="4"
           maxlength="2000"
           placeholder="写下你的留言…"
           aria-label="留言内容"
+          :aria-invalid="fieldErrors.content ? 'true' : undefined"
+          :aria-describedby="fieldErrors.content ? 'msg-err-content' : undefined"
+          @input="clearFieldError('content')"
           @keydown="onTextareaKeydown"
         ></textarea>
+        <p v-if="fieldErrors.content" id="msg-err-content" class="field-error" role="alert">
+          {{ fieldErrors.content }}
+        </p>
         <div class="form-actions">
           <button class="emoji-toggle" :class="{ active: showEmoji }" :aria-pressed="showEmoji" title="表情" aria-label="表情选择" @click="toggleEmoji">
             <XIcon name="Smile" :size="15" />
@@ -98,7 +124,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, watchEffect } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, watchEffect, nextTick } from 'vue';
 import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import EmojiPicker from '@/components/ui/EmojiPicker.vue';
@@ -243,11 +269,53 @@ function onTextareaKeydown(e) {
   }
 }
 
+/**
+ * 字段级错误。
+ *
+ * 为什么不是「只弹 toast」：ElMessage 是画面右侧飘一句话，
+ * 它不会移动焦点，也不会在字段上留下任何标记。结果键盘/读屏用户
+ * 提交之后只知道「有地方错了」，不知道是哪个框 —— 得自己从头摸一遍。
+ * 这里的做法：字段上 aria-invalid + 就地错误文字 + aria-describedby 关联，
+ * 提交失败时把焦点移到第一个出错的字段。toast 仍然保留（视觉反馈），
+ * 但它不再是唯一的信息来源。
+ */
+const fieldErrors = ref({ nickname: '', content: '' });
+const nicknameRef = ref(null);
+const contentRef = ref(null);
+
+function clearFieldError(key) {
+  if (fieldErrors.value[key]) fieldErrors.value = { ...fieldErrors.value, [key]: '' };
+}
+
+/** 把焦点送到第一个出错的字段，并让它被读到 */
+function focusFirstError() {
+  const refs = { nickname: nicknameRef, content: contentRef };
+  for (const key of ['nickname', 'content']) {
+    if (!fieldErrors.value[key]) continue;
+    const el = refs[key].value;
+    if (el && typeof el.focus === 'function') {
+      el.focus();
+      // 已聚焦的输入框读屏会念出 aria-describedby 指向的错误文字
+      return;
+    }
+  }
+}
+
 async function submit() {
   const nickname = form.value.nickname.trim();
   const content = form.value.content.trim();
-  if (!nickname) return ElMessage.warning('请填写昵称');
-  if (!content) return ElMessage.warning('请填写留言内容');
+  const next = { nickname: '', content: '' };
+  if (!nickname) next.nickname = '请填写昵称';
+  if (!content) next.content = '请填写留言内容（不能只有空格）';
+  if (next.nickname || next.content) {
+    fieldErrors.value = next;
+    // 两件事都要做：toast 给视觉用户，焦点给键盘/读屏用户
+    ElMessage.warning(next.nickname || next.content);
+    await nextTick();
+    focusFirstError();
+    return;
+  }
+  fieldErrors.value = { nickname: '', content: '' };
   submitting.value = true;
   try {
     const { token: formToken, hpField: field } = await getFormTokenInfo('/messages');

@@ -687,6 +687,40 @@ input:-webkit-autofill:focus {
 }
 
 /* ============================================================
+   表单字段级错误
+   ============================================================
+   错误必须「长在出错的地方」，而不是只飘一条 toast：
+   toast 不移动焦点、不在字段上留下痕迹，键盘/读屏用户提交后
+   无法判断该改哪一个框。配套的 aria-invalid / aria-describedby
+   在组件里绑定（见 Messages.vue / CommentSection.vue）。 */
+.field-error {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #a8323a;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+[data-theme='dark'] .field-error {
+  /* 深色下冷红要提亮，否则对深底只有 3.2:1 */
+  color: #f4878b;
+}
+
+/* 出错字段：边框变红 + 极淡红底，与 ::focus-visible 的焦点环叠加也不冲突 */
+.form-input.is-invalid,
+.form-textarea.is-invalid {
+  border-color: #a8323a;
+  background: color-mix(in srgb, #a8323a 4%, transparent);
+}
+
+[data-theme='dark'] .form-input.is-invalid,
+[data-theme='dark'] .form-textarea.is-invalid {
+  border-color: #f4878b;
+}
+
+/* ============================================================
    仅供读屏的文字（视觉上不可见）
    ============================================================
    用途：局部刷新后的状态播报（role=status + aria-live）。

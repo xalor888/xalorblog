@@ -242,6 +242,41 @@ console.log('\n【翻页不能被筛选 watcher 冲掉】');
   );
 }
 
+console.log('\n【表单错误必须可定位、可关联】');
+{
+  for (const [path, label, idPrefix] of [
+    ['../src/views/site/Messages.vue', '留言页', 'msg-err'],
+    ['../src/components/site/CommentSection.vue', '评论区', 'cmt-err'],
+  ]) {
+    const src = read(path);
+    ok(
+      `${label}：出错字段标 aria-invalid`,
+      /:aria-invalid="fieldErrors\.nickname \? 'true' : undefined"/.test(src)
+    );
+    ok(
+      `${label}：错误文字通过 aria-describedby 关联到字段`,
+      new RegExp(`:aria-describedby="fieldErrors\\.nickname \\? '${idPrefix}-nickname'`).test(src)
+    );
+    ok(
+      `${label}：错误文字就地渲染且有 role=alert`,
+      new RegExp(`<p v-if="fieldErrors\\.nickname" id="${idPrefix}-nickname" class="field-error" role="alert">`).test(src)
+    );
+    ok(
+      `${label}：提交失败后把焦点送到第一个出错字段（不只弹 toast）`,
+      /function focusFirstError\(\)/.test(src) && /focusFirstError\(\);/.test(src)
+    );
+    ok(
+      `${label}：用户开始输入时清除该字段错误`,
+      /@input="clearFieldError\('nickname'\)"/.test(src)
+    );
+  }
+
+  const css = read('../src/styles/main.css');
+  ok('.field-error 有可见样式（不只是占位）', /\.field-error\s*\{[\s\S]{0,200}?color:/.test(css));
+  ok('.field-error 深色下有提亮版本（冷红对深底不够）', /\[data-theme='dark'\] \.field-error\s*\{/.test(css));
+  ok('出错字段边框变红（视觉用户也能定位）', /\.form-input\.is-invalid,[\s\S]{0,120}?border-color:\s*#a8323a/.test(css));
+}
+
 console.log('\n【全库扫描：watch 源不能是新建的数组/对象字面量】');
 {
   // 这是 ArticleList 翻页失效的根因，而且是**模式性**问题 ——

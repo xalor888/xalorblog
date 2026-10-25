@@ -23,8 +23,20 @@
     <!-- 评论表单 -->
     <div class="comment-form card">
       <div class="form-row">
-        <input v-model="form.nickname" class="form-input" placeholder="昵称 *" maxlength="50" autocomplete="nickname" aria-label="昵称"
-          @keydown.enter.prevent="onFieldEnter" />
+        <input
+          ref="nicknameInput"
+          v-model="form.nickname"
+          class="form-input"
+          :class="{ 'is-invalid': fieldErrors.nickname }"
+          placeholder="昵称 *"
+          maxlength="50"
+          autocomplete="nickname"
+          aria-label="昵称"
+          :aria-invalid="fieldErrors.nickname ? 'true' : undefined"
+          :aria-describedby="fieldErrors.nickname ? 'cmt-err-nickname' : undefined"
+          @input="clearFieldError('nickname')"
+          @keydown.enter.prevent="onFieldEnter"
+        />
         <input
           v-if="mailNotify"
           v-model="form.email"
@@ -37,6 +49,9 @@
           @keydown.enter.prevent="onFieldEnter"
         />
       </div>
+      <p v-if="fieldErrors.nickname" id="cmt-err-nickname" class="field-error" role="alert">
+        {{ fieldErrors.nickname }}
+      </p>
       <input v-model="form.website" class="form-input" placeholder="网站 / 博客（可选）" maxlength="200" autocomplete="url" aria-label="网站"
         @keydown.enter.prevent="onFieldEnter" />
       <!-- 随机蜜罐字段：字段名由服务端动态签发，人类不可见，机器人无法预知 -->
@@ -66,12 +81,19 @@
         ref="formTextarea"
         v-model="form.content"
         class="form-textarea"
+        :class="{ 'is-invalid': fieldErrors.content }"
         rows="4"
         maxlength="2000"
         :placeholder="replyingTo ? `回复 @${replyingTo.nickname}：` : '写下你的评论…'"
         aria-label="评论内容"
+        :aria-invalid="fieldErrors.content ? 'true' : undefined"
+        :aria-describedby="fieldErrors.content ? 'cmt-err-content' : undefined"
+        @input="clearFieldError('content')"
         @keydown="onTextareaKeydown"
       ></textarea>
+      <p v-if="fieldErrors.content" id="cmt-err-content" class="field-error" role="alert">
+        {{ fieldErrors.content }}
+      </p>
       <div class="form-actions">
         <button class="emoji-toggle" :class="{ active: showEmoji }" :aria-pressed="showEmoji" title="表情" aria-label="表情选择" @click="toggleEmoji">
           <XIcon name="Smile" :size="15" />
@@ -320,11 +342,42 @@ function onTextareaKeydown(e) {
   }
 }
 
+/**
+ * 字段级错误（与 Messages.vue 同一套做法）。
+ * 只弹 toast 时：焦点不动、字段无标记，键盘/读屏用户不知道改哪个框。
+ * 这里补 aria-invalid + 就地错误文字 + 提交失败后聚焦第一个出错字段。
+ */
+const fieldErrors = ref({ nickname: '', content: '' });
+const nicknameInput = ref(null);
+
+function clearFieldError(key) {
+  if (fieldErrors.value[key]) fieldErrors.value = { ...fieldErrors.value, [key]: '' };
+}
+
+function focusFirstError() {
+  if (fieldErrors.value.nickname) {
+    nicknameInput.value?.focus?.();
+    return;
+  }
+  if (fieldErrors.value.content) {
+    formTextarea.value?.focus?.();
+  }
+}
+
 async function submit() {
   const nickname = form.value.nickname.trim();
   const content = form.value.content.trim();
-  if (!nickname) return ElMessage.warning('请填写昵称');
-  if (!content) return ElMessage.warning('请填写评论内容');
+  const next = { nickname: '', content: '' };
+  if (!nickname) next.nickname = '请填写昵称';
+  if (!content) next.content = '请填写评论内容（不能只有空格）';
+  if (next.nickname || next.content) {
+    fieldErrors.value = next;
+    ElMessage.warning(next.nickname || next.content);
+    await nextTick();
+    focusFirstError();
+    return;
+  }
+  fieldErrors.value = { nickname: '', content: '' };
   submitting.value = true;
   try {
     const { token: formToken, hpField: field } = await getFormTokenInfo('/comments');
