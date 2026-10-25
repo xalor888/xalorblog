@@ -211,10 +211,13 @@
           <p>{{ emptyTitle }}</p>
           <p v-if="emptyHint" class="empty-hint">{{ emptyHint }}</p>
           <div class="empty-actions">
-            <!-- 只有「关键词」筛选时给「换个关键词」才是对的建议；
-                 分类/标签没结果时，读者需要的是清除筛选，而不是猜关键词。 -->
+            <!-- 只要有任何筛选条件就提供「清除筛选」出口。
+                 原来只判断 category/tag，**关键词搜不到时没有清除按钮** ——
+                 实测搜一个不存在的词，空态里只有「随便看看」，
+                 读者想退回全部文章只能自己去顶端删输入框。
+                 关键词恰恰是最容易搜空的一种筛选，更需要这个出口。 -->
             <button
-              v-if="activeCategory || activeTag"
+              v-if="hasFilter"
               class="search-btn retry-btn"
               @click="clearFilter"
             >

@@ -273,5 +273,33 @@ console.log('\n【列表页空态：文案必须对应真实筛选条件】');
     /empty-hint/.test(list));
 }
 
-console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
+console.log('\n【空态必须有出口：任何筛选都要能一键清除】');
+{
+  const { readFileSync } = await import('node:fs');
+  const { dirname, resolve } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const here = dirname(fileURLToPath(import.meta.url));
+  const list = readFileSync(resolve(here, '../src/views/site/ArticleList.vue'), 'utf8');
+  // 真实缺陷：清除按钮原来只判断 category/tag，
+  // 关键词搜不到时空态里只有「随便看看」—— 读者想退回全部文章
+  // 只能自己爬到顶端删输入框。关键词恰恰最容易搜空。
+  ok(
+    '清除筛选按钮的显示条件是 hasFilter（涵盖关键词/分类/标签）',
+    /<button\s+\n?\s*v-if="hasFilter"[\s\S]{0,160}?清除筛选/.test(list)
+  );
+  ok(
+    '不再只用 category||tag 作为清除按钮的条件',
+    !/v-if="activeCategory \|\| activeTag"[\s\S]{0,120}?清除筛选/.test(list),
+    '关键词筛选无结果时就没有出口了'
+  );
+  ok(
+    '空态同时提供「随便看看」作为第二条路',
+    /v-if="hasFilter"[\s\S]{0,260}?随便看看/.test(list)
+  );
+  const fn = list.match(/function clearFilter\(\) \{([\s\S]*?)\n\}/);
+  ok('clearFilter 保留 sort（清筛选不该动排序）', fn ? !fn[1].includes('sort') : false);
+  ok('clearFilter 保留 pageSize（清筛选不该动每页条数）', fn ? !fn[1].includes('pageSize') : false);
+}
+
+console.log('\n【空态文案区分层级】');
 process.exit(fail === 0 ? 0 : 1);
