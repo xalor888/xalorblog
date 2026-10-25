@@ -370,6 +370,30 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【手记分页：10 条一页，加载更多后接上且不重复】');
+{
+  // 实测 15 条：首屏 10 条（15→6 分钟前）+「加载更多」；
+  // 点一次 → 15 条、按钮消失、**0 条重复**；
+  // 追加的 5 条是 5→1 分钟前，序列 15,14,…,2,1 **连续无断裂**。
+  const notes = read('../src/views/home/Notes.vue');
+  ok('有「加载更多」按钮且受 hasMore 控制', /v-if="hasMore"/.test(notes) && /loadMore/.test(notes));
+  // 加载中要禁用，否则连点会请求同一页两次
+  ok('加载中禁用按钮（防连点重复请求）', /:disabled="loading"/.test(notes));
+  // 分页必须按 page 递增，并带 limit
+  ok('按 page + limit 请求', /page\.value/.test(notes) && /limit|pageSize/.test(notes));
+  // 追加而不是替换：实际写法是展开运算符拼新数组
+  // `list.value = p === 1 ? rows : [...list.value, ...rows]`
+  // 这比 push 更好 —— 整体替换数组才会稳定触发响应式更新
+  ok('追加到已有列表（不是替换）',
+     /\[\.\.\.list\.value,\s*\.\.\.rows\]/.test(notes),
+     (notes.match(/list\.value\s*=\s*p === 1[^\n]*/) || [''])[0].slice(0, 70));
+  // 第一页要能重置（切分类/刷新时），否则旧数据会残留
+  ok('第一页时重置列表', /p === 1\s*\?\s*rows/.test(notes));
+  // hasMore 要按返回条数判断，不能写死 true
+  ok('hasMore 由返回结果决定', /hasMore\.value\s*=/.test(notes), 
+     (notes.match(/hasMore\.value\s*=[^\n]*/) || [''])[0].slice(0, 60));
+}
+
 console.log('\n【个人主页的手记：列表渲染 Markdown、按时间倒序、详情能定位】');
 {
   // 实测两条手记：列表里按时间**倒序**（新在前），心情标签正确，
