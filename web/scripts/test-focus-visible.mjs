@@ -353,6 +353,18 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【错误页的文字必须显式给颜色】');
+{
+  const detail = read('../src/views/site/ArticleDetail.vue');
+  // 实测：.le-title 原本没有 color，h2 继承到别处的浅色 ——
+  // 浅色主题下「加载失败，请稍后重试」对比度只有 1.18:1（要求 3）。
+  // 错误页正是用户最需要看清文字的时候。
+  const titleBlock = (detail.match(/\.le-title \{[\s\S]*?\}/) || [''])[0];
+  ok('le-title 显式声明颜色', /color:\s*var\(--text\)/.test(titleBlock), titleBlock.slice(0, 50));
+  const descBlock = (detail.match(/\.le-desc \{[\s\S]*?\}/) || [''])[0];
+  ok('le-desc 显式声明颜色', /color:\s*var\(--text-3\)/.test(descBlock));
+}
+
 console.log('\n【实心元素必须用 --accent-fill，不能用 --accent】');
 {
   const css = read('../src/styles/main.css');

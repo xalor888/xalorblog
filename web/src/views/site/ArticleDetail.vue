@@ -1293,10 +1293,17 @@ onUnmounted(() => {
   font-size: 1.2rem;
   font-weight: 750;
   margin-bottom: 8px;
+  /* ⚠ 必须显式给颜色。
+     原来这里没有 color，h2 于是继承到别处的浅色 ——
+     实测浅色主题下「加载失败，请稍后重试」对比度只有 **1.18:1**（要求 3）。
+     错误页正是用户最需要看清文字的时候，却成了全站对比度最差的地方。 */
+  color: var(--text);
 }
 
 .le-desc {
   font-size: 0.9rem;
+  /* --text-3 在浅色底上 5.34:1 合规（第 53 轮已确认），
+     之前 3.56 是因为整块继承了错误页面的颜色上下文。显式声明。 */
   color: var(--text-3);
   margin-bottom: 26px;
 }
