@@ -370,6 +370,23 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【分享页的 404 要是正经页面，不是裸文本】');
+{
+  const share = read('../../server/src/routes/share.js');
+  // 实测：站点级分享页原来 `res.status(404).send('页面不存在')` ——
+  // 裸文本却带 Content-Type: text/html，而且**没有 noindex**，
+  // 搜索引擎完全可能把这个 404 收进索引。
+  ok(
+    '站点分享页 404 不再是裸文本',
+    !/status\(404\)\.send\('页面不存在'\)/.test(share)
+  );
+  // 两处 404 都必须带 noindex（文章页本来就有，站点页是这轮补的）
+  const noindexCount = (share.match(/noindex,nofollow/g) || []).length;
+  ok('两处 404 都带 noindex', noindexCount >= 2, `找到 ${noindexCount} 处`);
+  // 也要有真实结构
+  ok('404 有 <h1>', (share.match(/<h1>/g) || []).length >= 2);
+}
+
 console.log('\n【分享页要声明 Vary: Host】');
 {
   const share = read('../../server/src/routes/share.js');

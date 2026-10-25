@@ -225,7 +225,17 @@ router.get('/share-page/:page?', async (req, res) => {
   try {
     const key = String(req.params.page || '').replace(/\/$/, '');
     const page = STATIC_PAGES[key];
-    if (!page) return res.status(404).send('页面不存在');
+    if (!page) {
+      // 与文章分享页的 404 保持一致：完整 HTML + noindex + h1。
+      // 原来这里只 send('页面不存在') —— 裸文本，
+      // 却带着 Content-Type: text/html，且**没有 noindex**，
+      // 搜索引擎完全可能把这个 404 收进索引，抓取器也拿不到任何结构。
+      return res.status(404).send(
+        '<!DOCTYPE html><html><head><meta charset="utf-8">'
+        + '<meta name="robots" content="noindex,nofollow">'
+        + '<title>页面不存在</title></head><body><h1>页面不存在</h1></body></html>'
+      );
+    }
 
     const settings = await getAllSettings();
     const siteUrl = settings.site_url
