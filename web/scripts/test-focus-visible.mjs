@@ -370,6 +370,26 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【导航里的图标按钮都要有名字（含状态）】');
+{
+  const layout = read('../src/views/site/Layout.vue');
+  // 实测：移动端导航 4 个图标按钮里，主题切换与主题色两个只有 title、没有 aria-label。
+  // 主题色那个里面**只有一个纯色圆点**，既没文字也没说明当前是什么色。
+  ok('主题切换按钮有 aria-label', /:aria-label="theme\.mode === 'auto' \?/.test(layout));
+  ok(
+    'aria-label 说出当前状态与下一步动作',
+    /主题：跟随系统，点击切换为亮色/.test(layout) && /主题：暗色，点击切换为跟随系统/.test(layout)
+  );
+  ok('主题色按钮有 aria-label', /:aria-label="`更换主题色，当前为 \$\{accentLabel\}`"/.test(layout));
+  // 当前色名必须从 THEME_COLORS 反查，不能只说「更换主题色」
+  ok('主题色名从 THEME_COLORS 反查', /THEME_COLORS\.find/.test(layout));
+  // 已有的两个（菜单/搜索）别被改坏
+  // 菜单按钮是**动态** aria-label（随开合切换），不能钉死静态字符串
+  ok('菜单按钮的 aria-label 仍随状态切换',
+     /:aria-label="mobileOpen \? '关闭菜单' : '打开菜单'"/.test(layout));
+  ok('搜索按钮的 aria-label 仍在', /aria-label="搜索（按斜杠键）"/.test(layout));
+}
+
 console.log('\n【分享页的 404 要是正经页面，不是裸文本】');
 {
   const share = read('../../server/src/routes/share.js');

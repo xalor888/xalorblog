@@ -70,6 +70,7 @@
           <button
             class="icon-btn"
             :title="theme.mode === 'auto' ? '跟随系统 · 点击切换亮色' : theme.isDark ? '点击切换自动' : '点击切换暗色'"
+            :aria-label="theme.mode === 'auto' ? '主题：跟随系统，点击切换为亮色' : theme.isDark ? '主题：暗色，点击切换为跟随系统' : '主题：亮色，点击切换为暗色'"
             @click="theme.toggleTheme"
           >
             <XIcon :name="theme.mode === 'auto' ? 'MonitorSmartphone' : theme.isDark ? 'Sun' : 'Moon'" :size="17" />
@@ -77,7 +78,15 @@
 
           <el-popover placement="bottom-end" :width="230" trigger="click" popper-class="theme-popover">
             <template #reference>
-              <button class="icon-btn" title="主题色">
+              <!-- 这个按钮里只有一个纯色圆点，没有任何文字 ——
+                   title 是兜底、多数读屏会读，但读屏用户听到的仍是一个
+                   「没有名字的按钮」，不知道它是选主题色的。
+                   aria-label 同时说出操作与当前色（当前色本身无法从圆点视觉之外得知）。 -->
+              <button
+                class="icon-btn"
+                title="主题色"
+                :aria-label="`更换主题色，当前为 ${accentLabel}`"
+              >
                 <span class="accent-dot" :style="{ background: theme.accent }"></span>
               </button>
             </template>
@@ -295,6 +304,15 @@ import { setGlobalCopyAllowed } from '@/utils/copyGuard';
 
 const route = useRoute();
 const theme = useThemeStore();
+
+/** 当前主题色的中文名（供 aria-label 用）。
+ *  纯色圆点对读屏没有任何信息，只说「更换主题色」也没告诉用户现在是什么色。
+ *  从 THEME_COLORS 反查名称；找不到（自定义值）时回落成色号，总比空着好。 */
+const accentLabel = computed(() => {
+  const cur = String(theme.accent || '').toLowerCase();
+  const hit = THEME_COLORS.find((c) => String(c.value).toLowerCase() === cur);
+  return hit ? hit.name : cur || '默认';
+});
 const site = useSiteStore();
 
 const scrolled = ref(false);
