@@ -370,6 +370,30 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【标题由守卫统一拼，各视图不该各写一套】');
+{
+  // 实测：后台 12 个页面标题全部是「<meta.title> · 管理后台」，
+  // 而 15 个后台视图**一个都没有 document.title** ——
+  // 全部由 router/factory.js 的 beforeEach 统一拼。
+  // 这条规则值得钉住：一旦有人「顺手」在某个视图里再写一次，
+  // 就会出现两处真相，且守卫那次会覆盖视图那次。
+  const factory = read('../src/router/factory.js');
+  ok('守卫用 meta.title 统一拼标题', /document\.title = to\.meta\.title \?/.test(factory));
+  ok('站名后缀单一来源（siteName）', /\$\{siteName\}/.test(factory));
+
+  // 后台视图不应各自设标题（否则守卫会覆盖它们，形成两处真相）
+  const admins = ['Dashboard', 'ArticleManage', 'NoteManage', 'CommentManage', 'MessageManage',
+                  'LinkManage', 'CategoryManage', 'TagManage', 'ImageManage', 'Settings',
+                  'SecurityManage', 'AuditManage'];
+  const offenders = admins.filter((f) => /document\.title\s*=/.test(read(`../src/views/admin/${f}.vue`)));
+  ok('后台视图不各自设标题（统一交给守卫）', offenders.length === 0, offenders.join(', '));
+
+  // 后台路由必须带 meta.title，否则标题会退化成光秃秃的站名
+  const routes = read('../src/router/routes-admin.js');
+  const withTitle = (routes.match(/meta:\s*\{[^}]*title:/g) || []).length;
+  ok('后台路由都声明了 meta.title', withTitle >= 10, `只有 ${withTitle} 处`);
+}
+
 console.log('\n【个人主页入口也要有 page meta】');
 {
   // 实测：#/notes 与手记详情原先**连 document.title 都没设** —— 标签页永远停在
