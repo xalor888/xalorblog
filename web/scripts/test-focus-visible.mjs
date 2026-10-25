@@ -370,6 +370,26 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【后台打印：留下数据，去掉操作界面】');
+{
+  // 实测打印后台文章列表：侧栏 .admin-side 仍是 flex、高 **835px**（整页被它吃掉），
+  // 工具栏 64px，页面上还有 **35 个可见按钮**，真正要打的表格被挤到后面。
+  // 前台早就有 print 清单，后台一条都没有。
+  const css = read('../src/styles/main.css');
+  const printBlock = (css.match(/@media print \{[\s\S]*?\n\}/) || [''])[0];
+  ok('print 块里包含后台侧栏', /\.admin-side/.test(printBlock));
+  ok('print 块里包含工具栏/批量栏', /\.toolbar/.test(printBlock) && /\.batch-bar/.test(printBlock));
+  ok('侧栏隐藏后主区不再留左偏移', /\.admin-main[\s\S]{0,120}margin-left:\s*0/.test(printBlock));
+  // 行内按钮必须隐藏，而表格文字必须保留 —— 两者不能一锅端
+  ok('表格行内按钮在打印时隐藏', /\.el-table__row button/.test(printBlock));
+  // 只检查规则本身，先剥掉注释 —— 注释里提到这个反面写法（作为说明）不算违规
+  const printRules = printBlock.replace(/\/\*[\s\S]*?\*\//g, '');
+  ok(
+    '没有宽匹配选择器（会误伤整列内容）',
+    !/\[class\*="action"\]/.test(printRules)
+  );
+}
+
 console.log('\n【用户点了按钮，界面不能毫无反应】');
 {
   // 实测：ArticleEdit 的「自动生成摘要」在正文为空时 `if (!md.trim()) return;`

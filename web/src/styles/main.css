@@ -1701,6 +1701,55 @@ select:focus-visible,
     box-shadow: none !important;
     border: none !important;
   }
+
+  /* ---------- 后台 ----------
+     上面的清单只覆盖前台。实测打印后台文章列表时：
+     侧栏 .admin-side 仍是 display:flex、高 **835px**（整页都被它吃掉），
+     工具栏 64px，页面上**还有 35 个可见按钮**，
+     而真正要打的内容表格被挤到后面。
+     后台本来就不该整页打印 —— 要打印的是数据，不是操作界面。 */
+  .admin-side,
+  .admin-header,
+  .admin-toolbar,
+  .toolbar,
+  .filter-row,
+  .batch-bar,
+  .pagination-wrap,
+  .el-pagination {
+    display: none !important;
+  }
+  /* 侧栏让位后，主区不该再保留为它预留的左内边距/外边距 */
+  .admin-main {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+  }
+  /* 表格里的操作列打印出来没有意义。
+     注意：不能用 [class*="action"] 这种宽匹配 —— 曾误伤整列内容；
+     这里只精确隐藏「行内按钮」与「固定右侧操作列」。 */
+  /* Element Plus 的表格按钮带一长串类名，单靠 .el-button 会被它自己的层叠顺序压过。
+     直接用属性选择器 + 后代深度，把行内所有按钮一网打尽。 */
+  .el-table__fixed-right,
+  .el-table__row button[class],
+  .el-table__row button[class] span,
+  .el-table__body button {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  /* 表头在跨页时重复，表格边框用浅灰细线省墨 */
+  .el-table th {
+    background: none !important;
+    border-color: #ccc !important;
+  }
+  .el-table td {
+    border-color: #ddd !important;
+  }
+  /* 余下的零散交互件（AI 提示条上的「前往配置」、顶栏图标按钮）
+     在纸上同样没有意义。用 :not(.el-table) 限定，避免误伤表格内需要保留的内容。 */
+  .ai-go,
+  .icon-btn,
+  .theme-btn {
+    display: none !important;
+  }
 }
 
 /* ============================================================
