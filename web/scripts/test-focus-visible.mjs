@@ -370,6 +370,26 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【批量栏的「取消选择」必须真的取消勾选，不能只藏起工具栏】');
+{
+  // 缺陷：`@click="selection = []"` 只清了我们自己的数组，
+  // 而 el-table 内部另有一套选中行集合。
+  // 实测：点「取消选择」后批量栏消失了，但每行复选框**仍然是勾选态** ——
+  // 工具栏和勾选态互相矛盾，用户第一反应是「没取消掉」。
+  // 修：加 tableRef + clearSelection()，四处列表页统一。
+  // 实测四处：消息 2→0、文章 1→0、友链 1→0。
+  for (const name of ['ArticleManage', 'CommentManage', 'LinkManage', 'MessageManage']) {
+    const src = read(`../src/views/admin/${name}.vue`);
+    ok(`${name} 有 tableRef`, /const tableRef = ref\(null\)/.test(src), name);
+    ok(`${name} 取消选择调 clearSelection`, /@click="clearSelection"/.test(src), name);
+    // 关键：方法体里必须真的调 el-table 的 clearSelection，而不只是清数组
+    const fn = (src.match(/function clearSelection\(\)[\s\S]{0,220}/) || [''])[0];
+    ok(`${name} 调用了 el-table 的 clearSelection`, /tableRef\.value\?\.clearSelection/.test(fn), fn.slice(0, 70));
+    // el-table 要真的绑上 ref，否则 tableRef 永远是 null
+    ok(`${name} el-table 绑定了 ref`, /<el-table ref="tableRef"/.test(src), name);
+  }
+}
+
 console.log('\n【删除确认要说清「删的是哪一条、影响几篇」】');
 {
   // 实测修复前后：

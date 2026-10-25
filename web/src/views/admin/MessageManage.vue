@@ -28,7 +28,7 @@
 
     <!-- 列表 -->
     <div class="table-card card">
-      <el-table :data="list" v-loading="loading && !list.length" stripe @selection-change="onSelectionChange">
+      <el-table ref="tableRef" :data="list" v-loading="loading && !list.length" stripe @selection-change="onSelectionChange">
         <el-table-column type="selection" width="44" />
         <el-table-column label="昵称" width="130">
           <template #default="{ row }">
@@ -83,7 +83,7 @@
         <el-button size="small" type="warning" :loading="batchLoading" @click="batchSetStatus('rejected')">批量拒绝</el-button>
         <el-button size="small" plain :loading="batchLoading" @click="batchReAi">批量 AI 复核</el-button>
         <el-button size="small" type="danger" plain :loading="batchLoading" @click="batchRemove">批量删除</el-button>
-        <el-button size="small" link @click="selection = []">取消选择</el-button>
+        <el-button size="small" link @click="clearSelection">取消选择</el-button>
       </div>
 
       <div class="pagination-wrap">
@@ -320,6 +320,22 @@ async function clearReply() {
 
 // ---------- 批量操作 ----------
 const selection = ref([]);
+/**
+ * el-table 的实例引用。
+ *
+ * ⚠ 仅把 `selection` 置空**不会**取消表格里的勾选：
+ * 那个数组只是 `@selection-change` 的一个副本，
+ * 表格内部维护着自己的选中行集合。
+ * 实测点「取消选择」后批量栏消失了，但每行复选框**仍然显示为勾选** ——
+ * 工具栏和勾选态互相矛盾，用户会以为没取消掉。
+ * 所以必须调 el-table 自己的 clearSelection()。
+ */
+const tableRef = ref(null);
+
+function clearSelection() {
+  selection.value = [];
+  tableRef.value?.clearSelection?.();
+}
 const batchLoading = ref(false);
 
 function onSelectionChange(rows) {
