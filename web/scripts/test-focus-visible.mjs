@@ -370,6 +370,20 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【评论草稿按文章隔离，不能串味】');
+{
+  // 实测：在文章 A 写草稿 → localStorage 只有 xalor_cdraft_1；
+  // 切到文章 B → 输入框**干净**；切回 A → 内容恢复并提示「已恢复上次未提交的评论草稿」。
+  // 也验了损坏值会被清掉（keyGone: true）—— 用的是第 106 轮修好的那条 catch 分支。
+  const cs = read('../src/components/site/CommentSection.vue');
+  ok('草稿键带 articleId（按文章隔离）', /xalor_cdraft_\$\{props\.articleId\}|xalor_cdraft_\$\{/.test(cs));
+  ok('用的是共用的 localDraft 工具', /from '@\/utils\/localDraft'/.test(cs));
+  // 键必须是函数、延迟求值 —— 组件复用（同一实例切文章）时才不会写到上一篇的键里
+  ok('DRAFT_KEY 是函数而非常量', /const DRAFT_KEY = \(\) =>/.test(cs), 
+     (cs.match(/const DRAFT_KEY[^\n]*/) || [''])[0].slice(0, 60));
+  ok('恢复时有非打扰提示', /已恢复上次未提交的评论草稿/.test(cs));
+}
+
 console.log('\n【本地草稿：过期/损坏/空内容都要清掉键】');
 {
   // 实测 loadDraft 四种输入：过期(25h)→空串且删键；损坏 JSON→空串但**键没删**（缺陷）；
