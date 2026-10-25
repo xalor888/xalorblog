@@ -1,5 +1,9 @@
 <template>
   <div class="home-layout">
+    <!-- 个人主页此前没有 skip-link（博客页有）。加上，方便键盘用户
+         跳过一长串导航直接读正文。实现同 site/Layout：JS 聚焦而非锚点，
+         避免 hash 路由把 `#home-main` 当成路由地址。 -->
+    <a class="skip-link" href="#home-main" @click.prevent="skipToMain">跳到主要内容</a>
     <header class="home-nav sg-liquid" :class="{ scrolled }">
       <div class="home-container nav-inner">
         <router-link to="/" class="brand">
@@ -62,7 +66,7 @@
       </transition>
     </header>
 
-    <main class="home-main">
+    <main id="home-main" class="home-main" tabindex="-1">
       <router-view v-slot="{ Component }">
         <transition name="page" mode="out-in" :duration="{ enter: 240, leave: 200 }">
           <component :is="Component" :key="route.path" />
@@ -138,6 +142,15 @@ import { blogUrl } from '@/utils/siteLinks';
 
 const route = useRoute();
 const theme = useThemeStore();
+
+/** 跳到主内容：只移焦点，不改 URL（hash 路由下锚点会被当成导航） */
+function skipToMain(e) {
+  e?.preventDefault?.();
+  const main = document.getElementById('home-main');
+  if (!main) return;
+  main.focus({ preventScroll: true });
+  main.scrollIntoView({ block: 'start', behavior: 'auto' });
+}
 const home = useHomeStore();
 
 const mobileOpen = ref(false);

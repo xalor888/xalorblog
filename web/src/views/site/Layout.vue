@@ -1,7 +1,17 @@
 <template>
   <div class="site-layout" :class="{ 'is-home': isHome }">
     <!-- 键盘无障碍：跳过导航直达正文（仅在 Tab 聚焦时可见） -->
-    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <!-- skip-link：**不能用 href="#main-content"**。
+         本项目用 hash 路由，`#main-content` 会被当成路由地址 ——
+         实测在文章页/留言页/带筛选的列表页按回车，URL 变成 `#/`，
+         **当前页面和查询参数全部丢失，人被送回首页**。
+         改成按钮 + JS 聚焦：只移动焦点，不碰 URL。
+         （保留 <a> 的语义与样式，用 role/tabindex 让它仍可被 Tab 到。） -->
+    <a
+      class="skip-link"
+      href="#main-content"
+      @click.prevent="skipToMain"
+    >跳到主要内容</a>
     <!-- 顶部导航 -->
     <header class="site-nav sg-liquid" :class="{ scrolled: scrolled, overlay: navOverlay }">
       <div class="nav-progress" :style="{ transform: `scaleX(${scrollPercent / 100})` }"></div>
@@ -427,6 +437,21 @@ function openSearch() {
  */
 const hamburgerRef = ref(null);
 
+/**
+ * 跳到主内容：只转移焦点，不改 URL。
+ * 为什么不用原生锚点跳转：hash 路由下 `#main-content` 会被 router 拦截成
+ * 「导航到主内容这个路由」，而它不存在 → 回退到首页，查询参数全丢。
+ */
+function skipToMain(e) {
+  // preventDefault 已在模板上做了，这里兜底
+  e?.preventDefault?.();
+  const main = document.getElementById('main-content');
+  if (!main) return;
+  // main 自带 tabindex="-1"，可以直接聚焦
+  main.focus({ preventScroll: true });
+  main.scrollIntoView({ block: 'start', behavior: 'auto' });
+}
+
 function openMobile() {
   mobileOpen.value = true;
   // 等抽屉渲染完再把焦点送进第一个链接
@@ -534,31 +559,10 @@ onUnmounted(() => {
   right: 0;
 }
 
-/* 键盘无障碍跳转链接：默认移出视口，Tab 聚焦时置顶显示 */
-.skip-link {
-  position: fixed;
-  top: -60px;
-  left: 16px;
-  z-index: calc(var(--z-nav) + 1);
-  padding: 10px 18px;
-  border-radius: 0 0 10px 10px;
-  background: var(--accent-fill);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-  transition: top 0.2s;
-}
-
-.skip-link:focus {
-  top: 0;
-  outline: none;
-}
-
-.skip-link:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
-}
+/* skip-link 的样式统一放在全局 main.css（两个布局共用）。
+   原先这里有一份 scoped 版本，带 [data-v-*] 的更高特指度会压过全局规则，
+   而且它和全局的 transform: translateX(-50%) 叠加后把元素推到屏幕外
+   （实测 left:-44px，键盘聚焦了却看不见）。 */
 
 .site-main:focus {
   outline: none;

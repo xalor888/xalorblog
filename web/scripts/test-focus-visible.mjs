@@ -304,6 +304,41 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【skip-link：跳转不能破坏当前路由】');
+{
+  // 实测严重缺陷：`href="#main-content"` 在 hash 路由下被当成路由地址，
+  // 在文章页/留言页/带筛选的列表页按回车 → URL 变成 `#/`，
+  // **当前页面和查询参数全部丢失，人被送回首页**。
+  const site = read('../src/views/site/Layout.vue');
+  ok(
+    '博客布局的 skip-link 用 @click.prevent（不让浏览器改 URL）',
+    /class="skip-link"[\s\S]{0,120}?@click\.prevent="skipToMain"/.test(site)
+  );
+  ok('有 skipToMain 处理函数', /function skipToMain\(e\)/.test(site));
+  ok(
+    'skipToMain 只聚焦不导航（不含 router.push / location 赋值）',
+    (() => {
+      const m = site.match(/function skipToMain\(e\)[\s\S]*?\n\}/);
+      return !!m && !/router\.(push|replace)/.test(m[0]) && !/location\.(hash|href)\s*=/.test(m[0]);
+    })()
+  );
+
+  const home = read('../src/views/home/Layout.vue');
+  ok('个人主页也有 skip-link（此前缺失）', /class="skip-link"/.test(home) && /skipToMain/.test(home));
+  ok('个人主页的主内容有 id 与 tabindex=-1', /<main id="home-main"[^>]*tabindex="-1"/.test(home));
+
+  const css = read('../src/styles/main.css');
+  ok(
+    'skip-link 样式在全局（两个布局共用，避免 scoped 特指度冲突）',
+    /\.skip-link \{/.test(css) && /\.skip-link:focus/.test(css)
+  );
+  ok(
+    '博客布局不再保留 scoped 版 skip-link（它会压过全局并推出屏幕外）',
+    !/\.skip-link \{\s*\n\s*position: fixed/.test(site)
+  );
+  ok('.skip-link 聚焦时进入视口', /top: calc\(12px \+ var\(--sat, 0px\)\)/.test(css));
+}
+
 console.log('\n【对话框：改了内容点取消不能静默丢弃】');
 {
   // 全库此前没有任何 el-dialog 做过关闭前确认（grep before-close = 0）。
