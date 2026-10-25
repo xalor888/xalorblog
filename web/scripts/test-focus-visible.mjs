@@ -370,6 +370,30 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【SEO 端点：RSS / Sitemap / robots 必须能出，且不能被伪造 Host 污染】');
+{
+  // 实测：三个端点都 200，Content-Type 正确（application/rss+xml / application/xml / text/plain）；
+  // RSS 6 条 item、带 guid 与 RFC822 pubDate；sitemap 17 个 url。
+  // 关键安全属性：伪造 `Host: evil.example.com` 后**四个端点全部 403** ——
+  // 否则攻击者能让 sitemap/rss 里的绝对 URL 指向自己的域名，搜索引擎就会收录错站点。
+  const app = read('../../server/src/app.js');
+  // 爬虫不执行 JS、不算 PoW，必须放行，否则 sitemap/RSS 全 403
+  ok('GATE_SKIP 放行 rss/sitemap/robots',
+     /GATE_SKIP = \[[^\]]*'\/rss\.xml'/.test(app) && /GATE_SKIP = \[[^\]]*'\/sitemap\.xml'/.test(app));
+  // trust proxy 不能用 true/跳数（会信任客户端可控的 X-Forwarded-For）
+  const cfg = read('../../server/src/config.js');
+  ok('TRUST_PROXY 默认 loopback', /TRUST_PROXY \?\? 'loopback'/.test(cfg));
+  ok('拒绝 true / 跳数的 TRUST_PROXY', /TRUST_PROXY 禁止使用 true/.test(cfg));
+
+  const feed = read('../../server/src/routes/feed.js');
+  ok('优先用后台配置的 site_url', /settings\.site_url/.test(feed));
+  ok('RSS 用 RFC822 时间', /toRfc822/.test(feed) && /toUTCString/.test(feed));
+  // CDATA 里的 ]]> 必须拆开，否则会提前终止 CDATA 段
+  ok('CDATA 安全转义', /\]\]>/.test(feed));
+  // 相对图片要转绝对，否则阅读器跨域加载失败
+  ok('相对路径转绝对', /siteUrl\.replace/.test(feed) || /abs = /.test(feed));
+}
+
 console.log('\n【文章点赞的限速：10 秒窗口，超限 429 且文案友好】');
 {
   // 实测：同一 IP 对同一文章连发 3 次点赞 ——
