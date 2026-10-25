@@ -353,6 +353,23 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【留言板：提交前就要说明可能要审核】');
+{
+  const msgs = read('../src/views/site/Messages.vue');
+  // 实测：提交前页面**没有任何地方**提到审核 ——
+  // 读者填完、点提交、看到「等待审核后展示」才知道自己的留言不会立刻出现。
+  // 审核开关（message_moderation）是站点设置且不下发给公开接口，
+  // 前端无法提前判断，所以措辞必须不依赖开关。
+  ok('提交区有审核说明', /class="review-hint"/.test(msgs));
+  ok(
+    '措辞是「可能」，不假设审核一定开着',
+    /留言可能需审核后展示/.test(msgs),
+    '公开接口不下发 message_moderation，前端无法判定'
+  );
+  ok('说明在提交按钮同一区域（提交前可见）', /review-hint[\s\S]{0,200}?submit-btn/.test(msgs));
+  ok('样式用 --text-3（实测 5.34 / 5.1 均达标）', /\.review-hint \{[\s\S]{0,80}?color:\s*var\(--text-3\)/.test(msgs));
+}
+
 console.log('\n【错误页的文字必须显式给颜色】');
 {
   const detail = read('../src/views/site/ArticleDetail.vue');

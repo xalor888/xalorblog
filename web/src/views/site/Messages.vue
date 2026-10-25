@@ -76,6 +76,14 @@
             <XIcon name="Smile" :size="15" />
           </button>
           <span class="char-count" :class="{ near: form.content.length > 1800 }">{{ form.content.length }}/2000</span>
+          <!-- 提交前就说明审核这回事。
+               实测：提交前页面**没有任何地方**提到审核 ——
+               读者填完、点提交、看到「等待审核后展示」才知道，
+               在此之前完全不知道自己的留言不会立刻出现。
+               审核开关是站点设置（message_moderation），但公开接口不下发它，
+               前端无法提前判断；所以这里用的是**不依赖开关的中性措辞**：
+               开启审核时它是准确的预告，未开启时它也不构成误导（「可能」）。 -->
+          <span class="review-hint">留言可能需审核后展示</span>
           <span class="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> 提交</span>
           <button class="submit-btn" :disabled="submitting" @click="submit">
             {{ submitting ? '发送中…' : '发布留言' }}
@@ -501,6 +509,11 @@ onUnmounted(() => {
 }
 
 /* 快捷提交提示（桌面端显示） */
+.review-hint {
+  font-size: 0.76rem;
+  color: var(--text-3);
+}
+
 .shortcut-hint {
   font-size: 0.74rem;
   color: var(--text-3);
