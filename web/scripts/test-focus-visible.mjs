@@ -353,6 +353,24 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【实心元素必须用 --accent-fill，不能用 --accent】');
+{
+  const css = read('../src/styles/main.css');
+  // --accent 在深色下为了「当文字时对深底够对比」被提亮；
+  // 同一抹亮色配白字只有 2.55:1。--accent-fill 是压深过的，白字对它 5.17:1。
+  // 实测：skip-link 是全站最后一个漏用 --accent-fill 的实心元素（暗色下 2.55:1）。
+  const skipBlock = (css.match(/\.skip-link \{[\s\S]*?\}/) || [''])[0];
+  ok('skip-link 用 --accent-fill 作底', /background:\s*var\(--accent-fill\)/.test(skipBlock));
+  ok('skip-link 不再用 --accent 作底', !/background:\s*var\(--accent\);/.test(skipBlock));
+
+  ok('--accent-fill 有定义（浅色 #bb4732）', /--accent-fill:\s*#bb4732/.test(css));
+  ok('--accent-fill 有静态注释说明为什么不能直接用 --accent', /拿去配白字只有 2\.55:1/.test(css));
+
+  // 其余实心元素都用 fill
+  const fillUses = (css.match(/background:\s*var\(--accent-fill\)/g) || []).length;
+  ok('至少 4 处实心元素用 --accent-fill', fillUses >= 4, `实际 ${fillUses} 处`);
+}
+
 console.log('\n【不要用 opacity 压低文字对比度】');
 {
   // 实测：.empty-state .empty-hint 用 --text-3 本身是 5.34:1（合规），
