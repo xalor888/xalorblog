@@ -877,15 +877,41 @@ function onKeydown(e) {
   }
 }
 
+/**
+ * 阅读进度的基准是**正文结束**，不是整页结束。
+ *
+ * 为什么：原实现用 `scrollHeight - innerHeight` 当分母，
+ * 而本页正文之后还有约 1848px 的页脚 / 版权 / 上下篇导航（占整页 64%）。
+ * 实测**读者读完正文那一刻，进度只有 36.2%** —— 读完了却显示才读三分之一，
+ * 这个数字是错的，而且会让人以为文章还长着。
+ *
+ * 现在的分母是「正文末尾到视口顶部」的距离：
+ * - 正文末尾进入视口（即读者看到最后一行）时 = 100%；
+ * - 正文再短也不跳变：`Math.min(100, ...)` 兜住。
+ * 滚过正文之后（页脚、推荐）进度保持在 100%，符合「读完了」的直觉。
+ */
+function computeReadingProgress() {
+  const body = document.querySelector('.markdown-body');
+  if (!body) {
+    // 正文还没渲染出来（首屏加载中）：退回整页算法，避免突然跳到 0
+    const doc = document.documentElement;
+    const max = doc.scrollHeight - window.innerHeight;
+    return max > 0 ? Math.min(100, (window.scrollY / max) * 100) : 0;
+  }
+  const bodyBottom = body.getBoundingClientRect().bottom + window.scrollY;
+  // 读者看到正文最后一行时的 scrollY
+  const endScroll = bodyBottom - window.innerHeight;
+  if (endScroll <= 0) return 100; // 正文一屏就放得下，视为已读完
+  return Math.max(0, Math.min(100, (window.scrollY / endScroll) * 100));
+}
+
 /** 滚动监听：阅读进度（rAF 节流）+ TOC 高亮由 IntersectionObserver 负责 */
 let ticking = false;
 function onScroll() {
   if (ticking) return;
   ticking = true;
   requestAnimationFrame(() => {
-    const doc = document.documentElement;
-    const max = doc.scrollHeight - window.innerHeight;
-    progress.value = max > 0 ? Math.min(100, (window.scrollY / max) * 100) : 0;
+    progress.value = computeReadingProgress();
     ticking = false;
   });
 }

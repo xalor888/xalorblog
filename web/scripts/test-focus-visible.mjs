@@ -304,6 +304,35 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【阅读进度以正文为准，不以整页为准】');
+{
+  // 实测：原实现分母是 scrollHeight - innerHeight，而正文之后还有
+  // 约 1848px 的页脚/版权/上下篇导航（占整页 64%）。
+  // **读完正文那一刻进度只有 36.2%** —— 读完了却显示才读三分之一。
+  const detail = read('../src/views/site/ArticleDetail.vue');
+  ok('有 computeReadingProgress', /function computeReadingProgress\(\)/.test(detail));
+  ok(
+    '用正文末尾而非文档高度作分母',
+    /body\.getBoundingClientRect\(\)\.bottom \+ window\.scrollY/.test(detail),
+    '用 scrollHeight 会把页脚也算进阅读量'
+  );
+  ok(
+    '正文一屏放得下时视为已读完（不显示 0%）',
+    /if \(endScroll <= 0\) return 100;/.test(detail)
+  );
+  ok(
+    '正文还没渲染时退回整页算法（避免首屏突然跳到 0）',
+    /if \(!body\) \{[\s\S]{0,200}?return max > 0/.test(detail)
+  );
+  ok('结果夹在 0–100', /Math\.max\(0, Math\.min\(100,/.test(detail));
+  ok('onScroll 调用统一函数（三个进度显示共用一份计算）', /progress\.value = computeReadingProgress\(\);/.test(detail));
+  ok(
+    '不再有第二处独立的整页进度计算',
+    (detail.match(/scrollHeight - window\.innerHeight/g) || []).length === 1,
+    '留着两套算法迟早会漂移'
+  );
+}
+
 console.log('\n【图片：正文尊重空 alt，但灯箱必须有名字】');
 {
   // 实测：`alt=""` 的图打开灯箱后 aria-label 只有「查看大图」——
