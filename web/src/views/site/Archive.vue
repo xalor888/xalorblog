@@ -21,18 +21,24 @@
 
       <div class="timeline">
         <div v-for="yg in yearGroups" :key="yg.year" class="tl-year-group" :data-year="yg.year" v-reveal>
+          <!-- 年份用 h2，给它一个真正的标题层级。
+               原来整页只有 h1「归档」，年份和月份都是 <span> ——
+               读屏用户只能一路 Tab 过六个链接，没法按标题跳年份。 -->
           <div class="tl-year-head">
-            <span class="tl-year-big">{{ yg.year }}</span>
+            <h2 class="tl-year-big">{{ yg.year }}</h2>
             <span class="tl-year-count">{{ yg.count }} 篇</span>
           </div>
 
           <div v-for="group in yg.months" :key="group.month" class="tl-group">
             <div class="tl-month">
-              <span class="tl-month-text">{{ monthOf(group.month) }} 月</span>
+              <h3 class="tl-month-text">{{ monthOf(group.month) }} 月</h3>
               <span class="tl-count">{{ group.count }} 篇</span>
             </div>
 
-            <div class="tl-bar">
+            <!-- 条形图是纯视觉的「这个月有多少篇」。
+                 那个数字旁边已经用文字说了（{{ group.count }} 篇），
+                 所以这里对读屏隐藏，避免同一件事被念两遍。 -->
+            <div class="tl-bar" aria-hidden="true">
               <div class="tl-bar-fill" :style="{ width: barWidth(group.count) + '%' }"></div>
             </div>
 

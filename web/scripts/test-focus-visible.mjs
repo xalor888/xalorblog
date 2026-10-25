@@ -353,6 +353,19 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【归档页的年月要是真标题】');
+{
+  const arc = read('../src/views/site/Archive.vue');
+  // 实测：整页只有 h1「归档」，年份与月份都是 <span> ——
+  // 读屏用户只能一路 Tab 过六个链接，没法按标题跳年份。
+  ok('年份用 h2', /<h2 class="tl-year-big">/.test(arc));
+  ok('月份用 h3（层级不跳）', /<h3 class="tl-month-text">/.test(arc));
+  // 条形图是纯视觉的份量示意，旁边已有「N 篇」文字，对读屏隐藏避免重复
+  ok('条形图对读屏隐藏（数字已用文字说过）', /class="tl-bar" aria-hidden="true"/.test(arc));
+  // 换成标题元素后不能破坏版式：全局 * { margin:0 } 负责清零
+  ok('标题没有自带外边距问题（全局 reset 存在）', /\*\s*\{\s*margin:\s*0;/.test(read('../src/styles/main.css')));
+}
+
 console.log('\n【改筛选要回第 1 页，改排序/每页条数不该清筛选】');
 {
   const list = read('../src/views/site/ArticleList.vue');
