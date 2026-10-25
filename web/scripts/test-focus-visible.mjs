@@ -353,6 +353,20 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【筛选 chip 的选中态要能被播报】');
+{
+  const list = read('../src/views/site/ArticleList.vue');
+  // 实测：列表页 16 个筛选 chip（分类 5 + 标签 11）里，
+  // 原本只有排序/视图按钮带 aria-pressed，**分类与标签全都没有** ——
+  // 视觉上有 .active，读屏听到的只是一串按钮，不知道此刻筛的是哪个。
+  ok('分类「全部」有 aria-pressed', /:aria-pressed="!activeCategory \? 'true' : 'false'"/.test(list));
+  ok('分类项有 aria-pressed', /:aria-pressed="activeCategory === c\.slug \? 'true' : 'false'"/.test(list));
+  ok('标签「全部」有 aria-pressed', /:aria-pressed="!activeTag \? 'true' : 'false'"/.test(list));
+  ok('标签项有 aria-pressed', /:aria-pressed="activeTag === t\.slug \? 'true' : 'false'"/.test(list));
+  // 排序/视图原本就有，别被改坏
+  ok('排序按钮仍带 aria-pressed', /:aria-pressed="sort === 'latest'"/.test(list));
+}
+
 console.log('\n【404 页要等人，不该催人】');
 {
   const nf = read('../src/views/site/NotFound.vue');

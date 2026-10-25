@@ -66,9 +66,13 @@
         <div class="filter-row">
           <span class="filter-label">分类</span>
           <div class="chips">
+            <!-- aria-pressed 让「当前选中哪个」被播报出来。
+                 原来只有 .active 这个视觉类，读屏用户听到的是一串按钮，
+                 不知道此刻筛的是哪个分类。 -->
             <button
               class="chip"
               :class="{ active: !activeCategory }"
+              :aria-pressed="!activeCategory ? 'true' : 'false'"
               @click="selectCategory('')"
             >全部</button>
             <button
@@ -76,6 +80,7 @@
               :key="c.id"
               class="chip"
               :class="{ active: activeCategory === c.slug }"
+              :aria-pressed="activeCategory === c.slug ? 'true' : 'false'"
               @click="selectCategory(c.slug)"
             >
               {{ c.name }}<span class="chip-count">{{ c.article_count }}</span>
@@ -89,6 +94,7 @@
             <button
               class="chip"
               :class="{ active: !activeTag }"
+              :aria-pressed="!activeTag ? 'true' : 'false'"
               @click="selectTag('')"
             >全部</button>
             <button
@@ -96,6 +102,7 @@
               :key="t.id"
               class="chip"
               :class="{ active: activeTag === t.slug }"
+              :aria-pressed="activeTag === t.slug ? 'true' : 'false'"
               @click="selectTag(t.slug)"
             ># {{ t.name }}</button>
           </div>
