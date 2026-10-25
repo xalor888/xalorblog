@@ -370,6 +370,27 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【分享页：社交预览靠 OG meta，且必须转义】');
+{
+  // 实测：/api/share/:slug 返回 200，og:type/title/description/image/url/site_name/locale 齐全，
+  // twitter:card 为 summary_large_image。
+  // 把标题改成 `测试 "双引号" & <script>alert(1)</script>` 后，
+  // 输出为 `&quot; &amp; &lt;script&gt;` —— 无法突破 content="..." 的边界。
+  const sh = read('../../server/src/routes/share.js');
+  for (const tag of ['og:type', 'og:title', 'og:description', 'og:image', 'og:url']) {
+    ok(`分享页有 ${tag}`, new RegExp(tag).test(sh));
+  }
+  ok('有 twitter:card（大图卡）', /twitter:card/.test(sh) && /summary_large_image/.test(sh));
+  // 必须有转义函数，且覆盖 & < > "
+  const escFn = (sh.match(/const esc = \(s\) =>[\s\S]{0,340}/) || [''])[0] ||
+                (sh.match(/function esc\([\s\S]{0,340}/) || [''])[0];
+  ok('有 HTML 转义函数', !!escFn, escFn.slice(0, 50));
+  ok('转义覆盖 & < > "', /&amp;/.test(escFn) && /&lt;/.test(escFn) && /&quot;/.test(escFn));
+  // 分享页也必须禁 PoW（爬虫不算 PoW）
+  const app = read('../../server/src/app.js');
+  ok('GATE_SKIP 放行分享页', /'\/share\/'/.test(app) && /'\/share-page'/.test(app));
+}
+
 console.log('\n【SEO 端点：RSS / Sitemap / robots 必须能出，且不能被伪造 Host 污染】');
 {
   // 实测：三个端点都 200，Content-Type 正确（application/rss+xml / application/xml / text/plain）；
