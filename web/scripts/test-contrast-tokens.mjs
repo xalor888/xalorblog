@@ -200,6 +200,43 @@ console.log('\n【代码高亮：深色代码底上的可读性】');
   }
 }
 
+console.log('\n【后台：Element Plus 默认灰与语义色的对比度】');
+{
+  // 后台是**信息密度高**的界面：表格、日志、表单全在密集阅读。
+  // 审计五个页面时发现 18 项不达标，共同点是都用了 EP 的浅色档。
+  ok(
+    'EP 的 placeholder / secondary 变量被覆盖（变量级最可靠）',
+    /--el-text-color-placeholder:\s*var\(--text-3\)/.test(css)
+    && /--el-text-color-secondary:\s*var\(--text-2\)/.test(css)
+  );
+  ok(
+    '这些变量覆盖作用在 .el-input/.el-select/.el-table 等容器上',
+    /\.el-input,[\s\S]{0,200}?--el-text-color-placeholder/.test(css)
+  );
+  // 特指度：EP 自己用 `.el-textarea .el-input__count`（0,2,0），裸类名打不过
+  ok(
+    'input 字数统计用加一层祖先的选择器（否则被 EP 的 0,2,0 压过）',
+    /\.el-input \.el-input__count,[\s\S]{0,120}?\.el-textarea \.el-input__count/.test(css)
+  );
+  ok(
+    'warning 按钮底色压深（EP 原色 #e6a23c 配白字仅 2.19:1）',
+    /--el-button-bg-color:\s*#a06614/.test(css)
+  );
+  ok(
+    'success 按钮的描边/文字态用深绿（原 #67c23a 压浅绿底 2.08:1）',
+    /\.el-button--success\.is-plain,[\s\S]{0,200}?color:\s*#2f7a37/.test(css)
+  );
+  ok(
+    'danger 文字链接态用深红（原 #f56c6c 对白底 2.9:1）',
+    /\.el-button\.is-link\.el-button--danger,[\s\S]{0,160}?color:\s*#a8323a/.test(css)
+  );
+
+  // 自定义徽标（安全日志的事件类型）
+  const sec = readFileSync(resolve(here, '../src/views/admin/SecurityManage.vue'), 'utf8');
+  ok('安全日志事件徽标文字已压深', /\.t-waf \{[^}]*color: #9e3548/.test(sec));
+  ok('认证失败徽标（原 #c9900f 仅 2.46:1）已压深', /\.t-auth \{[^}]*color: #8a5a00/.test(sec));
+}
+
 console.log('\n【反向保护：这些地方必须继续用原色，不能也被换掉】');
 {
   // 装饰用途（圆点/下划线/进度条/边框）应保持鲜艳的主色

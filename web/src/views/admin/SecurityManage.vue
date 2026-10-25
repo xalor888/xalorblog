@@ -768,11 +768,15 @@ onUnmounted(() => {
   border-radius: 5px;
 }
 
-.t-waf { background: color-mix(in srgb, #c24b5e 12%, transparent); color: #c24b5e; }
-.t-auth { background: color-mix(in srgb, #c9900f 14%, transparent); color: #c9900f; }
-.t-ban { background: color-mix(in srgb, #c24b5e 16%, transparent); color: #c24b5e; }
-.t-rate { background: color-mix(in srgb, #2f6fb3 12%, transparent); color: #2f6fb3; }
-.t-spam { background: color-mix(in srgb, #6d5bb8 12%, transparent); color: #6d5bb8; }
+/* 事件类型徽标：文字比底色深一档。
+   原来两者同色，只有 alpha 差 —— 实测 2.46 / 4.01 / 4.42:1，
+   而这是安全日志里最先被扫读的一列（一眼要知道「这是什么类型的事件」）。
+   色相保持不变，只压深前景，观感仍是同一颜色的深浅两层。 */
+.t-waf { background: color-mix(in srgb, #c24b5e 12%, transparent); color: #9e3548; }
+.t-auth { background: color-mix(in srgb, #c9900f 14%, transparent); color: #8a5a00; }
+.t-ban { background: color-mix(in srgb, #c24b5e 16%, transparent); color: #9e3548; }
+.t-rate { background: color-mix(in srgb, #2f6fb3 12%, transparent); color: #2a64a2; }
+.t-spam { background: color-mix(in srgb, #6d5bb8 12%, transparent); color: #5a49a0; }
 
 .event-ip {
   flex-shrink: 0;

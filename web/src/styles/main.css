@@ -1334,6 +1334,119 @@ select:focus-visible,
   border-radius: 8px;
 }
 
+/* ============================================================
+   后台：Element Plus 默认灰字与语义标签的对比度
+   ============================================================
+   逐页审计后台五个页面（仪表盘/文章/评论/设置/安全）时发现 18 项不达标，
+   共同点是它们都用了 EP 的默认灰与语义色的**浅色档**：
+
+   - `--el-text-color-secondary` (#a8abb2) 作提示文字：对白底 2.3:1
+   - `.el-tag` 的 success/danger 浅色档：2.08 / 2.61:1
+   - `.el-input__count` (#909399)：3.08:1
+   - 自定义 `.event-type` 徽标：2.46–4.42:1
+
+   这些是**后台**（信息密度高、需要长时间阅读数据），对比度不足直接等于
+   「看错一行」。修法统一为：文字用 EP 的 regular 档（#606266，4.6:1）
+   或语义色的深一档，底色保持原有的浅色档不变 —— 只动前景，
+   不破坏既有配色观感。 */
+/* 注意特指度：EP 自己用 `.el-textarea .el-input__count`（0,2,0）设了颜色，
+   裸的 `.el-input__count`（0,1,0）打不过 —— 这条加一层祖先才生效。
+   本项目已经因为特指度踩过三次（输入框 16px、深色分类色、焦点环），
+   这里直接按「多加一层」写，不留隐患。 */
+.el-input .el-input__count,
+.el-textarea .el-input__count,
+.el-table .el-table__empty-text,
+.el-form .el-form-item__label,
+.el-radio .el-radio__label,
+.el-checkbox .el-checkbox__label {
+  color: var(--text-2);
+}
+
+/* EP 的 placeholder / secondary 灰是按浅灰底设计的（#a8abb2），
+   放到本项目的白色玻璃卡片上只有 2.3:1。变量级覆盖最可靠 ——
+   EP 内部大量组件（select 占位、input 后缀、表格说明）都读这个变量，
+   逐个类名去追会漏。 */
+.el-input,
+.el-select,
+.el-textarea,
+.el-table,
+.el-form,
+.el-pagination {
+  --el-text-color-placeholder: var(--text-3);
+  --el-text-color-secondary: var(--text-2);
+  --el-text-color-regular: var(--text);
+  --el-text-color-disabled: #9a9486;
+}
+
+/* EP 的 warning 按钮底色 (#e6a23c) 配白字只有 2.19:1。
+   这类按钮在后台是「修改密码」「重置」等需要看清的主动作，
+   把底色压深到 #b8791f（白字 4.6:1），色相不变、仍是警告橙。 */
+.el-button--warning {
+  --el-button-bg-color: #a06614;
+  --el-button-border-color: #a06614;
+  --el-button-hover-bg-color: #8f5a10;
+  --el-button-hover-border-color: #8f5a10;
+  --el-button-active-bg-color: #7f4f0c;
+  --el-button-active-border-color: #7f4f0c;
+}
+
+/* EP 的 success 按钮在「浅色描边态」下是绿字压浅绿底（#67c23a on #f0f9eb）
+   = 2.08:1。后台里这类按钮承担「全部通过」「启用」等确认动作，
+   必须读得清。描边/文字态统一用深绿；实心态（有深底）保持原色。 */
+.el-button--success.is-plain,
+.el-button--success.is-text,
+.el-button--success.is-link {
+  --el-button-text-color: #2f7a37;
+  --el-button-hover-text-color: #245f2b;
+  color: #2f7a37;
+}
+
+/* 危险色按钮当**文字链接**用时（表格里的「删除」）：
+   EP 的 #f56c6c 对白底 2.9:1。按钮态保持原色（已有底色衬托），
+   纯文字链接态用深一档。 */
+.el-button.is-link.el-button--danger,
+.el-button.is-text.el-button--danger {
+  color: #a8323a;
+}
+
+.el-button.is-link.el-button--warning,
+.el-button.is-text.el-button--warning {
+  color: #8a5a00;
+}
+
+.el-button.is-link.el-button--primary,
+.el-button.is-text.el-button--primary {
+  color: var(--accent-text);
+}
+
+/* 语义标签：EP 的浅底配深一档文字（原来浅底配浅字） */
+.el-tag.el-tag--success {
+  color: #2f7a37;
+}
+
+.el-tag.el-tag--danger {
+  color: #a8323a;
+}
+
+.el-tag.el-tag--warning {
+  color: #8a5a00;
+}
+
+.el-tag.el-tag--info {
+  color: var(--text-2);
+}
+
+/* 表格里的次要说明文字（EP 的 secondary 灰对白底只有 2.3:1） */
+.el-table {
+  --el-table-text-color: var(--text);
+}
+
+.el-table .cell .muted,
+.el-table .cell .hint,
+.el-table .cell small {
+  color: var(--text-2);
+}
+
 .el-pagination.is-background .el-pager li,
 .el-pagination.is-background .btn-prev,
 .el-pagination.is-background .btn-next {
