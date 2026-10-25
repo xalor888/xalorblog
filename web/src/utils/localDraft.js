@@ -34,6 +34,11 @@ export function loadDraft(key) {
     localStorage.removeItem(key); // 过期/损坏草稿直接清理
     return '';
   } catch (e) {
+    // JSON.parse 抛异常时会直接跳到这里 —— 上面那行「过期/损坏草稿直接清理」
+    // 永远走不到，损坏的键就留在 localStorage 里烂着
+    // （实测：写入 "not json{{{" 后 loadDraft 返回空串，但键仍在）。
+    // 注释承诺了要清理，就把清理补在真正能覆盖损坏场景的分支里。
+    try { localStorage.removeItem(key); } catch (_) { /* 隐私模式忽略 */ }
     return '';
   }
 }

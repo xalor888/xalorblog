@@ -370,6 +370,22 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【本地草稿：过期/损坏/空内容都要清掉键】');
+{
+  // 实测 loadDraft 四种输入：过期(25h)→空串且删键；损坏 JSON→空串但**键没删**（缺陷）；
+  // 正常→返回内容保留键；纯空格→空串且删键。
+  // 缺陷原因：JSON.parse 抛异常直接跳 catch，走不到上面那行「损坏草稿直接清理」。
+  const ld = read('../src/utils/localDraft.js');
+  ok('有 24 小时 TTL', /24 \* 3600 \* 1000/.test(ld));
+  ok('过期草稿会删键', /localStorage\.removeItem\(key\)/.test(ld));
+  // 关键：catch 分支里也要清理，否则损坏的键永久残留
+  const catchBlock = (ld.match(/\} catch \(e\) \{[\s\S]{0,400}?\n  \}/) || [''])[0];
+  ok('catch 分支也清理损坏草稿', /removeItem\(key\)/.test(catchBlock), catchBlock.slice(0, 70));
+  // 读写都要 try/catch —— 隐私模式下 localStorage 会直接抛
+  ok('写入有 try/catch（隐私模式）', /try \{[\s\S]{0,120}setItem/.test(ld));
+  ok('空内容不写入（避免残留空草稿）', /trim\(\)\) \{[\s\S]{0,60}removeItem/.test(ld) || /else \{[\s\S]{0,60}removeItem/.test(ld));
+}
+
 console.log('\n【留言提交：校验、待审核、清空输入】');
 {
   // 实测四种输入：全空 → 「请填写昵称」；只填昵称 → 「请填写留言内容（不能只有空格）」；
