@@ -351,5 +351,22 @@ console.log('\n【反向保护：这些地方必须继续用原色，不能也�
   ok('压深没有过头（珊瑚仍 < 8:1）', coralCr < 8, `珊瑚 ${coralCr.toFixed(2)}`);
 }
 
+
+// ============================================================
+// 激活态必须比普通态更亮（含跨站入口）
+// ============================================================
+// 实测发现：.site-nav.overlay .nav-link.external 的 0.6 白写在
+// .nav-link.active 的白色之后，两者特指度相同（0,2,0），**后写的赢** ——
+// 于是「当前所在页面」反而比邻居更淡（0.6 vs 0.78）。
+// 补了一条 .external.active 白色规则把语义找回来。
+// 注意：对比度本身没问题（玻璃底上 0.6 白实测 6.90:1）——
+// 这是**层级语义**问题，不是对比度问题，别搞混。
+{
+  const layout = readFileSync(resolve(here, '../src/views/site/Layout.vue'), 'utf8');
+  ok('跨站入口有显式的激活态颜色', /\.site-nav\.overlay \.nav-link\.external\.active/.test(layout));
+  const rule = (layout.match(/\.site-nav\.overlay \.nav-link\.external\.active \{[^}]*\}/) || [''])[0];
+  ok('激活态用纯白（比 0.6/0.78 都亮）', /color:\s*#fff/.test(rule), rule.slice(0, 50));
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);

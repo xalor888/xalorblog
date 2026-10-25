@@ -671,6 +671,16 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, 0.6);
 }
 
+/* 激活态的外链必须比普通态**更亮**，否则「当前所在页面」反而显得最次要。
+   实测：这条规则原本写在 .site-nav.overlay .nav-link.active（白色 + 12% 底）之后，
+   两者特指度相同（都是 0,2,0），**后写的赢** ——
+   于是 MAIN 这个当前页链接拿到了 0.6 的白，比邻居的 0.78 还淡。
+   （对比度本身不是问题：玻璃底上 0.6 白实测 6.90:1，远超 4.5。）
+   这里只补回「激活 = 最亮」这一层语义。 */
+.site-nav.overlay .nav-link.external.active {
+  color: #fff;
+}
+
 /* 移动端抽屉里的跨站项：与站内项同样的排版 */
 .mobile-link.external {
   display: flex;
