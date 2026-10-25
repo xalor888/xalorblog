@@ -125,8 +125,19 @@
         </div>
       </div>
 
+      <!-- 状态播报（读屏用，视觉不可见）。
+           **必须放在三条分支之外** —— 以前它嵌在 v-else 里，
+           而 loading 时走的是另一个分支，于是「加载中」这段时间
+           播报点根本不存在：读屏用户听不到任何动静，
+           直到数据到了才知道刚才发生过一次加载。
+           现在它常驻，覆盖 加载中 / 失败 / 有数据 / 空态 四种状态。
+           骨架屏本身 aria-hidden（纯装饰），由这里的文字承担播报职责。 -->
+      <p class="sr-only" role="status" aria-live="polite" :aria-busy="loading ? 'true' : 'false'">
+        {{ resultAnnouncement }}
+      </p>
+
       <!-- 列表 -->
-      <SkeletonList v-if="loading" :count="3" class="list-loading" />
+      <SkeletonList v-if="loading" :count="3" class="list-loading" aria-hidden="true" />
       <template v-else-if="loadFailed">
         <!-- 网络/服务错误：明确提示并提供重试，避免误显示空状态。
              加 state-error 类是为了能和「真的没有文章」区分开 ——
@@ -140,13 +151,6 @@
         </div>
       </template>
       <template v-else>
-        <!-- 结果更新播报：翻页 / 切排序 / 换筛选都是**局部刷新**，页面不跳转、
-             标题不变，读屏用户完全感知不到内容已经换了。
-             role=status + aria-live=polite：读屏会念出结果条数，但不打断当前朗读。
-             把 aria-busy 绑在 loading 上，读屏可以据此判断「还在加载」。 -->
-        <p class="sr-only" role="status" aria-live="polite" :aria-busy="loading ? 'true' : 'false'">
-          {{ resultAnnouncement }}
-        </p>
         <div v-if="articles.length" class="list" :class="viewMode" v-reveal="'stagger'">
           <!-- 列表视图：紧凑行式 -->
           <template v-if="viewMode === 'list'">

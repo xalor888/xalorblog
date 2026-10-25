@@ -277,6 +277,46 @@ console.log('\n【表单错误必须可定位、可关联】');
   ok('出错字段边框变红（视觉用户也能定位）', /\.form-input\.is-invalid,[\s\S]{0,120}?border-color:\s*#a8323a/.test(css));
 }
 
+console.log('\n【状态播报必须覆盖「加载中」，不能只在有数据时才存在】');
+{
+  const list = read('../src/views/site/ArticleList.vue');
+  // 实测（慢网 + 应用内导航）：加载中时 [role=status] **根本不存在**，
+  // 因为它嵌在 v-else 分支里，而 loading 走另一个分支。
+  // 结果：读屏用户在加载期间听不到任何动静，数据到了才知道刚才加载过。
+  // 同时骨架屏 aria-hidden（纯装饰），所以那段时间对读屏是彻底的静默。
+  const statusIdx = list.indexOf('role="status"');
+  const loadingIdx = list.indexOf('v-if="loading"');
+  const elseIdx = list.indexOf('v-else-if="loadFailed"');
+  ok(
+    '播报点存在',
+    statusIdx !== -1 && list.includes('aria-live="polite"')
+  );
+  ok(
+    '播报点在 loading 分支之前（否则加载中它不存在）',
+    statusIdx !== -1 && loadingIdx !== -1 && statusIdx < loadingIdx,
+    '曾经埋在 v-else 里，加载中是静默的'
+  );
+  ok(
+    '播报点在 loadFailed 分支之前（失败播报交给 role=alert，但状态点仍常驻）',
+    statusIdx !== -1 && elseIdx !== -1 && statusIdx < elseIdx
+  );
+  ok(
+    'aria-busy 绑在 loading 上（读屏可判断是否还在加载）',
+    /:aria-busy="loading \? 'true' : 'false'"/.test(list)
+  );
+  ok(
+    '加载中有具体文案（不是空壳播报点）',
+    /if \(loading\.value\) return '正在加载文章…'/.test(list)
+  );
+
+  // 搜索弹窗的 aria-live 包住整个 body，覆盖 搜索中/有结果/无结果 三态，正确
+  const search = read('../src/components/ui/SearchModal.vue');
+  ok(
+    '搜索弹窗的 aria-live 包住整个结果区（覆盖三种状态）',
+    /<div class="search-body" aria-live="polite">/.test(search)
+  );
+}
+
 console.log('\n【表单控件必须有真名，不能只靠 placeholder】');
 {
   // 实测审计：后台登录页三个 <label> 都只是「视觉标签」，
