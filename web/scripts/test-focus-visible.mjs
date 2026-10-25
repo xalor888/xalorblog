@@ -353,6 +353,28 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【改筛选要回第 1 页，改排序/每页条数不该清筛选】');
+{
+  const list = read('../src/views/site/ArticleList.vue');
+  const catFn = (list.match(/function selectCategory[\s\S]*?\n\}/) || [''])[0];
+  const tagFn = (list.match(/function selectTag[\s\S]*?\n\}/) || [''])[0];
+  // 实测：第 2 页（共 12 篇时 4 行）加一个分类筛选 → URL 的 page 被清掉、
+  // 当前页回到 1。这是对的：筛选后第 2 页可能根本不存在。
+  ok('改分类会重置页码', /delete q\.page/.test(catFn));
+  ok('改标签会重置页码', /delete q\.page/.test(tagFn));
+  // 但「清除筛选」不能把排序和每页条数一起清掉（那是偏好，不是筛选）
+  const clearFn = (list.match(/function clearFilter[\s\S]*?\n\}/) || [''])[0];
+  ok(
+    'clearFilter 不动排序与每页条数',
+    !/delete q\.sort/.test(clearFn) && !/delete q\.pageSize/.test(clearFn),
+    clearFn.slice(0, 40)
+  );
+
+  // 关键词与筛选可以共存（上一轮改成不清 keyword 后必须仍然如此）
+  ok('改分类时关键词保留', !/delete q\.keyword/.test(catFn));
+  ok('改标签时关键词保留', !/delete q\.keyword/.test(tagFn));
+}
+
 console.log('\n【空态文案必须说出全部生效的筛选】');
 {
   const list = read('../src/views/site/ArticleList.vue');
