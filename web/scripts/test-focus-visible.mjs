@@ -370,6 +370,25 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【深链锚点：带 #heading-N 进来要真的滚过去】');
+{
+  // 缺陷：`#/article/slug#heading-2` 这类分享链接**不会跳** ——
+  // hash 路由只认第一个 #，浏览器不会处理二级 hash。
+  // 实测：带锚点进来 scrollY 仍是 0、目标停在 top=1212 视口外，锚点在分享那刻就失效了。
+  // 修：正文异步取回后，nextTick + requestAnimationFrame 再滚（要跨过 router 的
+  // scrollBehavior `return { top: 0 }` 那次重置，否则两者打架 —— 实测四个锚点得到过 42/344/74/74）。
+  // 独立进程逐个验：四个锚点 top 全部 74（scroll-margin-top 是 88）。
+  const ad = read('../src/views/site/ArticleDetail.vue');
+  ok('读取 route.hash 做深链', /route\.hash/.test(ad));
+  ok('等 DOM 后再滚（nextTick）', /nextTick\(\(\) => \{[\s\S]{0,200}requestAnimationFrame/.test(ad),
+     (ad.match(/const hashId[^\n]*/) || [''])[0].slice(0, 60));
+  // 要跨过 router 的那次 top:0 重置，单靠 nextTick 不够
+  ok('用 rAF 跨过路由重置', /requestAnimationFrame/.test(ad));
+  ok('深链用 auto 而非 smooth', /behavior: 'auto'/.test(ad));
+  // 聚焦目标标题（键盘用户 Tab 从那里继续），但不能让它自己滚
+  ok('聚焦但不让它自己滚', /focus\(\{ preventScroll: true \}\)/.test(ad));
+}
+
 console.log('\n【文章目录：锚点一一对应、跳转不被导航栏遮住、滚动高亮跟随】');
 {
   // 实测：4 个 h2 生成 #heading-0..3，TOC 链接与之逐条对应；

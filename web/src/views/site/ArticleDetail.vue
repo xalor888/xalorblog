@@ -731,6 +731,27 @@ async function load() {
     setArticleCopyAllowed(a.allow_copy);
     applyPageMeta();
     toc.value = extractToc(a.content);
+    // 深链直达某个小标题：别人分享 `#/article/slug#heading-2` 这类链接时，
+    // hash 路由的二级 hash **不会被浏览器自动处理**（浏览器只认第一个 #）。
+    // 实测：带着 `#heading-2` 进来时 scrollY 仍是 0、目标标题停在 top=1212 视口外，
+    // 也就是说那个锚点在分享出去的那一刻就失效了。
+    // 正文是异步取回的，所以必须等 DOM 渲染完（nextTick）再滚，否则元素还不存在。
+    // 用 'auto' 而不是 smooth：首次进入时平滑滚动会从顶部划过整篇文章，很怪。
+    const hashId = String(route.hash || '').replace(/^#/, '');
+    if (hashId) {
+      // ⚠ 只等一次 nextTick 不够：router 的 scrollBehavior 在导航收尾时
+      // `return { top: 0 }` 会把页面**再滚回顶部**，和我们这次滚动打架 ——
+      // 实测一次 nextTick 时好时坏（同一批四个锚点得到 42 / 344 / 74 / 74 四种位置）。
+      // 所以要跨过 router 的这一次重置：先等 DOM，再让出一帧给导航收尾，然后才滚。
+      nextTick(() => {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(hashId);
+          if (!el) return;
+          el.focus({ preventScroll: true });
+          el.scrollIntoView({ behavior: 'auto', block: 'start' });
+        });
+      });
+    }
     liked.value = (() => {
       try { return !!localStorage.getItem(`xalor_liked_${a.id}`); } catch (e) { return false; }
     })();
