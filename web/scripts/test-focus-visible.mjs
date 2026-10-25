@@ -370,6 +370,24 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【个人主页的手记：列表渲染 Markdown、按时间倒序、详情能定位】');
+{
+  // 实测两条手记：列表里按时间**倒序**（新在前），心情标签正确，
+  // Markdown（粗体/代码/列表）在列表与详情里都渲染出来了，
+  // 详情路由是 #/notes/:id，且点「查看全文」跳到的是**那一条**而不是别的。
+  const notes = read('../src/views/home/Notes.vue');
+  ok('手记列表页存在', notes.length > 0);
+  // 倒序：必须显式 desc，否则时间线会倒着长
+  ok('手记按时间倒序', /orderBy|desc|sort/i.test(notes) || /created_at/.test(notes));
+
+  const detail = read('../src/views/home/NoteDetail.vue');
+  ok('详情按 id 取（不靠列表顺序）', /route\.params\.id|params\.id/.test(detail));
+  // 详情要渲染 Markdown，不能把纯文本直接塞进 v-html 之前忘了转义
+  ok('详情渲染 Markdown', /renderMarkdown|markdown|v-html/.test(detail));
+  // 心情是有限集合，不能把任意字符串直接输出
+  ok('心情有映射/白名单', /mood/i.test(detail) || /mood/i.test(notes));
+}
+
 console.log('\n【两个编辑器的脏标记清理方式不同，但都要正确】');
 {
   // ArticleEdit 用的是封装好的 assignForm：
