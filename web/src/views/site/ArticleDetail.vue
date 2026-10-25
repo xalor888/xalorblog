@@ -438,6 +438,17 @@ const toolbarExpanded = ref(false);
 const charsPerLineValue = computed(() => charsPerLine(readWidth.value, fontSize.value));
 const mobileTocOpen = ref(false);
 const lightboxRef = ref(null);
+
+/** 从图片 URL 推一个能念的名字：/uploads/2026/knex-join.png → knex join */
+function fileNameFromSrc(src) {
+  try {
+    const raw = String(src || '').split(/[?#]/)[0];
+    const name = decodeURIComponent(raw.split('/').pop() || '');
+    return name.replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ').trim().slice(0, 60);
+  } catch (e) {
+    return '';
+  }
+}
 const bookmarked = ref(false);
 
 // 移动端 TOC 抽屉打开时锁定背景滚动（与灯箱行为对齐）
@@ -455,9 +466,14 @@ const copyrightText = computed(() => String(site.settings.copyright_text || '').
 function onContentClick(e) {
   const img = e.target.closest('img');
   if (img && img.closest('.markdown-body')) {
-    // alt 优先；缺 alt 时用 addImgAttrs 兜底的 aria-label（文件名），
-    // 让灯箱底部也有名字可念，而不是一片空白
-    const caption = img.alt || img.getAttribute('aria-label') || '';
+    // alt 优先；缺 alt 时用 addImgAttrs 兜底的 aria-label（文件名）。
+    //
+    // 最后一级兜底是必须的：`alt=""` 在正文里表示「装饰图，读屏跳过」，
+    // 这是对的（addImgAttrs 有意不给空 alt 补标签）。但**用户主动点开大图**，
+    // 说明它不是装饰 —— 此时灯箱只有一句「查看大图」，
+    // 读屏用户不知道自己在看什么。实测空 alt 的图打开后 aria-label 就是「查看大图」。
+    // 用文件名兜底，至少能说出这是哪张图。
+    const caption = img.alt || img.getAttribute('aria-label') || fileNameFromSrc(img.src);
     lightboxRef.value?.open(img.src, caption, img);
   }
 }

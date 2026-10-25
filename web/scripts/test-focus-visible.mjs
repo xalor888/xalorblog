@@ -304,6 +304,36 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【图片：正文尊重空 alt，但灯箱必须有名字】');
+{
+  // 实测：`alt=""` 的图打开灯箱后 aria-label 只有「查看大图」——
+  // 读屏不知道在看什么。而正文里空 alt 表示「装饰图跳过」是对的，
+  // 两个场景的要求相反，不能靠同一条规则。
+  const md = read('../src/utils/markdown.js');
+  ok(
+    '正文里不给 alt="" 补标签（尊重作者的装饰图声明）',
+    /attrs\.alt === undefined/.test(md),
+    '把空 alt 也补成文件名，等于把装饰图变成读屏噪音'
+  );
+  ok('图片补 loading=lazy', md.includes('loading="lazy"'));
+  ok('图片补 decoding=async', md.includes('decoding="async"'));
+
+  const detail = read('../src/views/site/ArticleDetail.vue');
+  ok(
+    '灯箱 caption 有三级兜底：alt → aria-label → 文件名',
+    /img\.alt \|\| img\.getAttribute\('aria-label'\) \|\| fileNameFromSrc/.test(detail)
+  );
+  ok('有 fileNameFromSrc 把路径变成可念的名字', /function fileNameFromSrc\(src\)/.test(detail));
+  ok(
+    '文件名兜底去掉扩展名并把连字符换空格',
+    detail.includes(".replace(/\\.[a-z0-9]+$/i, '')") && detail.includes("replace(/[-_]+/g, ' ')")
+  );
+  ok(
+    'decodeURIComponent 失败时不抛（中文/特殊字符路径）',
+    detail.includes("} catch (e) {\n    return '';")
+  );
+}
+
 console.log('\n【任务列表：复选框要能说清「哪一条」】');
 {
   // 实测：marked 产出 <input type=checkbox disabled>，
