@@ -1,5 +1,7 @@
 /** 日期格式化工具 */
 
+import { readingMinutes } from './wordStats';
+
 // 服务器本地时区偏移（分钟，UTC-本地，如中国 -480）：
 // 由 /api/settings 的 server_tz_offset_min 提供；未加载时回退浏览器本机偏移
 // （同服务器时区的访客结果正确；跨时区访客在设置加载前短暂显示偏差，
@@ -74,10 +76,12 @@ export function formatDateTime(time) {
  * 此前误把英文词数除以 5 当作字符数 —— 1500 词只算 1 分钟，实际约 6 分钟）
  */
 export function readingTime(content = '') {
-  const cn = (content.match(/[\u4e00-\u9fa5]/g) || []).length;
-  const en = (content.match(/[a-zA-Z0-9]+/g) || []).length;
-  const minutes = Math.ceil(cn / 300 + en / 250);
-  return Math.max(1, minutes);
+  // 口径统一到 utils/wordStats：中英「等效字数」汇总后一次性取整。
+  // 旧实现是 ceil(cn/300 + en/250) —— 两个比值各自带自己的取整误差，
+  // 一篇 10 个英文词的文章会被算成 1 分钟（其实不到 3 秒），
+  // 而长中英混排文章会被系统性高估。展示层仍要 minOne，
+  // 免得出现「0 分钟」；聚合统计则取真实值（见 aggregateReading）。
+  return readingMinutes(content, { minOne: true });
 }
 
 /** 数字格式化：1.2k；缺省/非法值按 0，避免页脚出现 "undefined" */

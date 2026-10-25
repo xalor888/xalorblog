@@ -186,6 +186,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { articleApi, categoryApi, tagApi, uploadApi } from '@/api';
 import { renderMarkdown } from '@/utils/markdown';
+import { countWords, readingMinutes as readingMinutesOf } from '@/utils/wordStats';
 import { adminHref } from '@/utils/adminPath';
 import { setAiContext, setAiApplier, setAiSelection, pushAiUndo, resetAiBridge, aiSelection as aiSelectionRef } from '@/utils/aiBridge';
 import {
@@ -415,15 +416,15 @@ function autoSummary() {
   }
 }
 
-// 实时字数统计（中英文混合）
-const wordCount = computed(() => {
-  const c = form.value.content || '';
-  const cn = (c.match(/[\u4e00-\u9fa5]/g) || []).length;
-  const en = (c.match(/[a-zA-Z0-9]+/g) || []).length;
-  return cn + en;
-});
+// 实时字数统计（中英文混合）。
+// 统一走 utils/wordStats，与详情页「N 分钟」、站点阅读统计用同一套口径；
+// raw: true —— 编辑时要看到「我写了多少字」，写个代码块不该把字数砍掉。
+const wordCount = computed(() => countWords(form.value.content || '', { raw: true }).total);
 
-const readingMinutes = computed(() => Math.max(1, Math.ceil(wordCount.value / 300)));
+// 编辑器里这一处刻意用「按当前速度估算」的展示值：minOne 避免 0 分钟，
+// 且（与聚合统计不同）这里可以接受 300 这类更保守的经验值吗？不能——
+// 同一个页面上的数字必须自洽，详情页说 9 分钟、编辑器说 10 分钟是 bug。
+const readingMinutes = computed(() => readingMinutesOf(form.value.content || '', { raw: true, minOne: true }));
 
 async function doUpload({ file }) {
   uploading.value = true;
