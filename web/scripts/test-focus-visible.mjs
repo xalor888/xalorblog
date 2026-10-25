@@ -353,6 +353,24 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【导出的 Markdown 必须是合法结构】');
+{
+  const detail = read('../src/views/site/ArticleDetail.vue');
+  // 实测原实现有两个问题：
+  //   1. '---' 与 '' 一起被 filter 掉，分隔线和正文标题粘成 `---# 标题`；
+  //   2. 正文自带的 `# ` 没降级，导出文件里出现**两个 h1**。
+  ok(
+    '分隔线与正文之间留了空行（不粘行）',
+    /`\$\{meta\}\\n\\n---\\n\\n\$\{body\}`/.test(detail),
+    '原实现把 --- 和空串一起 filter 掉，粘成 ---# 标题'
+  );
+  ok(
+    '正文的 h1 降级为 h2（文件里只能有一个 h1）',
+    /replace\(\/\^# \(\?!#\)\/gm, '## '\)/.test(detail)
+  );
+  ok('frontmatter 仍然保留', /`title: "/.test(detail) && /`slug: /.test(detail));
+}
+
 console.log('\n【复制的链接不能带读者进来时的 query】');
 {
   const detail = read('../src/views/site/ArticleDetail.vue');

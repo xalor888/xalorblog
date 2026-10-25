@@ -686,12 +686,26 @@ function exportMarkdown() {
     '',
     `# ${a.title}`,
     '',
-    a.summary ? `> ${a.summary}\n` : '',
-    '',
-    '---',
-    '',
+    a.summary ? `> ${a.summary}` : '',
   ].filter((line) => line !== '').join('\n');
-  const full = meta + (a.content || '');
+  /**
+   * 结尾必须留出分隔线 + 换行，正文才接得上。
+   *
+   * 原实现把 '---' 和 '' 也塞进数组再 filter 掉空串，于是
+   * 分隔线与正文标题**粘成同一行**：实测导出文件里是
+   * `---# 欢迎来到 Xalor 的小站 🎉` —— 这条分隔线失效，
+   * 而且正文 Markdown 渲染出来会变成一个 setext 标题或直接吞掉。
+   */
+  /**
+   * 正文里以 `# ` 开头的行降级为 `## `。
+   *
+   * 网页端有 demoteH1 做这件事（每页只能有一个 h1，由页面模板提供），
+   * 但导出走的是另一条路 —— 实测导出的文件里 frontmatter 之后有一个
+   * `# 标题`，正文自己还有一个 `# 欢迎来到 Xalor 的小站 🎉`，
+   * **同一个文件里两个 h1**。导入到别的工具时大纲会错乱。
+   */
+  const body = String(a.content || '').replace(/^# (?!#)/gm, '## ');
+  const full = `${meta}\n\n---\n\n${body}`;
   const blob = new Blob([full], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
