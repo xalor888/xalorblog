@@ -122,9 +122,21 @@ const inputRef = ref(null);
 const HISTORY_KEY = 'xalor_search_history';
 const history = ref(loadHistory());
 
+/** 历史条数上限。saveHistory 写入时按它截断，loadHistory 读取时也按它截断。 */
+const HISTORY_MAX = 6;
+
 function loadHistory() {
   try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    // ⚠ 读的时候也要收口，不能只靠写入时截断：
+    // 存储里的数据可能是旧版本写的、也可能是手动/别的标签页塞进去的。
+    // 实测注入 8 条后，页面上**把 8 条全渲染了出来**，而正常搜索只会留 6 条 ——
+    // 上限变成了「只在写入路径上成立」的约定。
+    // 顺带滤掉非字符串与空白项：`[null]` 会让 `h.trim()` 之类直接抛错、整块历史渲染不出来。
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((h) => typeof h === 'string' && h.trim())
+      .slice(0, HISTORY_MAX);
   } catch (e) {
     return [];
   }
@@ -133,7 +145,7 @@ function loadHistory() {
 function saveHistory(k) {
   const kw = k.trim();
   if (!kw) return;
-  const next = [kw, ...history.value.filter((h) => h !== kw)].slice(0, 6);
+  const next = [kw, ...history.value.filter((h) => h !== kw)].slice(0, HISTORY_MAX);
   history.value = next;
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(next));

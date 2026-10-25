@@ -370,6 +370,28 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【搜索历史：上限要在读取时也成立，脏数据不能让整块崩掉】');
+{
+  // 缺陷：loadHistory 只做 JSON.parse，完全不校验。
+  // 实测注入 8 条 → 页面**把 8 条全渲染**（而正常搜索只留 6 条），
+  // 上限退化成「只在写入路径上成立」的约定。
+  // 修完再测 6 种脏数据：null / 数字 / 非数组 / 纯字符串 / 损坏 JSON / 空白，
+  // 全部安全降级，没有一次让搜索弹层崩掉。
+  const sm = read('../src/components/ui/SearchModal.vue');
+  const load = (sm.match(/function loadHistory\(\)[\s\S]{0,700}/) || [''])[0];
+  ok('有 HISTORY_MAX 常量', /const HISTORY_MAX = \d+/.test(sm), (sm.match(/const HISTORY_MAX = \d+/)||[''])[0]);
+  // 读取时就截断 —— 只靠写入截断挡不住旧数据/手写数据
+  ok('读取时截断', /slice\(0, HISTORY_MAX\)/.test(load), load.slice(0, 60));
+  // 类型校验：非数组直接当空
+  ok('非数组当空', /!Array\.isArray\(raw\)/.test(load));
+  // 逐项校验：非字符串/空白要滤掉，否则模板 h.trim() 会抛
+  ok('滤掉非字符串与空白', /typeof h === 'string' && h\.trim\(\)/.test(load));
+  // 写入路径同样去重并截断
+  ok('写入去重', /history\.value\.filter\(\(h\) => h !== kw\)/.test(sm));
+  // 清除要连存储一起清，不能只清内存
+  ok('清除同时清存储', /removeItem\(HISTORY_KEY\)/.test(sm));
+}
+
 console.log('\n【失效条目只标记不删除：草稿/下线不等于删除，读者存的数据不能没】');
 {
   // 缺陷：detail 对「草稿/已下线」的文章同样返回 404，而原实现把 404 直接当成删除、
