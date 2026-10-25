@@ -370,6 +370,28 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【阅读统计的缓存失效：发布/删除后要立刻反映，不能等 60 秒】');
+{
+  // 代码里原先有一段注释写着「已知缺口：invalidateReadingCache() 没有接入 admin 的写入路径，
+  // 新文章最多 60 秒后才计入」—— 但实际已经接了 **8 处**，覆盖全部 6 个文章写入路由。
+  // 那段注释是过期的：它会让人去「修」一个不存在的缺陷（我这次就差点直接去补代码）。
+  //
+  // 实测（不等 TTL）：
+  //   创建前 6 篇 / 920 字 → 创建一篇 → **立刻** 7 篇 / 1520 字；
+  //   删除该篇 → **立刻**回到 6 篇 / 920 字。
+  const ad = read('../../server/src/routes/admin.js');
+  const calls = (ad.match(/invalidateReadingCache\(\)/g) || []).length;
+  ok('写入路径已接入失效调用', calls >= 6, `只有 ${calls} 处`);
+  ok('导入而非重复实现', /require\('\.\/stats'\)/.test(ad));
+
+  const st = read('../../server/src/routes/stats.js');
+  // 注释必须与代码一致 —— 过期的「已知缺口」是误导源
+  ok('不再声称是未修的缺口', !/目前没有接入 admin/.test(st), '仍在声称未接入');
+  ok('注释说明已接入', /缓存失效已接入 admin/.test(st));
+  // 缓存本身仍要在（不是把缓存删了来「修」注释）
+  ok('缓存机制仍在', /readingCache/.test(st) && /READING_TTL/.test(st));
+}
+
 console.log('\n【免票接口 /home/summary 的白名单，以及 social_extra 的注入防护】');
 {
   // 这是全站唯一有意放宽的免票接口（GATE_SKIP），所以要验两件事：
