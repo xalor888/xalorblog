@@ -1,10 +1,37 @@
 const express = require('express');
+const crypto = require('crypto');
 const db = require('../db');
 const config = require('../config');
 const { getAllSettings } = require('../utils/settings');
 const { plainText } = require('../utils/markdownText');
 
 const router = express.Router();
+
+/**
+ * 条件发送：手算 ETag + If-None-Match → 304。
+ *
+ * 为什么要手算：`app.disable('etag')` 全局关了 Express 的自动 ETag
+ * （注释写的是避免响应体大小指纹泄露），所以 feed.js 里 sitemap/RSS 都是手动算的。
+ * 分享页之前漏了这一步 —— 实测只有 `Cache-Control: public, max-age=300`，
+ * 没有 ETag，于是抓取器 5 分钟后回来**只能重新生成整页**：
+ * 每次都要查库（文章 + 分类 + 标签 + 设置）并重新拼 HTML。
+ * og 抓取器对同一 URL 会反复抓，这部分开销是白付的。
+ *
+ * 安全上与全局关闭 ETag 的初衷不冲突：这里哈希的是**响应体内容**
+ * （sha1 取前 24 位），不是 Express 默认那种带长度信息的弱指纹，
+ * 与 feed.js 的做法保持一致。
+ */
+function conditionalSendHtml(req, res, html) {
+  const etag = '"' + crypto.createHash('sha1').update(html).digest('hex').slice(0, 24) + '"';
+  res.set('ETag', etag);
+  // 文章修改后最多 5 分钟生效
+  res.set('Cache-Control', 'public, max-age=300');
+  if (req.headers['if-none-match'] === etag) {
+    return res.status(304).end();
+  }
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  return res.send(html);
+}
 
 /** HTML 转义 */
 function esc(str = '') {
@@ -150,10 +177,8 @@ router.get('/share/:slug', async (req, res) => {
 </body>
 </html>`;
 
-    // 公开分享页：可缓存 5 分钟（OG 抓取器高频抓取减负；文章修改后最多 5 分钟生效）
-    res.set('Cache-Control', 'public, max-age=300');
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    return res.send(html);
+    // 公开分享页：可缓存 5 分钟 + ETag 条件请求（详见 conditionalSendHtml 注释）
+    return conditionalSendHtml(req, res, html);
   } catch (e) {
     console.error('[share]', e.message);
     return res.status(500).send('生成分享页失败');
@@ -244,9 +269,7 @@ router.get('/share-page/:page?', async (req, res) => {
 </body>
 </html>`;
 
-    res.set('Cache-Control', 'public, max-age=300');
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    return res.send(html);
+    return conditionalSendHtml(req, res, html);
   } catch (e) {
     console.error('[share-page]', e.message);
     return res.status(500).send('生成分享页失败');

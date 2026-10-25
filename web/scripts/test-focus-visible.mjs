@@ -353,6 +353,23 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【分享页也要支持 ETag 条件请求】');
+{
+  const share = read('../../server/src/routes/share.js');
+  // 实测：app.disable('etag') 全局关了自动 ETag，
+  // feed.js 里 sitemap/RSS 都是手算的，**分享页漏了这一步** ——
+  // 只有 Cache-Control，没有 ETag，抓取器 5 分钟后回来只能重新生成整页
+  //（查库 + 拼 HTML），og 抓取器对同一 URL 会反复抓，这部分开销白付。
+  ok('有 conditionalSendHtml 辅助函数', /function conditionalSendHtml/.test(share));
+  ok('ETag 由响应体内容算出（与 feed.js 同一套）', /createHash\('sha1'\)\.update\(html\)/.test(share));
+  ok('命中 If-None-Match 时返回 304', /if \(req\.headers\['if-none-match'\] === etag\)/.test(share));
+  ok('两个模板都走条件发送', (share.match(/conditionalSendHtml\(req, res, html\)/g) || []).length >= 2);
+  ok('仍保留 5 分钟公共缓存', /max-age=300/.test(share));
+  // 全局 disable('etag') 必须留着（安全取舍），所以手算这条不能被「优化」掉
+  const app = read('../../server/src/app.js');
+  ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
+}
+
 console.log('\n【分享页的 body 不能是空的】');
 {
   const share = read('../../server/src/routes/share.js');
