@@ -353,6 +353,22 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【空态文案必须说出全部生效的筛选】');
+{
+  const list = read('../src/views/site/ArticleList.vue');
+  // 筛选能叠加之后，原来的三个互斥 if 就不够了：
+  // `?category=tech&tag=旅行` 为 0 篇时只提示「分类「技术笔记」下还没有文章」，
+  // 读者会以为只有分类在生效，不知道标签也在筛。
+  ok('空态用 parts 收集全部条件', /const parts = \[\]/.test(list));
+  ok('关键词、分类、标签都会进 parts', /parts\.push/.test(list) && /activeTag\.value/.test(list.slice(list.indexOf('parts.push'))));
+  ok(
+    '多条件时同时列出，而不是只报一个',
+    /同时满足 \$\{parts\.join\(' \+ '\)\}/.test(list),
+    'join 是这一句的核心'
+  );
+  ok('单条件仍保持原来的自然说法', /下还没有文章/.test(list) && /没有匹配/.test(list));
+}
+
 console.log('\n【分类与标签必须能叠加，不能互相清空】');
 {
   const list = read('../src/views/site/ArticleList.vue');

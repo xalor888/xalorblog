@@ -355,16 +355,34 @@ const sort = computed(() => route.query.sort || 'latest');
  */
 const emptyTitle = computed(() => {
   if (!hasFilter.value) return '还没有发布文章，敬请期待';
-  if (kw.value) return `没有匹配「${kw.value}」的文章`;
+  /**
+   * 空态必须说清**当前全部生效的筛选**。
+   *
+   * 筛选现在可以叠加（分类 + 标签 + 关键词），
+   * 而原实现是三个互斥的 if 依次 return ——
+   * 只要有分类，就永远轮不到标签那一句。
+   * 实测 `?category=tech&tag=旅行` 为 0 篇时，页面只说
+   * 「分类「技术笔记」下还没有文章」，
+   * **读者会以为只有分类在生效**，不知道标签也在筛，
+   * 更不知道「清除筛选」会一次清掉两个条件。
+   */
+  const parts = [];
+  if (kw.value) parts.push(`「${kw.value}」`);
   if (activeCategory.value) {
     const c = categories.value.find((x) => x.slug === activeCategory.value);
-    return c ? `分类「${c.name}」下还没有文章` : '这个分类还没有文章';
+    parts.push(c ? `分类「${c.name}」` : '该分类');
   }
   if (activeTag.value) {
     const t = tags.value.find((x) => x.slug === activeTag.value);
-    return t ? `标签「${t.name}」下还没有文章` : '这个标签下还没有文章';
+    parts.push(t ? `标签「${t.name}」` : '该标签');
   }
-  return '没有找到相关文章';
+  if (!parts.length) return '没有找到相关文章';
+  if (parts.length === 1) {
+    // 单一条件沿用原来的自然说法（关键词那条本来就是这样）
+    if (kw.value) return `没有匹配${parts[0]}的文章`;
+    return `${parts[0]}下还没有文章`;
+  }
+  return `同时满足 ${parts.join(' + ')} 的文章还没有`;
 });
 
 const emptyHint = computed(() => {
