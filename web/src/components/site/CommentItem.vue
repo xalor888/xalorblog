@@ -27,6 +27,10 @@
             :class="{ liked }"
             :disabled="liking"
             :title="liked ? '已点赞' : '点赞这条评论'"
+            :aria-label="liked
+              ? `已点赞，共 ${comment.likes || 0} 个赞`
+              : `点赞这条评论，当前 ${comment.likes || 0} 个赞`"
+            :aria-pressed="liked ? 'true' : 'false'"
             @click="likeComment"
           >
             <XIcon name="Heart" :size="13" :fill="liked" /> {{ comment.likes || 0 }}

@@ -353,6 +353,22 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【评论点赞按钮要有可读名称】');
+{
+  const item = read('../src/components/site/CommentItem.vue');
+  // 实测：点赞按钮只显示一个数字（0），且只有 title 没有 aria-label。
+  // 读屏用户听到的是「0」——一个没有任何含义的数字。
+  ok('点赞按钮有 aria-label', /:aria-label="liked/.test(item));
+  ok(
+    'aria-label 带上当前点赞数（数字本身才有意义）',
+    /点赞这条评论，当前 \$\{comment\.likes \|\| 0\} 个赞/.test(item),
+    '只写「点赞」读者就不知道已经是几赞'
+  );
+  ok('有 aria-pressed 表达开关状态', /:aria-pressed="liked/.test(item));
+  // 「回复」按钮有可见文字，读屏能正确读出，不需要额外 label
+  ok('回复按钮保持可见文字（不需要额外 label）', /回复\s*<\/button>|>\s*回复/.test(item));
+}
+
 console.log('\n【留言板：提交前就要说明可能要审核】');
 {
   const msgs = read('../src/views/site/Messages.vue');
