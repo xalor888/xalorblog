@@ -70,7 +70,12 @@ renderer.code = ({ text, lang: langInfo }) => {
       <span class="code-dots"><i></i><i></i><i></i></span>
       <span class="code-lang">${escapeHtml(lang)}</span>
     </span>
-    <button type="button" class="code-copy" data-copy aria-live="polite">复制</button>
+    <!-- 按钮文字不再承担播报职责。aria-live 挂在可聚焦按钮上是无效用法：
+         读屏把交互元素当作「用户已知区域」，按钮内文字变化多数不会被朗读；
+         而且按钮名一旦变成「已复制」，再次聚焦时就丢失了「复制」这个含义。
+         改为：按钮名稳定为「复制代码」，另设独立的 role=status 播报结果。 -->
+    <button type="button" class="code-copy" data-copy aria-label="复制代码">复制</button>
+    <span class="code-copy-status sr-only" role="status" aria-live="polite"></span>
   </div>
   <pre><code class="hljs language-${escapeHtml(lang)}">${body}</code></pre>
 </div>`;
@@ -335,9 +340,20 @@ function resetCopyButton(btn) {
  */
 function showCopyResult(btn, ok) {
   clearTimeout(copyTimers.get(btn));
+  // 视觉反馈仍改按钮文字（鼠标用户看这里最直接），
+  // 但**播报交给独立的 role=status 元素** —— 见模板里的注释。
   btn.textContent = ok ? '已复制 ✓' : '复制失败';
   btn.classList.toggle('copied', ok);
   btn.classList.toggle('copy-failed', !ok);
+  const status = btn.parentElement?.querySelector('.code-copy-status');
+  if (status) {
+    // 先清空再写入：内容相同的话 live region 不会重复播报
+    status.textContent = '';
+    // 用 rAF 保证两次变更被读屏视为独立事件
+    requestAnimationFrame(() => {
+      status.textContent = ok ? '代码已复制到剪贴板' : '复制失败，请手动选择代码';
+    });
+  }
   copyTimers.set(
     btn,
     setTimeout(() => {

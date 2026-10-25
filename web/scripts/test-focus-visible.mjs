@@ -304,6 +304,38 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【代码块复制：播报要落在独立的状态元素上】');
+{
+  const md = read('../src/utils/markdown.js');
+  // 实测：aria-live 挂在**可聚焦按钮**上是无效用法 ——
+  // 读屏把交互元素当作「用户已知区域」，按钮内文字变化多数不朗读；
+  // 而且按钮名变成「已复制」后，再聚焦时丢失了「复制」这个含义。
+  ok(
+    '复制按钮不再用 aria-live 承担播报',
+    /<button[^>]*class="code-copy"[^>]*aria-label="复制代码"/.test(md)
+      && !/<button[^>]*class="code-copy"[^>]*aria-live/.test(md)
+  );
+  ok(
+    '有独立的 role=status 播报元素',
+    /class="code-copy-status sr-only" role="status" aria-live="polite"/.test(md)
+  );
+  ok(
+    '按钮名稳定为「复制代码」（不随状态丢失含义）',
+    md.includes('aria-label="复制代码"')
+  );
+  ok(
+    '播报内容先清空再写入（否则相同文本不会重复播报）',
+    /status\.textContent = '';/.test(md) && /requestAnimationFrame/.test(md)
+  );
+  ok('成功与失败都有具体播报文案', md.includes('代码已复制到剪贴板') && md.includes('复制失败，请手动选择代码'));
+  ok('视觉反馈仍然改按钮文字', /btn\.textContent = ok \? '已复制 ✓' : '复制失败'/.test(md));
+  ok('连点防护（data-copying 门闩）', /btn\.dataset\.copying === '1'/.test(md));
+  ok(
+    '复制到剪贴板有 execCommand 兜底（老浏览器/非安全上下文）',
+    /function legacyCopy\(text\)/.test(md)
+  );
+}
+
 console.log('\n【评论点赞：并发防护齐全，且没有嵌套重复代码】');
 {
   const ci = read('../src/components/site/CommentItem.vue');
