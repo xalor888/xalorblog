@@ -389,7 +389,13 @@ onUnmounted(() => {
 
 <style scoped>
 .home {
+  /* 首屏高度：必须用 svh（small viewport height）而不是 vh。
+     vh 是「浏览器地址栏收起后」的高度，页面刚加载时地址栏还在，
+     100vh 的头图底部就被顶出可视区，首屏 CTA / 滚动提示都看不见。
+     svh 取「地址栏展开」的最小高度，永远不会溢出。
+     100vh 那行是给不支持 svh 的老浏览器兜底（顺序不能颠倒）。 */
   --hero-h: 100vh;
+  --hero-h: 100svh;
 }
 
 .hero {

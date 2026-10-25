@@ -527,7 +527,9 @@ onUnmounted(() => {
 /* ============ 顶部导航：浮起的液态玻璃条 ============ */
 .site-nav {
   position: sticky;
-  top: 12px;
+  /* 离顶 12px 之外再让开状态栏/刘海：不加 --sat 时，刘海屏上导航条
+     会有一半压在系统状态栏里（浅色玻璃 + 白色文字直接看不见） */
+  top: calc(12px + var(--sat));
   z-index: var(--z-nav);
   /* 离边浮起 + 居中限宽：让玻璃条像真的"浮"在页面上，而不是贴死的一条 */
   width: calc(100% - 28px);
@@ -545,7 +547,7 @@ onUnmounted(() => {
 
 .site-nav.overlay {
   position: fixed;
-  top: 12px;
+  top: calc(12px + var(--sat));
   left: 0;
   right: 0;
   /* 浮在首页头图上：用更深的半透明玻璃，白字才压得住，头图也能透进玻璃里 */
@@ -812,7 +814,9 @@ onUnmounted(() => {
 /* 浮在首页头图上：换深色玻璃，白字才压得住，头图也能透进玻璃里 */
 .ticker.overlay {
   position: fixed;
-  top: calc(var(--nav-h) + 22px); /* 12px 导航上边距 + 10px 间隔 */
+  /* 12px 导航上边距 + 10px 间隔 + 状态栏避让（导航本身也下移了 --sat，
+     公告条必须跟着走，否则刘海屏上会被导航条压住） */
+  top: calc(var(--nav-h) + 22px + var(--sat));
   left: 50%;
   transform: translateX(-50%);
   margin: 0;
@@ -1233,17 +1237,22 @@ onUnmounted(() => {
 .mobile-menu {
   display: none;
   flex-direction: column;
-  padding: 18px 22px 22px;
+  /* 底部 padding 避让 Home 指示条：抽屉能滚到底，最后一项不该压在手势条下 */
+  padding: 18px 22px calc(22px + var(--sab));
   /* 液态玻璃下拉抽屉 */
   background: var(--lg-sheen), var(--lg-surface);
   border-bottom: 1px solid var(--lg-edge);
   position: fixed;
-  top: var(--nav-h);
+  /* 紧贴导航条下沿：导航离顶 12px + 自身高度 + 状态栏避让。
+     只写 var(--nav-h) 会让抽屉顶边钻进导航条下面 12px，首项被压住。 */
+  top: calc(var(--nav-h) + 12px + var(--sat));
   left: 0;
   right: 0;
   z-index: calc(var(--z-nav) - 5);
-  max-height: calc(100dvh - var(--nav-h));
+  max-height: calc(100dvh - var(--nav-h) - 12px - var(--sat));
   overflow: auto;
+  /* 抽屉自己滚到底就停，不要把后面的页面一起拖动（移动端尤其明显） */
+  overscroll-behavior: contain;
   backdrop-filter: var(--lg-blur);
   -webkit-backdrop-filter: var(--lg-blur);
 }

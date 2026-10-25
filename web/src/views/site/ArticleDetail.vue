@@ -1326,7 +1326,9 @@ onUnmounted(() => {
   border-left: 1px solid var(--lg-edge);
   display: flex;
   flex-direction: column;
-  padding: 20px 18px;
+  /* 顶部让开刘海/灵动岛，底部让开 Home 指示条：抽屉是贴边全高的，
+     不加这两项会把标题压在状态栏里、最后一项压在手势条下 */
+  padding: calc(20px + var(--sat)) calc(18px + var(--sar)) calc(20px + var(--sab));
   box-shadow: var(--lg-inner), var(--lg-shadow);
   backdrop-filter: var(--lg-blur);
   -webkit-backdrop-filter: var(--lg-blur);
@@ -1804,6 +1806,8 @@ onUnmounted(() => {
   max-height: calc(100vh - 180px);
   max-height: calc(100dvh - 180px);
   overflow-y: auto;
+  /* 目录自己滚到底就停，别把正文一起带动 */
+  overscroll-behavior: contain;
   /* 抵掉卡片内边距把列表撑满（让高亮条贴到卡片左缘），
      这样目录项不必再用负 margin —— 负 margin 会被这里的 overflow 横向裁掉，
      表现为「标题只显示后半截」 */

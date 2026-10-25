@@ -75,6 +75,16 @@
   --reading-w: 760px;
   --side-w: 260px;
 
+  /* ---------- 安全区（刘海 / 灵动岛 / Home 指示条） ----------
+     这两个 token 只有在 index.html / home.html 的 viewport 里声明了
+     viewport-fit=cover 时才有值，否则 env() 全是 0。
+     固定定位的顶栏、底部浮层栈、抽屉都要用它们做避让；
+     env() 必须给第二个参数兜底，否则在不支持 env 的浏览器里整条 calc 失效。 */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+
   /* ---------- 层级（z-index）----------
      全站唯一的层级来源，组件里不要再写裸数字。
      顺序：导航 < 悬浮控件 < 遮罩 < 弹窗 < 查看器 < Element Plus 弹层 < 路由进度条
@@ -306,6 +316,65 @@ html {
   /* 横向溢出防护：clip 不创建滚动容器（不影响 position: sticky），
      防止个别元素意外撑出横向滚动条 */
   overflow-x: clip;
+  /* 点击高亮：iOS Safari / Android Chrome 会给任何带 click 的元素糊一层半透明灰蓝方块，
+     这是「网页感」最响的信号，而且会盖住我们自己设计的 :active 反馈。
+     关掉它以后必须保证每个可点元素都有自己的 :active（见下）。 */
+  -webkit-tap-highlight-color: transparent;
+  /* 下拉刷新/整页橡皮筋：站点是文档型页面，但右下角浮层栈、移动端抽屉、
+     目录抽屉都有自己的滚动区；根节点留着原生回弹，内层用 contain 兜住。 */
+  overscroll-behavior-y: auto;
+}
+
+/* 触摸设备上点击要「立刻」响应：不声明 touch-action 时浏览器要等 ~300ms
+   判断是不是双击缩放；manipulation 明确告知「本元素不参与双击缩放」。 */
+button,
+a,
+[role='button'],
+input[type='button'],
+input[type='submit'],
+label,
+summary {
+  touch-action: manipulation;
+}
+
+/* 控件文字不该被长按选中（内容文字必须保持可选——绝不能加到 body 上）。
+   -webkit-touch-callout 同时压掉 iOS 长按弹出的「拷贝/共享」气泡。 */
+button,
+[role='button'],
+.tab,
+.chip,
+.dock-btn,
+.hero-btn,
+.sort-btn,
+.view-btn,
+.nav-link,
+.mobile-link {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* ============================================================
+   触摸设备：输入框字号必须 ≥16px
+   ============================================================
+   iOS Safari 在焦点进入字号 <16px 的 input/textarea/select 时会强制把整页
+   放大，而且**退焦不还原** —— 用户看到的是一个被裁切、漂移的布局，
+   最常见的错误修法是加 maximum-scale=1，那是拿禁缩放掩盖真问题。
+   注意：这里只对 (pointer: coarse) 生效，桌面端设计稿的 0.9rem 完全不受影响。
+   Element Plus 的 .el-input__inner / .el-textarea__inner 一并覆盖，
+   否则后台与前台表单在 iPhone 上仍是 14.4px。 */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select,
+  .el-input__inner,
+  .el-textarea__inner,
+  .el-select__input,
+  .form-input,
+  .form-textarea,
+  .search-input {
+    font-size: 16px;
+  }
 }
 
 body {
@@ -545,8 +614,11 @@ input:-webkit-autofill:focus {
    全局工具 / 文章互动 / 问 AI 并成同一列，彼此不再 fixed 定位、不会互相压住 */
 .float-dock {
   position: fixed;
-  right: 22px;
-  bottom: 28px;
+  /* 避让：右侧躲开横屏刘海（--sar），底部躲开 Home 指示条（--sab）。
+     裸 22px/28px 在 iPhone 上会让最下面那颗按钮压在系统手势条上，
+     手指上滑切 App 时先点到按钮。 */
+  right: calc(22px + var(--sar));
+  bottom: calc(28px + var(--sab));
   z-index: var(--z-float);
   display: flex;
   flex-direction: column;
@@ -568,8 +640,8 @@ input:-webkit-autofill:focus {
 
 @media (max-width: 640px) {
   .float-dock {
-    right: 12px;
-    bottom: 18px;
+    right: calc(12px + var(--sar));
+    bottom: calc(18px + var(--sab));
   }
 }
 

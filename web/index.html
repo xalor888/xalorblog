@@ -6,7 +6,13 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- RSS 自动发现：订阅器/浏览器可识别订阅源 -->
     <link rel="alternate" type="application/rss+xml" title="Xalor的小站" href="/api/rss.xml" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover：让页面画到刘海/灵动岛/Home 指示条区域，再用
+         env(safe-area-inset-*) 把内容避让回来（token 见 main.css 的 --sat/--sab）。
+         没有 cover 时 env() 全是 0，安全区形同虚设。
+         interactive-widget=resizes-content：安卓软键盘弹出时压小布局视口，
+         而不是盖住底部输入框（iOS 默认就是压小，这里只是对齐行为）。
+         不写 maximum-scale / user-scalable：禁缩放是拿缺陷掩盖缺陷。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="description" content="Xalor的小站 - 记录技术、生活与思考的个人博客" />
     <meta name="theme-color" content="#e4573d" />
     <link rel="manifest" href="/manifest.json" />
