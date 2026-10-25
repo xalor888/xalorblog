@@ -8,19 +8,34 @@
       <p class="login-sub">请输入账号和密码</p>
 
       <form @submit.prevent="submit">
+        <!-- label 必须用 for 指向 input 的 id。
+             原来两个标签都只是「视觉标签」：<label>用户名</label> 后面跟着一个
+             没有 id 的 <input>，读屏完全不知道它们是一对。
+             更糟的是字段一旦有内容、placeholder 消失，这个框就**彻底没有名字**——
+             读屏只会念「编辑框」。 -->
         <div class="field">
-          <label class="field-label">用户名</label>
+          <label class="field-label" for="login-username">用户名</label>
           <div class="input-wrap">
             <XIcon name="User" :size="16" class="input-icon" />
-            <input v-model="form.username" class="input" placeholder="请输入用户名" autocomplete="username" autofocus />
+            <input
+              id="login-username"
+              v-model="form.username"
+              name="username"
+              class="input"
+              placeholder="请输入用户名"
+              autocomplete="username"
+              autofocus
+            />
           </div>
         </div>
         <div class="field">
-          <label class="field-label">密码</label>
+          <label class="field-label" for="login-password">密码</label>
           <div class="input-wrap">
             <XIcon name="Lock" :size="16" class="input-icon" />
             <input
+              id="login-password"
               v-model="form.password"
+              name="password"
               :type="showPass ? 'text' : 'password'"
               class="input"
               placeholder="请输入密码"
@@ -40,11 +55,13 @@
         <!-- 两步验证：登录接口返回验证码错误时出现 -->
         <transition name="fade-slide">
           <div v-if="needTotp" class="field">
-            <label class="field-label">两步验证码</label>
+            <label class="field-label" for="login-totp">两步验证码</label>
             <div class="input-wrap">
               <XIcon name="KeyRound" :size="16" class="input-icon" />
               <input
+                id="login-totp"
                 v-model="form.totp_code"
+                name="totp_code"
                 inputmode="numeric"
                 maxlength="6"
                 class="input"

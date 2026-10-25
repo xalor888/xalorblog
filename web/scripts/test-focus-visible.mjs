@@ -277,6 +277,46 @@ console.log('\n【表单错误必须可定位、可关联】');
   ok('出错字段边框变红（视觉用户也能定位）', /\.form-input\.is-invalid,[\s\S]{0,120}?border-color:\s*#a8323a/.test(css));
 }
 
+console.log('\n【表单控件必须有真名，不能只靠 placeholder】');
+{
+  // 实测审计：后台登录页三个 <label> 都只是「视觉标签」，
+  // 后面跟着没有 id 的 <input> —— 读屏无法配对；
+  // 而字段一旦有内容、placeholder 消失，这个框就彻底没有名字了。
+  const login = read('../src/views/admin/Login.vue');
+  for (const [id, word] of [['login-username', '用户名'], ['login-password', '密码'], ['login-totp', '两步验证码']]) {
+    ok(
+      `后台登录「${word}」的 label 用 for 指向 input 的 id`,
+      login.includes(`for="${id}"`) && login.includes(`id="${id}"`)
+    );
+  }
+  ok(
+    '后台登录的输入框带 name（表单语义与密码管理器识别）',
+    login.includes('name="username"') && login.includes('name="password"')
+  );
+
+  // 列表页搜索框原来只有 placeholder，没有任何标签
+  const list = read('../src/views/site/ArticleList.vue');
+  ok(
+    '列表页搜索框有 aria-label',
+    list.includes('aria-label="按关键词搜索文章"')
+  );
+  ok('列表页搜索框用 type="search"（语义化）', list.includes('type="search"'));
+  ok(
+    '清空关键词按钮有可读名称（只有图标）',
+    list.includes('aria-label="清空关键词"')
+  );
+
+  // 手写表单的两处（留言/评论）此前已用 aria-label，这里做存在性回归
+  ok(
+    '留言页输入框有 aria-label',
+    read('../src/views/site/Messages.vue').includes('aria-label="昵称"')
+  );
+  ok(
+    '评论区输入框有 aria-label',
+    read('../src/components/site/CommentSection.vue').includes('aria-label="昵称"')
+  );
+}
+
 console.log('\n【模态弹层的焦点必须被锁住】');
 {
   // 真实缺陷：搜索弹窗标了 aria-modal="true"，但没有焦点陷阱 ——

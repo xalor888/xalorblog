@@ -105,13 +105,19 @@
           <span class="filter-label">搜索</span>
           <div class="search-box">
             <XIcon name="Search" :size="16" class="search-icon" />
+            <!-- 搜索框必须有自己的名字。只靠 placeholder 是不行的：
+                 用户一开始输入，placeholder 就消失，这个框在读屏里
+                 变成一个没有标签的「编辑框」。
+                 用 role=search 包一层语义，输入框用 aria-label 定名。 -->
             <input
               v-model="keyword"
+              type="search"
               class="search-input"
               placeholder="输入关键词搜索…"
+              aria-label="按关键词搜索文章"
               @keyup.enter="applySearch"
             />
-            <button v-if="keyword" class="search-clear" title="清空关键词" @click="clearSearch">
+            <button v-if="keyword" class="search-clear" title="清空关键词" aria-label="清空关键词" @click="clearSearch">
               <XIcon name="X" :size="14" />
             </button>
             <button class="search-btn" @click="applySearch">搜索</button>
