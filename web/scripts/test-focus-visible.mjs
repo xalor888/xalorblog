@@ -353,6 +353,24 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【404 页要等人，不该催人】');
+{
+  const nf = read('../src/views/site/NotFound.vue');
+  // 实测原实现：倒计时 5 秒后用 router.replace('/') 强制跳首页，
+  // 而同一页上摆着「回到首页 / 浏览文章 / 随便看看 / 搜索」四个出口 ——
+  // 3 秒后它们就都用不了了。读屏用户更没时间听完内容。
+  // 去掉注释后再检查，避免把「说明为什么不做」的注释当成违规
+  const nfCode = nf.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/<!--[\s\S]*?-->/g, '');
+  ok('404 页不再自动跳转', !/setInterval/.test(nfCode) && !/router\.replace\('\/'\)/.test(nfCode));
+  // 只检查 <template> 区域：注释里提到原实现（作为说明）不算违规
+  const tpl = (nf.match(/<template>[\s\S]*?<\/template>/) || [''])[0];
+  ok('不再显示倒计时文案', !/秒后自动返回/.test(tpl));
+  ok('保留明确的说明文案', /你要找的内容可能被移动或删除了/.test(nf));
+  // 出口按钮必须还在
+  ok('保留多个出口（首页/文章/随机/搜索）', /回到首页/.test(nf) && /浏览文章/.test(nf) && /随便看看/.test(nf));
+  ok('仍写 noindex（别让 404 被收录）', /noindex/.test(nf));
+}
+
 console.log('\n【Blob 下载统一走一个工具，且不立即 revoke】');
 {
   const util = read('../src/utils/download.js');

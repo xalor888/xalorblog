@@ -5,7 +5,7 @@
         <span class="nf-float" aria-hidden="true">?</span>
         <p class="nf-code">404</p>
         <h1 class="nf-title">页面走丢了</h1>
-        <p class="nf-desc">你要找的内容可能被移动或删除了<span class="nf-countdown" v-if="countdown > 0">（{{ countdown }} 秒后自动返回首页）</span></p>
+        <p class="nf-desc">你要找的内容可能被移动或删除了</p>
         <div class="nf-actions">
           <router-link to="/" class="btn-primary">
             <XIcon name="House" :size="16" /> 回到首页
@@ -50,27 +50,27 @@ watchEffect(() => {
 });
 
 const router = useRouter();
-const countdown = ref(5);
+// 这个页面**不做**倒计时自动跳转。
+// 原实现倒计时 5 秒后 router.replace('/')，而同一页摆着
+// 「回到首页 / 浏览文章 / 随便看看 / 搜索」四个出口 —— 跳走后它们都用不了了，
+// 读者没时间点，读屏用户更没时间听完。404 页应该等人，不该催人。
 const loadingRandom = ref(false);
 const searchKeyword = ref('');
-let timer = null;
 
 /** 站内搜索：跳转文章列表并应用关键词 */
 function doSearch() {
   const kw = searchKeyword.value.trim();
-  clearInterval(timer); // 打断自动跳首页
   router.push(kw ? { path: '/articles', query: { keyword: kw } } : '/articles');
 }
 
-/** 随机跳转一篇已发布文章（发现内容；倒计时暂停避免打断跳转） */
+/** 随机跳转一篇已发布文章（给读者一个「随便看看」的出口） */
 async function randomArticle() {
   if (loadingRandom.value) return;
   loadingRandom.value = true;
   try {
     const r = await articleApi.random();
     if (r && r.slug) {
-      clearInterval(timer);
-      router.push(`/article/${r.slug}`);
+          router.push(`/article/${r.slug}`);
       return;
     }
   } catch (e) {
@@ -88,17 +88,9 @@ onMounted(() => {
   noindex.setAttribute('content', 'noindex,nofollow');
   noindex.setAttribute('id', 'nf-robots-noindex');
   document.head.appendChild(noindex);
-  timer = setInterval(() => {
-    countdown.value -= 1;
-    if (countdown.value <= 0) {
-      clearInterval(timer);
-      router.replace('/');
-    }
-  }, 1000);
 });
 
 onUnmounted(() => {
-  clearInterval(timer);
   document.getElementById('nf-robots-noindex')?.remove();
 });
 </script>
@@ -142,11 +134,6 @@ onUnmounted(() => {
 @keyframes floatQ {
   0%, 100% { transform: translateX(-50%) translateY(0) rotate(-4deg); }
   50% { transform: translateX(-50%) translateY(-12px) rotate(4deg); }
-}
-
-.nf-countdown {
-  color: var(--text-3);
-  font-size: 0.85rem;
 }
 
 .nf-code {
