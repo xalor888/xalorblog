@@ -370,6 +370,21 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【灯箱：双击 1x/2x、滚轮缩放，且缩放要有上下限】');
+{
+  // 实测：双击后 transform 变 matrix(2,...) 并加 zoomed 类；滚轮再放大到 2.25x；
+  // 连滚 20 次**停在 4x**，不会无限放大。上限/下限两处都有 clamp。
+  const lb = read('../src/components/ui/ImageLightbox.vue');
+  ok('双击绑定 toggleZoom', /@dblclick="toggleZoom"/.test(lb));
+  ok('滚轮绑定 onWheel 且阻止页面滚动', /@wheel\.prevent="onWheel"/.test(lb));
+  // 缩放必须双向夹取：没有上限的话滚几下就把图糊成马赛克，也没法再回看全图
+  const clamps = (lb.match(/Math\.min\(4,\s*Math\.max\(1,/g) || []).length;
+  ok('缩放被夹在 1–4 之间（两处）', clamps >= 2, `找到 ${clamps} 处`);
+  // 关闭能力：ESC 与点击遮罩都要能退出，否则触屏用户会被困住
+  ok('ESC 可关闭', /Escape/.test(lb));
+  ok('点击遮罩可关闭', /@click\.self|backdrop/i.test(lb));
+}
+
 console.log('\n【编辑器快捷键：Ctrl+S 存草稿、Ctrl+Enter 发布（但要先确认）】');
 {
   // 实测两条都通：
