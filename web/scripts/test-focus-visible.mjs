@@ -277,6 +277,39 @@ console.log('\n【表单错误必须可定位、可关联】');
   ok('出错字段边框变红（视觉用户也能定位）', /\.form-input\.is-invalid,[\s\S]{0,120}?border-color:\s*#a8323a/.test(css));
 }
 
+console.log('\n【模态弹层的焦点必须被锁住】');
+{
+  // 真实缺陷：搜索弹窗标了 aria-modal="true"，但没有焦点陷阱 ——
+  // 打开后连按 Tab 10 次，10 次全部逃逸到背景页面的 skip-link / nav-link。
+  // 「宣称模态却做不到」比不写 aria-modal 更误导读屏用户。
+  const search = read('../src/components/ui/SearchModal.vue');
+  ok(
+    '搜索弹窗有 role=dialog + aria-modal',
+    /role="dialog"[^>]*aria-modal="true"/.test(search) || /aria-modal="true"[^>]*role="dialog"/.test(search)
+  );
+  ok(
+    '焦点不在弹窗内时无条件拉回（不只处理首尾元素）',
+    /!active\.closest\(\.search-modal\)/.test(search) || /!active\.closest\('\.search-modal'\)/.test(search)
+  );
+  ok(
+    '首/尾元素上正常循环（Tab 与 Shift+Tab 双向）',
+    /e\.shiftKey && active === first/.test(search) && /!e\.shiftKey && active === last/.test(search)
+  );
+  ok(
+    '可聚焦元素用通用选择器而不是列举标签名',
+    /\[tabindex\]:not\(\[tabindex="-1"\]\)/.test(search)
+  );
+  ok(
+    '有显式的关闭按钮（不能只靠 Esc 或点遮罩）',
+    /class="search-close"[^>]*aria-label="关闭搜索"/.test(search)
+  );
+
+  const lb = read('../src/components/ui/ImageLightbox.vue');
+  ok('灯箱有 role=dialog + aria-modal', /role="dialog"[\s\S]{0,120}?aria-modal="true"/.test(lb));
+  ok('灯箱有焦点陷阱', /function onTabTrap/.test(lb) && /addEventListener\('keydown', onTabTrap\)/.test(lb));
+  ok('灯箱打开时聚焦关闭按钮、关闭时还焦点', /lastFocused = document\.activeElement/.test(lb) && /lastFocused\.focus\(\)/.test(lb));
+}
+
 console.log('\n【全库扫描：watch 源不能是新建的数组/对象字面量】');
 {
   // 这是 ArticleList 翻页失效的根因，而且是**模式性**问题 ——

@@ -15,7 +15,13 @@
           aria-label="搜索文章"
           @input="debouncedSearch"
         />
-        <kbd class="esc-key">ESC</kbd>
+        <!-- ESC 提示保留（告诉键盘用户怎么关），但**必须同时给一个可点的关闭按钮**：
+             只有 kbd 文字时，触屏用户和只用鼠标的人除了点遮罩没有别的出口，
+             而点遮罩关闭是隐式交互，不可预期。 -->
+        <button type="button" class="search-close" aria-label="关闭搜索" title="关闭搜索（Esc）" @click="close">
+          <XIcon name="X" :size="16" />
+        </button>
+        <kbd class="esc-key" aria-hidden="true">ESC</kbd>
       </div>
 
       <div class="search-body" aria-live="polite">
@@ -200,8 +206,15 @@ function highlight(text = '') {
 let lastFocused = null;
 
 function openSearch() {
-  // 记录触发元素，关闭后恢复焦点（可访问性）
-  lastFocused = document.activeElement;
+  // 记录触发元素，关闭后恢复焦点（可访问性）。
+  //
+  // ⚠ 不能无条件记 document.activeElement：用 `/` 或 Ctrl+K 打开时，
+  // 焦点本来就在 body 上，记下来等于「关闭后恢复到 body」—— 实测焦点
+  // 确实落在 body，键盘用户得从页首重新 Tab 一遍。body 不是有效的返回点，
+  // 这种情况记 null，关闭时退回到搜索入口按钮（顶栏那颗），
+  // 那才是用户心里「搜索是从这儿打开的」。
+  const active = document.activeElement;
+  lastFocused = active && active !== document.body ? active : null;
   open.value = true;
   lockBodyScroll();
   activeIndex.value = 0;
@@ -214,26 +227,68 @@ function close() {
   keyword.value = '';
   results.value = [];
   searched.value = false;
-  // 焦点还给触发元素
+  // 焦点还给触发元素；没有有效触发元素时退回搜索入口按钮
   if (lastFocused && typeof lastFocused.focus === 'function') {
     lastFocused.focus();
+  } else {
+    document.querySelector('.search-btn, [data-open-search]')?.focus?.();
   }
   lastFocused = null;
 }
 
-/** Tab 焦点循环：保持在弹窗内（防焦点逃逸到背景页面） */
+/**
+ * Tab 焦点循环：把焦点限制在弹窗内。
+ *
+ * 之前这里只判断「焦点是否恰好落在第一个或最后一个元素上」，
+ * 但只要焦点**不在弹窗内**（例如落到 body、或用户点了一下遮罩外），
+ * 两个分支都不成立，函数直接返回 —— Tab 就顺畅地跑到背景页面的导航链接上。
+ * 实测：打开搜索框后连按 Tab 10 次，**10 次全部逃逸**到背后的
+ * skip-link / nav-link。而弹窗标了 aria-modal="true"，等于向读屏宣称
+ * 「这是模态，背景不可达」却做不到，是最糟的一类误导。
+ *
+ * 现在的做法：
+ * 1. 焦点不在弹窗内 → 直接拉回第一个可聚焦元素（无论从哪个方向进来）；
+ * 2. 在首/尾元素上 → 正常循环。
+ * 另外把「可聚焦元素」的选择器放宽：任何 tabindex 非 -1 的可交互元素都算，
+ * 不再靠列举标签名（漏一个 kbd/div[role=button] 就会开个口子）。
+ */
+const FOCUSABLE = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+function modalFocusables() {
+  const root = document.querySelector('.search-modal');
+  if (!root) return [];
+  return [...root.querySelectorAll(FOCUSABLE)].filter(
+    (el) => el.offsetParent !== null || el === document.activeElement
+  );
+}
+
 function onTabTrap(e) {
   if (!open.value || e.key !== 'Tab') return;
-  const focusables = document.querySelectorAll(
-    '.search-modal input, .search-modal button, .search-modal a, .search-modal kbd'
-  );
-  if (!focusables.length) return;
-  const first = focusables[0];
-  const last = focusables[focusables.length - 1];
-  if (e.shiftKey && document.activeElement === first) {
+  const list = modalFocusables();
+  if (!list.length) return;
+  const first = list[0];
+  const last = list[list.length - 1];
+  const active = document.activeElement;
+
+  // 焦点不在弹窗里（或落在 body）：无条件拉回，不区分方向
+  if (!active || !active.closest || !active.closest('.search-modal')) {
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
+    return;
+  }
+  if (e.shiftKey && active === first) {
     e.preventDefault();
     last.focus();
-  } else if (!e.shiftKey && document.activeElement === last) {
+    return;
+  }
+  if (!e.shiftKey && active === last) {
     e.preventDefault();
     first.focus();
   }
@@ -367,6 +422,34 @@ onUnmounted(() => {
   color: var(--text);
   font-size: 1.02rem;
   min-width: 0;
+}
+
+.search-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.search-close:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+/* 触屏上 32px 偏小，按项目的触摸目标约定放到 40px */
+@media (pointer: coarse) {
+  .search-close {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 .esc-key {

@@ -2,7 +2,17 @@
   <!-- 正文图片灯箱：点击放大查看，支持滚轮/双击/按钮缩放 -->
   <teleport to="body">
     <transition name="lightbox">
-      <div v-if="visible" class="lightbox" @click.self="close">
+      <!-- role=dialog + aria-modal：灯箱打开时背景内容对读屏不可达。
+           配合下方 onTabTrap 把键盘焦点也锁在图内 —— 只写 aria-modal
+           而不管焦点，是「宣称模态却做不到」，比不写更误导。 -->
+      <div
+        v-if="visible"
+        class="lightbox"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="alt ? `查看大图：${alt}` : '查看大图'"
+        @click.self="close"
+      >
         <button class="lb-close" @click="close" aria-label="关闭">
           <XIcon name="X" :size="20" />
         </button>
@@ -45,7 +55,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 
@@ -61,14 +71,21 @@ const imgStyle = computed(() => ({
   transform: zoom.value > 1 ? `scale(${zoom.value})` : 'none',
 }));
 
+// 记住「是谁打开的灯箱」，关闭后把焦点还回去 —— 否则焦点落在 body，
+// 键盘用户会从页面顶部重新 Tab 一遍。
+let lastFocused = null;
+
 function open(s, a) {
   src.value = s;
   alt.value = a || '';
   zoom.value = 1;
   dragging.value = false;
   dragStart = null;
+  lastFocused = document.activeElement;
   if (!visible.value) lockScroll();
   visible.value = true;
+  // 聚焦关闭按钮：读屏会念出「关闭」，键盘用户立刻知道自己在弹层里
+  nextTick(() => document.querySelector('.lightbox .lb-close')?.focus?.());
 }
 
 function close() {
@@ -76,6 +93,10 @@ function close() {
   visible.value = false;
   dragging.value = false;
   dragStart = null;
+  if (lastFocused && typeof lastFocused.focus === 'function') {
+    lastFocused.focus();
+  }
+  lastFocused = null;
 }
 
 function lockScroll() {
@@ -174,12 +195,57 @@ function onKeydown(e) {
   if (e.key === '0') resetZoom();
 }
 
+/**
+ * 焦点陷阱：与搜索弹窗同一套做法。
+ * 灯箱里可聚焦的东西很少（关闭 + 缩放按钮），但正因为少，
+ * 一按 Tab 就会跑到背景页面上 —— 而背景已被 aria-modal 声明为不可达。
+ * 原则：焦点不在灯箱内就无条件拉回，首尾元素上正常循环。
+ */
+const FOCUSABLE = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+function lightboxFocusables() {
+  const root = document.querySelector('.lightbox');
+  if (!root) return [];
+  return [...root.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+}
+
+function onTabTrap(e) {
+  if (!visible.value || e.key !== 'Tab') return;
+  const list = lightboxFocusables();
+  if (!list.length) return;
+  const first = list[0];
+  const last = list[list.length - 1];
+  const active = document.activeElement;
+  if (!active || !active.closest || !active.closest('.lightbox')) {
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
+    return;
+  }
+  if (e.shiftKey && active === first) {
+    e.preventDefault();
+    last.focus();
+    return;
+  }
+  if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 onMounted(() => {
   document.addEventListener('keydown', onKeydown);
+  document.addEventListener('keydown', onTabTrap);
 });
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown);
+  document.removeEventListener('keydown', onTabTrap);
   if (visible.value) unlockScroll();
 });
 
