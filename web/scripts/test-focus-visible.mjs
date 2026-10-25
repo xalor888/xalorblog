@@ -370,6 +370,28 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【引用扫描的五类来源：漏掉任何一类都会把在用的图误判成孤儿】');
+{
+  // 缺陷：collectReferencedUploads 只扫了 articles.cover / articles.content /
+  // settings.value / links.avatar，**完全没查 notes**。
+  // 实测造一条正文引用 `/uploads/probe-note-img.png` 的手记后，
+  // 图片页把它当「未引用」、`.del-btn` 可点 —— 点一下手记里就变破图。
+  // 补上 notes.content 与 notes.images（图集 JSON）之后：
+  //   `.del-btn` disabled=true；绕过前端直接调接口 → 400
+  //   「该图片正被文章、手记或站点设置引用，不能直接删除」，磁盘文件仍在。
+  const ad = read('../../server/src/routes/admin.js');
+  const fn = (ad.match(/async function collectReferencedUploads[\s\S]{0,1400}/) || [''])[0];
+  ok('扫文章封面', /db\('articles'\)[\s\S]{0,60}pluck\('cover'\)/.test(fn));
+  ok('扫文章正文', /db\('articles'\)\.pluck\('content'\)/.test(fn));
+  ok('扫站点设置', /db\('settings'\)\.pluck\('value'\)/.test(fn));
+  ok('扫友链头像', /db\('links'\)[\s\S]{0,60}pluck\('avatar'\)/.test(fn));
+  // 这两条是这一轮补的
+  ok('扫手记正文', /db\('notes'\)\.pluck\('content'\)/.test(fn), '缺 notes.content');
+  ok('扫手记图集', /db\('notes'\)[\s\S]{0,80}pluck\('images'\)/.test(fn), '缺 notes.images');
+  // 提示要把手记也说出来，否则用户以为删的是别处的引用
+  ok('拒绝提示点明手记', /正被文章、手记或站点设置引用/.test(ad));
+}
+
 console.log('\n【清理孤儿文件：24 小时内的不删、被引用的也不删】');
 {
   // 实测两条保护，分别造数据验证：
@@ -413,7 +435,8 @@ console.log('\n【图片管理：被引用的图片前后端都要拦住，删�
   const ad = read('../../server/src/routes/admin.js');
   ok('后端扫引用', /\/uploads\//.test(ad) && /引用/.test(ad),
      (ad.match(/该图片正被[^'"]*/) || [''])[0].slice(0, 40));
-  ok('被引用时拒绝删除', /正被文章或站点设置引用/.test(ad));
+  ok('被引用时拒绝删除', /正被文章、手记或站点设置引用/.test(ad),
+     (ad.match(/该图片正被[^'"]*/) || [''])[0].slice(0, 40));
   ok('有孤儿文件扫描', /孤儿|未被任何内容引用/.test(ad));
 }
 

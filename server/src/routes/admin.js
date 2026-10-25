@@ -1830,16 +1830,26 @@ async function collectReferencedUploads() {
     if (typeof s !== 'string') return;
     for (const m of s.matchAll(/\/uploads\/([A-Za-z0-9._-]+)/g)) referenced.add(m[1]);
   };
-  const [covers, contents, settings, linkAvatars] = await Promise.all([
+  // ⚠ 手记（notes）也必须算进来。
+  // 原先只扫了 articles.cover / articles.content / settings.value / links.avatar，
+  // **完全没查 notes** —— 于是手记正文里插入过的图片会被判定成孤儿：
+  // 实测造一条正文引用 `/uploads/probe-note-img.png` 的手记，
+  // 图片管理页把它当成「未引用」、删除按钮可点，点一下手记里就变破图。
+  // notes 有两个可能带图的字段：content（Markdown 正文）与 images（图集 JSON）。
+  const [covers, contents, settings, linkAvatars, noteContents, noteImages] = await Promise.all([
     db('articles').whereNotNull('cover').pluck('cover'),
     db('articles').pluck('content'),
     db('settings').pluck('value'),
     db('links').whereNotNull('avatar').pluck('avatar'),
+    db('notes').pluck('content'),
+    db('notes').whereNotNull('images').pluck('images'),
   ]);
   covers.forEach(extract);
   contents.forEach(extract);
   settings.forEach(extract);
   linkAvatars.forEach(extract);
+  noteContents.forEach(extract);
+  noteImages.forEach(extract);
   return referenced;
 }
 
@@ -1884,7 +1894,7 @@ router.delete('/uploads/:filename', async (req, res) => {
     // 引用保护：正在被文章/设置使用的图片禁止删除（防文章图裂）
     const referenced = await collectReferencedUploads();
     if (referenced.has(name)) {
-      return fail(res, '该图片正被文章或站点设置引用，不能直接删除', 400);
+      return fail(res, '该图片正被文章、手记或站点设置引用，不能直接删除', 400);
     }
 
     fs.unlinkSync(full);
