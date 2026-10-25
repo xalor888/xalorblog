@@ -370,6 +370,28 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【两个编辑器的脏标记清理方式不同，但都要正确】');
+{
+  // ArticleEdit 用的是封装好的 assignForm：
+  //   suppressWatch = true → 赋值 → await nextTick() → suppressWatch = false
+  // 这个顺序是**正确**的（等 watch 回调跑完才解除抑制）。
+  // NoteEdit 原来没有这层封装，发布后会被自己的脏检查挡住 —— 第 114 轮修的就是它。
+  // 实测 ArticleEdit 发布：确认框 → 「文章已发布」→ 跳回列表，**没有**误报「尚未保存」。
+  const ae = read('../src/views/admin/ArticleEdit.vue');
+  const af = (ae.match(/async function assignForm[\s\S]{0,400}/) || [''])[0];
+  ok('ArticleEdit 有 assignForm 封装', !!af);
+  // 顺序：抑制 → 赋值 → nextTick → 解除抑制
+  ok('assignForm：先抑制再赋值',
+     /suppressWatch = true[\s\S]{0,80}form\.value = /.test(af), af.slice(0, 70));
+  ok('assignForm：nextTick 在解除抑制之前',
+     /await nextTick\(\)[\s\S]{0,60}suppressWatch = false/.test(af));
+  ok('ArticleEdit 清草稿时也清 dirty', /function clearDraft[\s\S]{0,120}dirty\.value = false/.test(ae));
+
+  // NoteEdit 必须也有 nextTick 那一步（第 114 轮修的）
+  const ne = read('../src/views/admin/NoteEdit.vue');
+  ok('NoteEdit 也有 nextTick 再清 dirty', /await nextTick\(\)[\s\S]{0,120}dirty\.value = false/.test(ne));
+}
+
 console.log('\n【发布成功不能反过来告诉用户「尚未保存」】');
 {
   // 实测缺陷：手记发布后确实建了记录（库里 status=published），
