@@ -242,6 +242,39 @@ console.log('\n【翻页不能被筛选 watcher 冲掉】');
   );
 }
 
+console.log('\n【全库扫描：watch 源不能是新建的数组/对象字面量】');
+{
+  // 这是 ArticleList 翻页失效的根因，而且是**模式性**问题 ——
+  // 任何 `watch(() => [a, b], ...)` 都会因为引用不等而每次触发。
+  // 单文件断言防不住以后在别处照抄，所以这里真的遍历源码目录。
+  const { readdirSync } = await import('node:fs');
+  const offenders = [];
+  const walk = (dir) => {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const full = resolve(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (ent.name === 'node_modules' || ent.name === 'dist') continue;
+        walk(full);
+      } else if (/\.(vue|js)$/.test(ent.name)) {
+        const text = readFileSync(full, 'utf8');
+        // 「watch 的第一个参数直接返回数组字面量」
+        if (/watch\(\s*\n?\s*\(\) =>\s*\[/.test(text)) offenders.push(full);
+      }
+    }
+  };
+  walk(resolve(here, '../src'));
+
+  ok(
+    '没有 watch 直接返回数组字面量（会因引用不等而每次触发）',
+    offenders.length === 0,
+    offenders.map((p) => p.replace(resolve(here, '..'), '')).join(' / ') || undefined
+  );
+  ok(
+    'CommentSection 的文章切换 watcher 用字符串签名',
+    /watch\(\s*\n?\s*\(\) => `\$\{props\.articleId\}/.test(read('../src/components/site/CommentSection.vue'))
+  );
+}
+
 console.log('\n【鼠标点击不应被焦点环打扰】');
 {
   const css = read('../src/styles/main.css');

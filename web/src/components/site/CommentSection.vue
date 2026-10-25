@@ -422,8 +422,14 @@ onUnmounted(() => {
 });
 
 // 文章切换（上一篇/下一篇等）：文章 id 或直达评论变化时重新加载并定位
+//
+// 用拼接字符串而不是数组 —— 与 ArticleList 那次真实 bug 同一个坑：
+// 数组 getter 每次返回新引用，Vue 按引用比较，理论上"永远变了"。
+// 这里两个依赖都是标量、变化频率也低，实际危害小；
+// 但既然项目里已经有这个约定（见 ArticleEdit 的轻量签名），就统一掉，
+// 免得以后照抄这段代码时把坑带走。
 watch(
-  () => [props.articleId, props.initialHighlight],
+  () => `${props.articleId}\u0000${props.initialHighlight ?? ''}`,
   () => {
     // 组件复用（未卸载）时刷新评论列表，保证新文章的评论与直达高亮生效
     load();
