@@ -190,7 +190,7 @@ async function batchDelete() {
   const ids = selection.value.map((r) => r.id);
   if (!ids.length) return;
   try {
-    await ElMessageBox.confirm(`确定删除选中的 ${ids.length} 条手记？`, '批量删除', { type: 'warning' });
+    await ElMessageBox.confirm(`确定删除选中的 ${ids.length} 条手记？此操作不可恢复。`, '批量删除', { type: 'warning' });
   } catch (e) {
     return;
   }

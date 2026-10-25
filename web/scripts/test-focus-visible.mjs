@@ -370,6 +370,42 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【批量删除：必须报数量，且说清不可恢复】');
+{
+  // 实测：勾选 2 条评论点批量删除，确认框文案是
+  // 「确定删除选中的 2 条评论吗？此操作不可恢复。」
+  // 改之前 CommentManage / MessageManage / LinkManage 只说「确定删除选中的 N 条…」，
+  // 少了「不可恢复」——而 ArticleManage / NoteManage 早就写了，属于同类操作文案不一致。
+  // 函数名各页不同：NoteManage 用的是 batchDelete，其余是 batchRemove。
+  // 必须按名字精确找，且只从**函数定义**处起切（模板里的 @click 引用不算）。
+  const batch = {
+    ArticleManage: 'batchRemove', NoteManage: 'batchDelete',
+    CommentManage: 'batchRemove', MessageManage: 'batchRemove', LinkManage: 'batchRemove',
+  };
+  const missing = [];
+  for (const [f, fnName] of Object.entries(batch)) {
+    const src = read(`../src/views/admin/${f}.vue`);
+    // 不能用 /[\s\S]*?\n\}/ —— 函数体内部还有 `}`，会被提前截断；
+    // 也不能太短 —— ArticleManage 的 batchRemove 到 batchDelete 有 14 行、约 600 字。
+    const m = src.match(new RegExp(`(?:async\\s+)?function\\s+${fnName}\\b`));
+    if (!m) { missing.push(`${f}: 找不到 ${fnName}`); continue; }
+    const fn = src.slice(m.index, m.index + 2000);
+    // 必须有确认框（不能裸调 API）
+    if (!/ElMessageBox\.confirm/.test(fn)) { missing.push(`${f}: 无确认框`); continue; }
+    // 必须报出数量
+    if (!/\$\{selection\.value\.length\}|count/.test(fn)) missing.push(`${f}: 不报数量`);
+    // 必须说清不可恢复
+    if (!/不可恢复/.test(fn)) missing.push(`${f}: 没写不可恢复`);
+    // 必须直接调 batchDelete 之前先 confirm
+    // 注意：NoteManage 的函数本身就叫 batchDelete，所以不能用 indexOf('batchDelete')
+    // —— 会命中函数名自身（位置 0）。要匹配的是 **API 调用** noteApi.batchDelete / xxxApi.batchDelete。
+    const iConfirm = fn.indexOf('ElMessageBox.confirm');
+    const iDelete = fn.search(/\w+Api\.batchDelete/);
+    if (iConfirm < 0 || iDelete < 0 || iConfirm > iDelete) missing.push(`${f}: 确认在删除之后`);
+  }
+  ok('五个批量删除入口都先确认、报数量、写不可恢复', missing.length === 0, missing.join('; '));
+}
+
 console.log('\n【编辑页必须拦住「未保存就离开」】');
 {
   // 实测：改标题后直接切路由，对话框正常弹出：

@@ -397,7 +397,7 @@ async function banIp(row) {
 
 async function batchRemove() {
   try {
-    await ElMessageBox.confirm(`确定删除选中的 ${selection.value.length} 条留言吗？`, '批量删除', {
+    await ElMessageBox.confirm(`确定删除选中的 ${selection.value.length} 条留言吗？此操作不可恢复。`, '批量删除', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
