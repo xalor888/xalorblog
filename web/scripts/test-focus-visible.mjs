@@ -370,6 +370,36 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【导出的 CSV 必须防公式注入】');
+{
+  // 用户提交的昵称/留言/友链简介会原样进 CSV。
+  // 若单元格以 = + - @ 开头，Excel / Numbers 会当**公式**执行
+  // （=HYPERLINK(...) 之类可以外联、=cmd|... 在旧 Excel 上更糟）。
+  // 六个导出入口分两类：四个在前端拼、两个由服务端拼，都要防。
+  const fe = ['CategoryManage', 'LinkManage', 'SecurityManage', 'TagManage'];
+  const bad = [];
+  for (const f of fe) {
+    const src = read(`../src/views/admin/${f}.vue`);
+    const i = src.indexOf('new Blob([');
+    if (i < 0) { bad.push(`${f}: 没有导出`); continue; }
+    // 往前找该函数里的 esc 定义
+    const fnStart = src.lastIndexOf('function ', i);
+    const chunk = src.slice(fnStart, i);
+    const hasEsc = /const esc = /.test(chunk);
+    const hasGuard = /\[=\+\\-@\\t\\r\]|=\+\\-@/.test(chunk);
+    if (!hasEsc) bad.push(`${f}: 无 esc`);
+    else if (!hasGuard) bad.push(`${f}: esc 未防公式`);
+  }
+  ok('四个前端导出都防了公式注入', bad.length === 0, bad.join('; '));
+
+  // 服务端那两个（评论 / 留言）
+  const adm = read('../../server/src/routes/admin.js');
+  const escDefs = (adm.match(/\^\[=\+\\-@\\t\\r\]/g) || []).length;
+  ok('服务端导出也防了公式注入（至少两处）', escDefs >= 2, `找到 ${escDefs} 处`);
+  // 每一列都要过 esc，不能只包表头
+  ok('导出行逐列过 esc', /map\(esc\)\.join\(','\)/.test(adm));
+}
+
 console.log('\n【reduced-motion：入场位移动画要从源头去掉】');
 {
   // 实测：全局兜底把 animation-duration 压到 0.01ms 后，
