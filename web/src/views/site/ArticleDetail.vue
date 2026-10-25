@@ -623,7 +623,18 @@ function onShareDocClick(e) {
 }
 
 function copyLink() {
-  const url = window.location.href;
+  /**
+   * 复制**干净的**文章地址，而不是 window.location.href。
+   *
+   * 为什么：href 里会带着读者进来时的全部 query ——
+   * 缓存击穿参数、渠道来源（?from=wechat）、utm 之类。
+   * 实测复制出来是 `.../?h=1792942176448#/article/xxx`：
+   * 那次是测试加的，但真实场景里读者从任何带参链接进来都一样。
+   * 转发给别人时那串数字没有任何用处，还让人以为链接坏了或带追踪。
+   *
+   * 做法：只保留 origin + pathname + hash（hash 里是路由，必须留）。
+   */
+  const url = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(url)
       .then(() => ElMessage.success('链接已复制'))

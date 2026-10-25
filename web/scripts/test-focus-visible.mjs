@@ -353,6 +353,29 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【复制的链接不能带读者进来时的 query】');
+{
+  const detail = read('../src/views/site/ArticleDetail.vue');
+  // 实测：copyLink 原来直接用 window.location.href，
+  // 复制出来是 `.../?h=1792942176448#/article/xxx` ——
+  // 缓存击穿参数、渠道来源、utm 全都会跟着被转发出去。
+  ok(
+    'copyLink 不复用 window.location.href',
+    !/function copyLink\(\) \{\s*const url = window\.location\.href/.test(detail),
+    'href 会带上全部 query'
+  );
+  ok(
+    'copyLink 只拼 origin + pathname + hash',
+    /window\.location\.origin\}\$\{window\.location\.pathname\}\$\{window\.location\.hash/.test(detail)
+  );
+
+  // 分享链接走服务端分享页，且不含 query（这条本来就对，钉住防回归）
+  ok(
+    'shareUrl 指向 /api/share/<slug>（服务端可抓取的分享页）',
+    /return `\$\{base\}\/api\/share\/\$\{article\.value\.slug\}`/.test(detail)
+  );
+}
+
 console.log('\n【文章页的工具按钮：只有收藏漏了 aria】');
 {
   const detail = read('../src/views/site/ArticleDetail.vue');
