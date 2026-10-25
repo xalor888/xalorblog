@@ -91,8 +91,9 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { onBeforeRouteLeave } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import { settingsApi } from '@/api';
 
@@ -122,6 +123,50 @@ function parseExtra(raw) {
   }
 }
 
+/**
+ * 未保存修改保护（与 Settings.vue 同一套做法）。
+ * 这个页面有 9 个字段 + 可变长的社交链接列表，改完点侧栏就走的话
+ * 改动会静默丢失 —— 和站点设置页是同一个坑。
+ */
+let baseline = '';
+const dirty = ref(false);
+
+function setBaseline() {
+  baseline = JSON.stringify({ form, extra: socialExtra.value });
+  dirty.value = false;
+}
+
+watch(
+  [form, socialExtra],
+  () => {
+    if (!baseline) return;
+    dirty.value = JSON.stringify({ form, extra: socialExtra.value }) !== baseline;
+  },
+  { deep: true }
+);
+
+onBeforeRouteLeave(async () => {
+  if (!dirty.value) return true;
+  try {
+    await ElMessageBox.confirm(
+      '主页设置还有尚未保存的修改，离开将丢失本次更改，是否确定离开？',
+      '未保存提示',
+      { confirmButtonText: '确定离开', cancelButtonText: '继续编辑', type: 'warning' }
+    );
+    return true;
+  } catch (e) {
+    return false;
+  }
+});
+
+function onBeforeUnload(e) {
+  if (!dirty.value) return;
+  e.preventDefault();
+  e.returnValue = '';
+}
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload));
+onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload));
+
 function addSocial() {
   if (socialExtra.value.length >= 8) return;
   socialExtra.value.push({ label: '', url: '' });
@@ -139,6 +184,9 @@ async function load() {
     form.home_since_date = data.home_since_date || '';
     form.home_about_excerpt = data.home_about_excerpt || '';
     socialExtra.value = parseExtra(data.home_social_extra);
+    // 记录基线：之后任何差异才算「未保存」。放在这里而不是 watch 里，
+    // 是为了避免「刚打开就提示未保存」。
+    setBaseline();
   } catch (e) {
     /* 拦截器已提示 */
   } finally {

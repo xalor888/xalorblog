@@ -351,8 +351,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { useRouter, onBeforeRouteLeave } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { settingsApi, uploadApi, authApi } from '@/api';
@@ -368,6 +368,62 @@ import { useIsMobile } from '@/composables/useMedia';
 const router = useRouter();
 const auth = useAuthStore();
 const form = ref({});
+
+/**
+ * 未保存修改保护。
+ *
+ * 为什么必须有：这个页面有 20+ 个可见输入控件（整页 37 个）。实测在改动其中一个
+ * 字段后点侧栏「仪表盘」，**页面直接走了，没有任何提示，改动静默消失**。
+ * 后台的「站点设置」是最容易踩到的丢数据场景 —— 改了半天标题、SEO、备案号，
+ * 手滑点错一个导航就全没了，而且没有任何信号。
+ *
+ * 做法与 SecurityManage 的 cfgDirty 一致：
+ * - 每次从服务端加载后存一份 JSON 基线；任何加载路径都必须调用 setBaseline()，
+ *   否则「刚打开就提示未保存」会变成新的骚扰；
+ * - 用 JSON 比较而不是逐字段 watch：字段太多，逐个 watch 又长又容易漏；
+ * - 路由离开与 beforeunload 两处都要拦，前者管站内跳转，后者管刷新/关标签页。
+ */
+let baseline = '';
+const dirty = ref(false);
+
+/** 记录基线（所有 form.value = ... 之后都要调用） */
+function setBaseline(data) {
+  baseline = JSON.stringify(data || {});
+  dirty.value = false;
+}
+
+watch(
+  form,
+  () => {
+    if (!baseline) return; // 还没加载完，不算修改
+    dirty.value = JSON.stringify(form.value) !== baseline;
+  },
+  { deep: true }
+);
+
+/** 站内跳转拦截：与文章编辑页保持同一套确认文案 */
+onBeforeRouteLeave(async () => {
+  if (!dirty.value) return true;
+  try {
+    await ElMessageBox.confirm(
+      '站点设置还有尚未保存的修改，离开将丢失本次更改，是否确定离开？',
+      '未保存提示',
+      { confirmButtonText: '确定离开', cancelButtonText: '继续编辑', type: 'warning' }
+    );
+    return true;
+  } catch (e) {
+    return false;
+  }
+});
+
+/** 刷新 / 关标签页拦截：浏览器只允许自定义提示文案，不能省略 */
+function onBeforeUnload(e) {
+  if (!dirty.value) return;
+  e.preventDefault();
+  e.returnValue = '';
+}
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload));
+onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload));
 const isMobile = useIsMobile();
 
 /** 网页搜索是否可用：后台 settings 接口下发 websearch_ready（含 env 回落判定），
@@ -696,6 +752,7 @@ async function importBackup(e) {
     ElMessage.success(res?.message || '导入成功');
     // 重新拉取设置并刷新站点缓存
     form.value = await settingsApi.get();
+    setBaseline(form.value);
     const site = useSiteStore();
     site.loaded = false;
     await site.fetchSettings();
@@ -723,6 +780,7 @@ async function changePassword() {
 
 onMounted(async () => {
   form.value = await settingsApi.get();
+  setBaseline(form.value);
   // 加载两步验证状态
   try {
     const st = await authApi.twoFaStatus();

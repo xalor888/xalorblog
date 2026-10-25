@@ -277,6 +277,33 @@ console.log('\n【表单错误必须可定位、可关联】');
   ok('出错字段边框变红（视觉用户也能定位）', /\.form-input\.is-invalid,[\s\S]{0,120}?border-color:\s*#a8323a/.test(css));
 }
 
+console.log('\n【后台大表单：未保存修改不能静默丢失】');
+{
+  // 实测：在站点设置改了字段后点侧栏「仪表盘」，页面直接走了、无任何提示。
+  // 后两类编辑页（文章/手记）本来就有保护，但两个设置页没有 ——
+  // 而设置页恰恰是「改了半天、手滑点错导航就全没了」的典型场景。
+  for (const [path, label, word] of [
+    ['../src/views/admin/Settings.vue', '站点设置', '站点设置'],
+    ['../src/views/admin/HomeSettings.vue', '主页设置', '主页设置'],
+  ]) {
+    const src = read(path);
+    ok(`${label}：有 dirty 基线比较`, /let baseline = ''/.test(src) && /dirty = ref\(false\)/.test(src));
+    ok(`${label}：加载完成后记录基线（避免刚打开就提示）`, /setBaseline\(/.test(src));
+    ok(`${label}：路由离开时确认`, /onBeforeRouteLeave\(async \(\) => \{/.test(src) && /ElMessageBox\.confirm/.test(src));
+    ok(
+      `${label}：确认文案点名是哪一个页面`,
+      src.includes(`'${word}还有尚未保存的修改`)
+    );
+    ok(`${label}：刷新/关标签页也拦（beforeunload）`, /addEventListener\('beforeunload'/.test(src));
+    ok(`${label}：卸载时移除监听（避免泄漏）`, /removeEventListener\('beforeunload'/.test(src));
+    ok(`${label}：未修改时不打扰`, /if \(!dirty\.value\) return true;/.test(src));
+  }
+  // 三个编辑页原本就有保护，做存在性回归
+  for (const p of ['../src/views/admin/ArticleEdit.vue', '../src/views/admin/NoteEdit.vue', '../src/views/admin/SecurityManage.vue']) {
+    ok(`${p.split('/').pop()} 仍有离开保护`, /onBeforeRouteLeave/.test(read(p)));
+  }
+}
+
 console.log('\n【出错要告诉用户，不能只写进控制台】');
 {
   const main = read('../src/main.js');
