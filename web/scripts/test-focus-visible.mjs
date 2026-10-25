@@ -370,6 +370,26 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【搜索高亮：先匹配再转义，且不能因此放过 XSS】');
+{
+  // 实测缺陷：标题 `__probe A & B 对比测试`，搜 `A & B` **能搜到但 0 处高亮**。
+  // 原因是「整串先转义、再拿关键词去匹配转义后的串」——
+  // 标题里的 & 已变成 &amp;，关键词里的 & 就匹配不上了。
+  // 修法是 **在原文上匹配、只对命中的片段转义**（用 split 保留分隔符）。
+  const sm = read('../src/components/ui/SearchModal.vue');
+  const fn = (sm.match(/function highlight[\s\S]{0,900}/) || [''])[0];
+  ok('高亮函数存在', !!fn);
+  // split(re) 是关键：奇数位即命中片段
+  ok('用 split 保留分隔符（先匹配）', /raw\.split\(re\)|\.split\(re\)/.test(fn), fn.slice(0, 50));
+  ok('只对片段转义（不转义 <mark>）', /escHtml\(part\)/.test(fn));
+  ok('奇数位才包 mark', /i % 2 === 1/.test(fn));
+  // 关键词的正则元字符必须转义，否则 `(` 会让 RegExp 抛错
+  ok('转义正则元字符', /\[\.\*\+\?\^\(\)\|\[\]\\\]/.test(fn) || /replace\(\/\[\.\*/.test(fn), 
+     (fn.match(/const pattern = [^\n]*/) || [''])[0].slice(0, 60));
+  // escHtml 必须覆盖五个字符
+  ok('escHtml 覆盖 & < > " \'', /'&'/.test(sm) && /'<'/.test(sm) && /'&quot;'|'"/.test(sm));
+}
+
 console.log('\n【搜索弹层的键盘导航：↑↓ 移动、Enter 跳转、边界不越界】');
 {
   // 实测 3 条结果：初始选中 0；↓↓ 到 2；↑ 回到 1；Enter 跳到文章且弹层关闭。
