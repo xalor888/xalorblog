@@ -370,6 +370,31 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【收藏跨标签页同步：另一页改了，这页按钮与列表都要跟着变】');
+{
+  // 缺陷：收藏存 localStorage，而 localStorage 变更**只在其他标签页触发 storage 事件**。
+  // 实测：另一页清空后，文章页按钮仍写「取消收藏」，再点一下等于又收回来。
+  // 修：utils/bookmark.js 暴露 onBookmarksChange，ArticleDetail 与 Bookmarks 都订阅，
+  // 并在 onUnmounted 里取消订阅（否则闭包一直挂在 window 上）。
+  const bm = read('../src/utils/bookmark.js');
+  ok('导出 onBookmarksChange', /export function onBookmarksChange/.test(bm));
+  ok('导出 BOOKMARK_KEY', /export const BOOKMARK_KEY/.test(bm));
+  // key 为 null 是 clear()，也要算变化
+  ok('处理 key 为 null 的情况', /e\.key !== null/.test(bm));
+  // 返回取消订阅函数，调用方才能清理
+  ok('返回取消订阅函数', /return \(\) => window\.removeEventListener\('storage'/.test(bm));
+
+  const ad = read('../src/views/site/ArticleDetail.vue');
+  ok('文章页订阅收藏变化', /onBookmarksChange\(\(\) =>/.test(ad));
+  // 只注册一次，别每次 load 都叠加
+  ok('订阅只注册一次', /if \(!offBookmarkSync\)/.test(ad));
+  ok('卸载时取消订阅', /onUnmounted[\s\S]{0,220}offBookmarkSync/.test(ad));
+
+  const bks = read('../src/views/site/Bookmarks.vue');
+  ok('收藏页订阅收藏变化', /onBookmarksChange\(\(list\)/.test(bks));
+  ok('收藏页卸载时取消订阅', /onUnmounted\(\(\) => offSync\(\)\)/.test(bks));
+}
+
 console.log('\n【收藏的失效条目：会被静默清掉，但有效条目一条都不能误删】');
 {
   // 缺陷：收藏快照只存 localStorage、从不校验，文章被删后收藏页照常显示一条

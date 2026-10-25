@@ -386,7 +386,7 @@ import AskAi from '@/components/site/AskAi.vue';
 import { articleApi } from '@/api';
 import { renderMarkdown, extractToc, addHeadingIds, addImgAttrs } from '@/utils/markdown';
 import { formatDate, formatNumber, readingTime } from '@/utils/format';
-import { isBookmarked, addBookmark, removeBookmark } from '@/utils/bookmark';
+import { isBookmarked, addBookmark, removeBookmark, onBookmarksChange } from '@/utils/bookmark';
 import { useSiteStore } from '@/stores/site';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 import { setArticleCopyAllowed, clearArticleCopyScope } from '@/utils/copyGuard';
@@ -464,6 +464,7 @@ function fileNameFromSrc(src) {
   }
 }
 const bookmarked = ref(false);
+let offBookmarkSync = null;
 
 // 移动端 TOC 抽屉打开时锁定背景滚动（与灯箱行为对齐）
 watch(mobileTocOpen, (open) => {
@@ -756,6 +757,13 @@ async function load() {
       try { return !!localStorage.getItem(`xalor_liked_${a.id}`); } catch (e) { return false; }
     })();
     bookmarked.value = isBookmarked(a.id);
+    // 另一个标签页取消/新增收藏时，这里的按钮也要跟着变。
+    // 不监听的话：那边清空了，这边还写着「取消收藏」，再点一下反而把它收回来。
+    if (!offBookmarkSync) {
+      offBookmarkSync = onBookmarksChange(() => {
+        if (article.value) bookmarked.value = isBookmarked(article.value.id);
+      });
+    }
     // 次要数据（上一篇/下一篇/相关文章）：独立容错，失败降级为空，不影响正文展示
     try {
       const [n, r] = await Promise.all([
@@ -1204,6 +1212,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  // 取消跨标签页收藏同步监听，避免组件卸载后闭包仍挂在 window 上
+  if (offBookmarkSync) { offBookmarkSync(); offBookmarkSync = null; }
   clearTimeout(shareClickTimer); // 取消延迟挂载（防卸载后仍添加监听泄漏）
   window.removeEventListener('scroll', onScroll);
   window.removeEventListener('keydown', onKeydown);

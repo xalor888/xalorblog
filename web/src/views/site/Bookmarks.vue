@@ -28,11 +28,11 @@
 </template>
 
 <script setup>
-import { ref, watchEffect , onMounted } from 'vue';
+import { ref, watchEffect, onMounted, onUnmounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import ArticleCard from '@/components/site/ArticleCard.vue';
-import { getBookmarks, removeBookmark, clearBookmarks } from '@/utils/bookmark';
+import { getBookmarks, removeBookmark, clearBookmarks, onBookmarksChange } from '@/utils/bookmark';
 import { useSiteStore } from '@/stores/site';
 import { applyPageMeta } from '@/utils/pageMeta';
 import { articleApi } from '@/api';
@@ -80,6 +80,10 @@ async function pruneStale() {
 }
 
 onMounted(pruneStale);
+
+// 另一个标签页增删收藏时，本页列表同步刷新（storage 事件不会在当前页触发，不会自激）
+const offSync = onBookmarksChange((list) => { bookmarks.value = list; });
+onUnmounted(() => offSync());
 
 /** 把书签对象包装成文章卡片所需结构 */
 function toArticle(b) {
