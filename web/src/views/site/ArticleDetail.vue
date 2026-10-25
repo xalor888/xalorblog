@@ -138,20 +138,75 @@
 
       <!-- 正文 -->
       <div class="detail-content fade-up">
-        <div class="reading-toolbar">
-          <span class="rt-label">字号</span>
-          <button class="rt-btn" :class="{ dim: fontSize <= 14 }" @click="changeFontSize(-1)" title="减小字号">A−</button>
-          <button class="rt-btn" :class="{ dim: fontSize >= 20 }" @click="changeFontSize(1)" title="增大字号">A+</button>
-          <span class="rt-sep"></span>
-          <span class="rt-label">字体</span>
-          <button class="rt-btn rt-wide" @click="toggleFontStyle" :title="fontStyle === 'serif' ? '切换到无衬线字体' : '切换到衬线字体'">
-            {{ fontStyle === 'serif' ? '衬线' : '无衬线' }}
+        <!-- 沉浸开关单独留在外面：它是最常用的一项，不该藏在「阅读设置」里 -->
+        <div class="reading-toolbar" :class="{ expanded: toolbarExpanded }">
+          <button
+            class="rt-btn rt-wide rt-focus"
+            :class="{ on: focusMode }"
+            @click="toggleFocusMode"
+            :title="focusMode ? '退出沉浸阅读' : '沉浸阅读（隐藏导航与侧栏）'"
+            :aria-pressed="focusMode"
+          >
+            <XIcon name="Maximize2" :size="13" />
+            <span class="rt-focus-text">{{ focusMode ? '退出沉浸' : '沉浸' }}</span>
           </button>
+
+          <!-- 手机：一个 Aa 按钮展开/收起全部阅读设置。
+               实测 390px 宽放不下 11 个控件（需要 463px，只有 324px），
+               硬挤会变成 3 行、把正文压掉 121px。桌面端这个按钮隐藏、设置常显。 -->
+          <button
+            class="rt-btn rt-wide rt-toggle"
+            :class="{ on: toolbarExpanded }"
+            @click="toolbarExpanded = !toolbarExpanded"
+            :aria-expanded="toolbarExpanded"
+            :title="toolbarExpanded ? '收起阅读设置' : '阅读设置（字号 / 行距 / 版心 / 字体）'"
+          >
+            <XIcon name="Settings2" :size="13" /> Aa
+          </button>
+
+          <div class="rt-group">
+            <span class="rt-group-label">字体</span>
+            <button class="rt-btn rt-wide" @click="toggleFontStyle" :title="fontStyle === 'serif' ? '切换到无衬线字体' : '切换到衬线字体'">
+              {{ fontStyle === 'serif' ? '衬线' : '无衬线' }}
+            </button>
+          </div>
+
+          <div class="rt-group">
+            <span class="rt-group-label">字号</span>
+            <button class="rt-btn" :class="{ dim: fontSize <= FONT_SIZE.min }" @click="changeFontSize(-1)" title="减小字号" aria-label="减小字号">A−</button>
+            <span class="rt-value">{{ fontSize }}</span>
+            <button class="rt-btn" :class="{ dim: fontSize >= FONT_SIZE.max }" @click="changeFontSize(1)" title="增大字号" aria-label="增大字号">A+</button>
+          </div>
+
+          <div class="rt-group">
+            <span class="rt-group-label">行距</span>
+            <button class="rt-btn" :class="{ dim: lineHeight <= LINE_HEIGHT.min }" @click="changeLineHeight(-1)" title="收紧行距" aria-label="收紧行距">
+              <XIcon name="AlignJustify" :size="13" />
+            </button>
+            <span class="rt-value">{{ lineHeight.toFixed(2) }}</span>
+            <button class="rt-btn" :class="{ dim: lineHeight >= LINE_HEIGHT.max }" @click="changeLineHeight(1)" title="放宽行距" aria-label="放宽行距">
+              <XIcon name="AlignLeft" :size="13" />
+            </button>
+          </div>
+
+          <div class="rt-group">
+            <span class="rt-group-label">版心</span>
+            <button class="rt-btn" :class="{ dim: readWidth <= READ_WIDTH.min }" @click="changeReadWidth(-1)" title="收窄版心" aria-label="收窄版心">窄</button>
+            <span class="rt-value rt-narrow" :title="`每行约 ${charsPerLineValue} 字`">{{ charsPerLineValue }}字</span>
+            <button class="rt-btn" :class="{ dim: readWidth >= READ_WIDTH.max }" @click="changeReadWidth(1)" title="放宽版心" aria-label="放宽版心">宽</button>
+          </div>
         </div>
         <div v-if="article.content_decrypt_failed" class="decrypt-fail">
           正文解密失败，请刷新页面后重试。
         </div>
-        <div v-else class="markdown-body" :class="{ serif: fontStyle === 'serif' }" v-html="renderedContent" :style="{ fontSize: fontSize + 'px' }" @click="onContentClick"></div>
+        <div
+          v-else
+          class="markdown-body"
+          :class="{ serif: fontStyle === 'serif' }"
+          v-html="renderedContent"
+          :style="{ fontSize: fontSize + 'px', lineHeight: String(lineHeight), maxWidth: readWidth + 'px' }"
+          @click="onContentClick"
+        ></div>
 
         <!-- 点赞 -->
         <div class="like-zone">
@@ -324,6 +379,25 @@ import { isBookmarked, addBookmark, removeBookmark } from '@/utils/bookmark';
 import { useSiteStore } from '@/stores/site';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 import { setArticleCopyAllowed, clearArticleCopyScope } from '@/utils/copyGuard';
+import {
+  FONT_SIZE,
+  LINE_HEIGHT,
+  READ_WIDTH,
+  loadFontSize,
+  loadLineHeight,
+  loadReadWidth,
+  loadFontStyle,
+  loadFocusMode,
+  stepFontSize,
+  stepLineHeight,
+  stepReadWidth,
+  saveFontSize,
+  saveLineHeight,
+  saveReadWidth,
+  saveFontStyle,
+  saveFocusMode,
+  charsPerLine,
+} from '@/utils/readingPrefs';
 
 const route = useRoute();
 const router = useRouter();
@@ -350,12 +424,18 @@ function toggleToc() {
     localStorage.setItem('xalor_toc_collapsed', tocCollapsed.value ? '1' : '0');
   } catch (e) { /* 隐私模式忽略 */ }
 }
-const fontSize = ref((() => {
-  try { return Number(localStorage.getItem('xalor_font_size')) || 16; } catch (e) { return 16; }
-})());
-const fontStyle = ref((() => {
-  try { return localStorage.getItem('xalor_font_style') || 'sans'; } catch (e) { return 'sans'; }
-})());
+/* 阅读偏好统一走 utils/readingPrefs：坏值（''、'abc'、越界、旧版大小写）
+   在那一层就被夹成合法值，绝不会把 `font-size: NaNpx` 灌进行内样式。 */
+const fontSize = ref(loadFontSize(localStorage));
+const lineHeight = ref(loadLineHeight(localStorage));
+const readWidth = ref(loadReadWidth(localStorage));
+const fontStyle = ref(loadFontStyle(localStorage));
+const focusMode = ref(loadFocusMode(localStorage));
+/* 手机上「阅读设置」的展开态。默认收起——没人愿意为了读一篇文章
+   先看 11 个控件；桌面端这一组永远展开，这个状态不参与。 */
+const toolbarExpanded = ref(false);
+/** 每行字数：给「版心」一个可读的反馈，而不是只有像素数字 */
+const charsPerLineValue = computed(() => charsPerLine(readWidth.value, fontSize.value));
 const mobileTocOpen = ref(false);
 const lightboxRef = ref(null);
 const bookmarked = ref(false);
@@ -379,22 +459,42 @@ function onContentClick(e) {
   }
 }
 
-/** 字体大小调节（14-20px，localStorage 记忆） */
+/** 字号 / 行距 / 版心：统一走 readingPrefs 的夹取与步进，到边界停住 */
 function changeFontSize(delta) {
-  const next = Math.min(20, Math.max(14, fontSize.value + delta));
-  fontSize.value = next;
-  try {
-    localStorage.setItem('xalor_font_size', String(next));
-  } catch (e) { /* 隐私模式忽略 */ }
+  fontSize.value = stepFontSize(fontSize.value, delta);
+  saveFontSize(localStorage, fontSize.value);
+}
+
+function changeLineHeight(delta) {
+  lineHeight.value = stepLineHeight(lineHeight.value, delta);
+  saveLineHeight(localStorage, lineHeight.value);
+}
+
+function changeReadWidth(delta) {
+  readWidth.value = stepReadWidth(readWidth.value, delta);
+  saveReadWidth(localStorage, readWidth.value);
 }
 
 /** 正文字体风格切换（无衬线/衬线，localStorage 记忆） */
 function toggleFontStyle() {
   fontStyle.value = fontStyle.value === 'serif' ? 'sans' : 'serif';
-  try {
-    localStorage.setItem('xalor_font_style', fontStyle.value);
-  } catch (e) { /* 隐私模式忽略 */ }
+  saveFontStyle(localStorage, fontStyle.value);
 }
+
+/**
+ * 沉浸阅读：给 <html> 挂 data-focus。
+ * 用 documentElement 而不是本组件根节点，是因为导航、页脚、浮层栈
+ * 都在 Layout 里（浮层栈还 teleport 到了 #app 之外的 #float-dock），
+ * 组件内部的选择器一个都够不到。
+ */
+function toggleFocusMode() {
+  focusMode.value = !focusMode.value;
+  saveFocusMode(localStorage, focusMode.value);
+}
+
+watch(focusMode, (on) => {
+  document.documentElement.dataset.focus = on ? 'on' : '';
+}, { immediate: true });
 
 function scrollTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -812,6 +912,8 @@ onUnmounted(() => {
   removeJsonLd(); // 移除本文 JSON-LD，防与后续页面结构化数据叠加
   if (mobileTocOpen.value) unlockBodyScroll();
   clearArticleCopyScope(); // 离开文章页：复制限制回到只受全站开关控制
+  // 沉浸状态挂在 <html> 上，不收尾会把「导航没了」带到首页
+  document.documentElement.dataset.focus = '';
 });
 </script>
 
@@ -1207,16 +1309,66 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 6px;
+  /* 窄屏换行时行与行之间要给呼吸 */
+  row-gap: 8px;
   margin-bottom: 14px;
   padding-bottom: 14px;
   border-bottom: 1px dashed var(--border);
 }
 
-.rt-label {
+/* 「Aa」折叠按钮：桌面端不需要（设置本来就是一排常显的）。
+   注意必须用 .rt-btn.rt-toggle (0,2,0)：单写 .rt-toggle (0,1,0) 与后面的
+   .rt-btn (0,1,0) 同级，源码在前的会被后面的 display:flex 覆盖 —— 
+   实测就是「桌面端 Aa 按钮一直显示」。 */
+.rt-btn.rt-toggle {
+  display: none;
+}
+
+/* ============ 窄屏：阅读设置折叠 ============
+   实测 390px 宽的手机上，11 个控件一共要 463px，可用宽度只有 324px。
+   硬挤的后果是工具栏变成 3 行 121px，正文被压掉一大截。
+   所以窄屏只留「沉浸」+「Aa」两个按钮，其余四组收进 Aa 里按需展开。 */
+@media (max-width: 720px) {
+  .reading-toolbar {
+    justify-content: flex-start;
+    row-gap: 0;
+  }
+  .rt-btn.rt-toggle {
+    display: inline-flex;
+  }
+  /* 收起态：除前两个按钮外全不渲染（display:none 不占位、不可聚焦） */
+  .reading-toolbar:not(.expanded) .rt-group {
+    display: none;
+  }
+  /* 展开态：整组换行，每组独占一行，依然比原来 11 个挤在一起清楚 */
+  .reading-toolbar.expanded {
+    row-gap: 8px;
+  }
+  .reading-toolbar.expanded .rt-group {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+  .rt-btn {
+    height: 32px;
+  }
+  .rt-group-label {
+    min-width: 32px;
+  }
+}
+
+/* 分组：每组内部紧邻、组与组之间留白，不再靠分隔线硬撑 */
+.rt-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rt-group-label {
   font-size: 0.78rem;
   color: var(--text-3);
-  margin-right: 4px;
+  margin-right: 2px;
 }
 
 .rt-btn {
@@ -1245,19 +1397,49 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-.rt-sep {
-  width: 1px;
-  height: 18px;
-  background: var(--border);
-  margin: 0 6px;
-}
-
 .rt-btn.rt-wide {
   width: auto;
   padding: 0 12px;
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+  /* 图标 + 文字并排时居中对齐（沉浸 / 衬线 两个按钮） */
+  gap: 5px;
+}
+
+/* 沉浸模式开关的激活态 */
+.rt-btn.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 当前值（字号 / 行距 / 每行字数）：等宽数字，步进时不抖动 */
+.rt-value {
+  min-width: 30px;
+  text-align: center;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.rt-value.rt-narrow {
+  min-width: 48px;
+  color: var(--text-3);
+}
+
+/* 正文版心：默认走 token，用户调过之后由行内 maxWidth 覆盖。
+   宽屏上每行几十字最舒服，超过 ~48 字容易串行。
+
+   这里**故意不加 transition**：max-width 变化会触发整篇正文重新排版，
+   过渡意味着每帧都重排一次上万字，调一次版心能掉到 20fps。
+   版心是「设一下就不动」的参数，瞬间生效反而更像原生控件。 */
+.detail-content .markdown-body {
+  max-width: var(--reading-w);
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* 衬线阅读模式 */

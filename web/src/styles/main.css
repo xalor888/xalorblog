@@ -364,6 +364,13 @@ button,
    Element Plus 的 .el-input__inner / .el-textarea__inner 一并覆盖，
    否则后台与前台表单在 iPhone 上仍是 14.4px。 */
 @media (pointer: coarse) {
+  /* 这里的 !important 是必要的，不是偷懒：
+     各组件用的是 scoped 样式，选择器形如 `.form-input[data-v-330d1927]`
+     特指度 (0,2,0)，比这里的 `.form-input` (0,1,0) 高——不管源码顺序如何
+     都会赢。实测在 (pointer: coarse) 下表单仍是 14.4px，iOS 照样放大。
+     这是平台级兜底（不修就是整页被强制缩放且不可还原），
+     必须胜过任何局部的排版选择，所以显式 !important。
+     test-mobile-baseline.mjs 有一条断言锁住这个 !important。 */
   input,
   textarea,
   select,
@@ -373,7 +380,7 @@ button,
   .form-input,
   .form-textarea,
   .search-input {
-    font-size: 16px;
+    font-size: 16px !important;
   }
 }
 
@@ -1305,6 +1312,53 @@ input:-webkit-autofill:focus {
 @media (prefers-reduced-motion: reduce) {
   .page-fade-enter-active,
   .page-fade-leave-active {
+    transition: none;
+  }
+}
+
+/* ============================================================
+   沉浸阅读（html[data-focus='on']）
+   ============================================================
+   状态由 ArticleDetail 挂在 <html> 上（documentElement.dataset.focus），
+   离开文章页时清空。为什么挂根节点而不是组件根节点：
+   要隐藏的 .site-nav / .ticker / .site-footer / #float-dock / 粒子画布
+   全都在 Layout 里（浮层栈还 teleport 到了 #app 之外的 #float-dock），
+   组件内的 scoped 选择器一个都够不到。
+
+   为什么用「透明 + 不响应」而不是 display:none：
+   display 切换会让整页重新布局一次，退出沉浸时正文会跳一下；
+   透明是合成层动画，进出都平滑，正文位置完全不动。 */
+html[data-focus='on'] .site-nav,
+html[data-focus='on'] .ticker,
+html[data-focus='on'] .site-footer,
+html[data-focus='on'] #float-dock,
+html[data-focus='on'] .ambient {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s var(--ease);
+}
+
+/* 正文卡片在沉浸模式下退成「纸」：去掉玻璃、边框、阴影，
+   阅读时不该有第二层容器包着文字 */
+html[data-focus='on'] .detail-main {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 沉浸时正文居中（右侧目录仍在，但不再靠 44px gap 撑着） */
+html[data-focus='on'] .detail-layout {
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-focus='on'] .site-nav,
+  html[data-focus='on'] .ticker,
+  html[data-focus='on'] .site-footer,
+  html[data-focus='on'] #float-dock,
+  html[data-focus='on'] .ambient {
     transition: none;
   }
 }

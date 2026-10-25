@@ -87,8 +87,16 @@ ok(
 );
 ok(
   'main.css 在触摸设备上把输入框字号提到 ≥16px（iOS 不再强制放大）',
-  /@media\s*\(pointer:\s*coarse\)[\s\S]{0,400}?font-size:\s*(16px|1rem|100%)/i.test(mainCss),
+  /@media\s*\(pointer:\s*coarse\)[\s\S]{0,900}?font-size:\s*16px/i.test(mainCss),
   '需要一段 @media (pointer: coarse) 覆盖 input/textarea/select'
+);
+// 组件的 scoped 选择器形如 .form-input[data-v-xxxx]，特指度高于全局 .form-input，
+// 不加 !important 这条兜底实测不生效（表单仍是 14.4px），iOS 照旧放大。
+// 断言钉住它，避免以后有人「清理 !important」时把这条静默删掉。
+ok(
+  '触摸设备输入框字号用 !important 压过 scoped 样式（否则实测不生效）',
+  /@media\s*\(pointer:\s*coarse\)[\s\S]{0,1200}?font-size:\s*16px\s*!important/i.test(mainCss),
+  'scoped .form-input[data-v-*] 特指度 (0,2,0) 会赢过全局 .form-input (0,1,0)'
 );
 ok(
   'main.css 定义 safe-area token（--sat/--sab）',
