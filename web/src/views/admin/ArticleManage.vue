@@ -145,6 +145,7 @@ import { getCachedAdminPath } from '@/utils/adminPath';
 import { ensurePass } from '@/utils/pass';
 import { signedFetch } from '@/utils/signedFetch';
 import { useIsMobile } from '@/composables/useMedia';
+import { downloadBlob } from '@/utils/download';
 
 const router = useRouter();
 const isMobile = useIsMobile();
@@ -201,14 +202,9 @@ async function exportBackup() {
       return;
     }
     const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const cd = resp.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="([^"]+)"/);
-    a.download = m ? m[1] : 'articles-backup.json';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, m ? m[1] : 'articles-backup.json');
     ElMessage.success('备份已导出');
   } catch (e) {
     ElMessage.error('导出失败，请重试');

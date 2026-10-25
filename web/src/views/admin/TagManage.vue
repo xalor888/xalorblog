@@ -57,6 +57,7 @@ import { ref, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { tagApi } from '@/api';
+import { downloadBlob } from '@/utils/download';
 
 const list = ref([]);
 const searchKey = ref('');
@@ -149,12 +150,7 @@ function exportCsv() {
     ];
     const csv = '\uFEFF' + rows.map((r) => r.map(esc).join(',')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `tags-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `tags-${new Date().toISOString().slice(0, 10)}.csv`);
     ElMessage.success('标签列表已导出');
   } finally {
     exporting.value = false;

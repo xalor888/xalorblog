@@ -128,6 +128,7 @@ import { ensurePass } from '@/utils/pass';
 import { signedFetch } from '@/utils/signedFetch';
 import { formatDateTime } from '@/utils/format';
 import { useIsMobile } from '@/composables/useMedia';
+import { downloadBlob } from '@/utils/download';
 
 const adminStore = useAdminStore();
 const isMobile = useIsMobile();
@@ -241,13 +242,9 @@ async function exportCsv() {
     }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const cd = resp.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="([^"]+)"/);
-    a.download = m ? m[1] : 'messages.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, m ? m[1] : 'messages.csv');
   } catch (e) {
     ElMessage.error('导出失败，请重试');
   } finally {

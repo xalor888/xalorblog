@@ -76,6 +76,7 @@ import { getCachedAdminPath } from '@/utils/adminPath';
 import { ensurePass } from '@/utils/pass';
 import { signedFetch } from '@/utils/signedFetch';
 import { useIsMobile } from '@/composables/useMedia';
+import { downloadBlob } from '@/utils/download';
 
 const isMobile = useIsMobile();
 const list = ref([]);
@@ -155,12 +156,9 @@ async function exportCsv() {
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
     const cd = resp.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="([^"]+)"/);
-    a.download = m ? m[1] : 'audit.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, m ? m[1] : 'audit.csv');
   } catch (e) {
     ElMessage.error('导出失败，请重试');
   } finally {

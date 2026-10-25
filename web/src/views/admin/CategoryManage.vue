@@ -102,6 +102,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { categoryApi } from '@/api';
 import { useIsMobile } from '@/composables/useMedia';
+import { downloadBlob } from '@/utils/download';
 
 const isMobile = useIsMobile();
 
@@ -252,12 +253,7 @@ function exportCsv() {
     ];
     const csv = '\uFEFF' + rows.map((r) => r.map(esc).join(',')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `categories-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `categories-${new Date().toISOString().slice(0, 10)}.csv`);
     ElMessage.success('分类列表已导出');
   } finally {
     exporting.value = false;

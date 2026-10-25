@@ -371,6 +371,7 @@ import { signedFetch } from '@/utils/signedFetch';
 import { useAuthStore } from '@/stores/auth';
 import { useSiteStore } from '@/stores/site';
 import { useIsMobile } from '@/composables/useMedia';
+import { downloadBlob } from '@/utils/download';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -724,12 +725,7 @@ async function exportBackup() {
       return;
     }
     const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'settings-backup.json';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, 'settings-backup.json');
   } catch (e) {
     ElMessage.error('导出失败，请重试');
   } finally {

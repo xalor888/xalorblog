@@ -353,6 +353,34 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【Blob 下载统一走一个工具，且不立即 revoke】');
+{
+  const util = read('../src/utils/download.js');
+  ok('有共享的 downloadBlob', /export function downloadBlob/.test(util));
+  ok(
+    'revoke 是延迟的，不是 click 后立刻执行',
+    /setTimeout\(\(\) => URL\.revokeObjectURL/.test(util),
+    'click 只是请求下载，读取是异步的'
+  );
+  ok('临时 <a> 会被 append 并移除', /appendChild\(a\)/.test(util) && /removeChild\(a\)/.test(util));
+
+  // 全项目不应再有手写的「createObjectURL + 立即 revoke」
+  const files = [
+    'ArticleManage', 'CommentManage', 'MessageManage', 'LinkManage',
+    'TagManage', 'CategoryManage', 'Settings', 'SecurityManage', 'AuditManage',
+  ];
+  const offenders = files.filter((f) => {
+    const src = read(`../src/views/admin/${f}.vue`);
+    return /URL\.revokeObjectURL/.test(src);
+  });
+  ok(
+    '后台各页不再各自手写下载/revoke',
+    offenders.length === 0,
+    offenders.join(', ') || '仍在手写'
+  );
+  ok('读者侧导出也走同一工具', /downloadBlob\(blob/.test(read('../src/views/site/ArticleDetail.vue')));
+}
+
 console.log('\n【后台搜索框的 placeholder 要说准搜什么】');
 {
   const adm = read('../src/views/admin/ArticleManage.vue');

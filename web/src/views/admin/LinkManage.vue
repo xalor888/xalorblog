@@ -84,6 +84,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { linkApi } from '@/api';
 import { useAdminStore } from '@/stores/admin';
 import { useIsMobile } from '@/composables/useMedia';
+import { downloadBlob } from '@/utils/download';
 
 const adminStore = useAdminStore();
 const isMobile = useIsMobile();
@@ -192,12 +193,7 @@ function exportCsv() {
       ),
     ];
     const blob = new Blob(['\ufeff' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `links-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `links-${new Date().toISOString().slice(0, 10)}.csv`);
     ElMessage.success(`已导出 ${list.value.length} 条友链`);
   } catch (e) {
     ElMessage.error('导出失败');

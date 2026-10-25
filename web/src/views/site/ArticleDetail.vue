@@ -390,6 +390,7 @@ import { isBookmarked, addBookmark, removeBookmark } from '@/utils/bookmark';
 import { useSiteStore } from '@/stores/site';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 import { setArticleCopyAllowed, clearArticleCopyScope } from '@/utils/copyGuard';
+import { downloadBlob } from '@/utils/download';
 import {
   FONT_SIZE,
   LINE_HEIGHT,
@@ -707,14 +708,7 @@ function exportMarkdown() {
   const body = String(a.content || '').replace(/^# (?!#)/gm, '## ');
   const full = `${meta}\n\n---\n\n${body}`;
   const blob = new Blob([full], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${a.slug || 'article'}.md`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `${a.slug || 'article'}.md`);
   ElMessage.success('Markdown 已导出');
 }
 

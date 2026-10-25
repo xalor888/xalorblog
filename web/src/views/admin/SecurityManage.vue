@@ -276,6 +276,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { securityApi, authApi } from '@/api';
 import { formatDateTime } from '@/utils/format';
 import { useIsMobile } from '@/composables/useMedia';
+import { downloadBlob } from '@/utils/download';
 
 const isMobile = useIsMobile();
 
@@ -326,12 +327,7 @@ function exportCsv() {
     ),
   ];
   const blob = new Blob(['\ufeff' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `security-events-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `security-events-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 /** 导出管理员操作审计为 CSV（时间/用户/操作/详情/IP） */
@@ -350,12 +346,7 @@ function exportAuditCsv() {
     ),
   ];
   const blob = new Blob(['\ufeff' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const el = document.createElement('a');
-  el.href = url;
-  el.download = `security-audit-${new Date().toISOString().slice(0, 10)}.csv`;
-  el.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `security-audit-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 async function refresh() {
