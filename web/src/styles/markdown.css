@@ -338,6 +338,24 @@
   }
 }
 
+/* 任务列表（GFM `- [ ]` / `- [x]`） */
+.markdown-body li.task-list-item {
+  list-style: none;
+  /* 复选图标自己占位，去掉默认圆点，避免出现「• ☐ 任务」的双重符号 */
+  margin-left: -1.2em;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+
+.markdown-body li.task-list-item > input[type='checkbox'] {
+  margin-top: 0.42em;
+  flex-shrink: 0;
+  accent-color: var(--accent-fill);
+  /* 只读展示：marked 输出本来就带 disabled，这里让视觉上也明确不可交互 */
+  cursor: default;
+}
+
 /* 图片 */
 .markdown-body img {
   max-width: 100%; /* 超大图按容器收缩，防溢出破坏布局 */

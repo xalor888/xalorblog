@@ -304,6 +304,30 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【任务列表：复选框要能说清「哪一条」】');
+{
+  // 实测：marked 产出 <input type=checkbox disabled>，
+  // disabled 让它不被 Tab 到（对的），但读屏只念「复选框，已选中，不可用」，
+  // 不知道标的是哪一条任务 —— 两项的 aria-label 都是 null。
+  const md = read('../src/utils/markdown.js');
+  ok('有 annotateTaskItems', /function annotateTaskItems/.test(md));
+  ok('从相邻文本生成 aria-label', /aria-label="\$\{escapeHtml\(label\)\}"/.test(md));
+  ok(
+    'label 带上完成状态（已完成 / 未完成）',
+    md.includes("'已完成' : '未完成'") || /done \? '已完成' : '未完成'/.test(md)
+  );
+  ok('给 li 加 task-list-item 类', md.includes('<li class="task-list-item">'));
+  ok('不覆盖已有的 aria-label', /\/\\baria-label=\/i\.test\(input\)/.test(md));
+  ok(
+    '描述里剔除嵌套列表（否则父项会把子项文字也吞进来）',
+    /replace\(\/<ul\\b\[\\s\\S\]\*\$\/i, ''\)/.test(md)
+  );
+
+  const mdcss = read('../src/styles/markdown.css');
+  ok('task-list-item 去掉默认圆点（避免「• ☐ 任务」双重符号）', /\.task-list-item \{[\s\S]{0,80}?list-style: none/.test(mdcss));
+  ok('复选框视觉上明确不可交互', /cursor: default/.test(mdcss));
+}
+
 console.log('\n【表格：语义完整且窄屏可达】');
 {
   // 全站 6 篇文章原本 0 个表格，这块代码从未被真实内容检验过。
@@ -765,10 +789,25 @@ console.log('\n【标题大纲：每页一个 h1、不跳级】');
     md.includes('function demoteH1') && md.includes("'<h2$1>$2</h2>'"),
     '文章页已有自己的 h1，正文再来一个会让读屏看到两个主标题'
   );
+  // 这条断言已经被两次「正确地失败」教训过：先是写死 sanitize(demoteH1(raw))，
+  // 加 addTableScopes 后误报；再写宽松版，加 annotateTaskItems 后又误报。
+  // 现在改成**不匹配嵌套形状**：只要求三个处理器都在同一条 sanitize 语句里，
+  // 且 demoteH1 作用在 raw 上。谁包谁无所谓 —— 那属于实现细节。
   ok(
-    'demoteH1 在 sanitize 链里生效（不匹配精确调用形状）',
-    /DOMPurify\.sanitize\([^;]*demoteH1\(raw\)[^;]*\)/.test(md),
-    '曾写死 sanitize(demoteH1(raw))，加了 addTableScopes 后就误报'
+    '三个渲染处理器都在 sanitize 链里，且 demoteH1 作用在 raw 上',
+    (() => {
+      // 取 renderMarkdown 的函数体，而不是按单行匹配 ——
+      // 调用跨行写过一次，单行查找就失效了（第三次因形状误报）
+      const body = md.match(/export function renderMarkdown\(\)[\s\S]*?\n\}/)
+        || md.match(/export function renderMarkdown\(md = ''\)[\s\S]*?\n\}/);
+      if (!body) return false;
+      const b = body[0];
+      return b.includes('DOMPurify.sanitize(')
+        && b.includes('demoteH1(')
+        && b.includes('addTableScopes(')
+        && b.includes('annotateTaskItems(');
+    })(),
+    '曾经两次因为写死调用形状而误报 —— 断言应该钉「都接上了」，不是钉「谁包谁」'
   );
 
   const card = read('../src/components/site/ArticleCard.vue');

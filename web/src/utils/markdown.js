@@ -89,7 +89,45 @@ marked.use({ renderer });
  */
 export function renderMarkdown(md = '') {
   const raw = marked.parse(md, { breaks: true, gfm: true });
-  return DOMPurify.sanitize(addTableScopes(demoteH1(raw)));
+  // 注意顺序：先修语义（这些正则只认 marked 的原始输出），再降 h1 / 补表头
+  return DOMPurify.sanitize(
+    addTableScopes(demoteH1(annotateTaskItems(raw)))
+  );
+}
+
+/**
+ * 给 GFM 任务列表的复选框补可读语义。
+ *
+ * 为什么：marked 产出的是 `<input type="checkbox" disabled>`。
+ * disabled 让它不会被 Tab 到（这点是对的），但读屏在浏览模式下读到它时
+ * 只会说「复选框，已选中，不可用」——**不知道它标的是哪一条任务**。
+ * 实测两项都是 `aria-label` 为 null、`li` 也没有 `task-list-item` 类。
+ *
+ * 做法：从紧邻的文本里取任务描述作为 aria-label，并给 li 加上
+ * `task-list-item` 类便于样式定位。取不到文本时退回通用描述，
+ * 不覆盖已有的 aria-label。
+ */
+function annotateTaskItems(html) {
+  return String(html || '').replace(
+    /<li>\s*(<input\b[^>]*type="checkbox"[^>]*>)\s*([\s\S]*?)<\/li>/gi,
+    (whole, input, rest) => {
+      // 去掉末尾可能的嵌套列表，只把本项的文字当描述
+      const text = String(rest)
+        .replace(/<ul\b[\s\S]*$/i, '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80);
+      const done = /\bchecked\b/i.test(input);
+      const label = text
+        ? `${done ? '已完成' : '未完成'}：${text}`
+        : done ? '已完成的任务' : '未完成的任务';
+      const withLabel = /\baria-label=/i.test(input)
+        ? input
+        : input.replace(/^<input\b/i, `<input aria-label="${escapeHtml(label)}"`);
+      return `<li class="task-list-item">${withLabel}${rest}</li>`;
+    }
+  );
 }
 
 /**
