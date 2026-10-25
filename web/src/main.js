@@ -44,12 +44,47 @@ window.addEventListener('online', () => {
   ElMessage.success('网络已恢复');
 });
 
-// 全局未捕获异常兜底：避免静默白屏，至少给出提示
+/**
+ * 全局兜底：把「出错了」这件事告诉用户，而不是只写进控制台。
+ *
+ * 注释原本写着「避免静默白屏，至少给出提示」——但两个处理器都只做了
+ * `console.error`。实测：派发一个未捕获错误，页面毫无变化、没有任何提示，
+ * 用户会以为自己刚才的操作成功了。**注释描述的行为和代码不一致**，
+ * 而这类不一致比没写注释更危险（下一个维护者会以为已经兜住了）。
+ *
+ * 现在真的给提示，并且做了必要的抑制：
+ * - 401/403 由 axios 拦截器统一处理（会跳登录），这里不重复弹；
+ * - ERR_CANCELED 是主动取消（超时重试、切路由），不是错误；
+ * - 同一时刻大量错误（例如某个组件在循环里抛）只提示一次，避免刷屏。
+ *
+ * 用 ElMessage 而不是自绘 toast：它自带 role="alert"，读屏能听到
+ * （这一点本项目此前已经实测确认过）。
+ */
+let lastErrorToastAt = 0;
+const ERROR_TOAST_INTERVAL = 4000; // 4 秒内最多一条，防连环错误刷屏
+
+function notifyUnexpected(reason) {
+  const status = reason?.response?.status;
+  if (status === 401 || status === 403) return; // 拦截器已处理
+  if (reason?.code === 'ERR_CANCELED') return; // 主动取消，不算错误
+  const now = Date.now();
+  if (now - lastErrorToastAt < ERROR_TOAST_INTERVAL) return;
+  lastErrorToastAt = now;
+  ElMessage.error('页面遇到了一点问题，请刷新重试');
+}
+
+// 全局未捕获异常兜底
 window.addEventListener('unhandledrejection', (e) => {
-  const status = e?.reason?.response?.status;
-  if (status === 401 || status === 403) return; // 拦截器已处理，不重复提示
-  if (e?.reason?.code === 'ERR_CANCELED') return; // 主动取消（如请求超时重试）
   console.error('[unhandledrejection]', e?.reason);
+  notifyUnexpected(e?.reason);
+});
+
+// 同步抛出的未捕获错误（事件处理器、第三方脚本等）
+window.addEventListener('error', (e) => {
+  // 资源加载失败（img/script）也会触发 error 但不带 e.error，不提示
+  if (!e?.error) return;
+  console.error('[uncaught error]', e.error);
+  notifyUnexpected(e.error);
 });
 
 // 先挂载应用：首屏立即渲染骨架，不被 PoW 求解阻塞（低端设备/高信誉 IP 难度下
@@ -60,9 +95,12 @@ app.use(createPinia());
 app.use(router);
 installReveal(app);
 
-// 应用级错误兜底（Vue 渲染/生命周期错误）
+// 应用级错误兜底（Vue 渲染/生命周期错误）。
+// Vue 会捕获组件内异常，所以它们不会走到上面的 window 'error' 事件 ——
+// 这里必须单独提示，否则组件渲染失败对用户是完全静默的。
 app.config.errorHandler = (err) => {
   console.error('[vue error]', err);
+  notifyUnexpected(err);
 };
 
 // 初始化主题（在挂载前应用，避免闪烁）

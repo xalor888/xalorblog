@@ -277,6 +277,48 @@ console.log('\n【表单错误必须可定位、可关联】');
   ok('出错字段边框变红（视觉用户也能定位）', /\.form-input\.is-invalid,[\s\S]{0,120}?border-color:\s*#a8323a/.test(css));
 }
 
+console.log('\n【出错要告诉用户，不能只写进控制台】');
+{
+  const main = read('../src/main.js');
+  // 实测：派发未捕获错误后页面毫无变化、没有任何提示，
+  // 用户会以为刚才的操作成功了。原注释却写着「至少给出提示」——
+  // 注释描述的行为和代码不一致。
+  ok(
+    '有统一的用户可见错误提示函数',
+    /function notifyUnexpected\(reason\)/.test(main) && main.includes("ElMessage.error('页面遇到了一点问题，请刷新重试')")
+  );
+  ok(
+    'unhandledrejection 里调用了提示（不只是 console.error）',
+    /addEventListener\('unhandledrejection'[\s\S]{0,400}?notifyUnexpected\(/.test(main)
+  );
+  ok(
+    '同步未捕获错误也提示（事件处理器/第三方脚本）',
+    /addEventListener\('error'[\s\S]{0,320}?notifyUnexpected\(/.test(main)
+  );
+  ok(
+    'Vue 渲染错误单独提示（Vue 捕获后不会走 window error 事件）',
+    /app\.config\.errorHandler[\s\S]{0,200}?notifyUnexpected\(/.test(main),
+    '组件渲染失败会完全静默'
+  );
+  ok(
+    '401/403 不重复提示（拦截器已处理）',
+    /status === 401 \|\| status === 403\) return/.test(main)
+  );
+  ok(
+    'ERR_CANCELED 不提示（主动取消不是错误）',
+    /reason\?\.code === 'ERR_CANCELED'\) return/.test(main)
+  );
+  ok(
+    '资源加载失败不提示（img/script 的 error 事件没有 e.error）',
+    /if \(!e\?\.error\) return/.test(main),
+    '否则图片 404 也会弹「页面遇到问题」'
+  );
+  ok(
+    '连环错误有节流（避免刷屏）',
+    /ERROR_TOAST_INTERVAL/.test(main) && /lastErrorToastAt/.test(main)
+  );
+}
+
 console.log('\n【状态播报必须覆盖「加载中」，不能只在有数据时才存在】');
 {
   const list = read('../src/views/site/ArticleList.vue');
