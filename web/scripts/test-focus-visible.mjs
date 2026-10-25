@@ -370,6 +370,32 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【留言提交：校验、待审核、清空输入】');
+{
+  // 实测四种输入：全空 → 「请填写昵称」；只填昵称 → 「请填写留言内容（不能只有空格）」；
+  // 纯空格 → 「请填写昵称」；正常提交 → 「留言已提交，等待审核后展示」，
+  // 内容框清空、昵称保留（便于连续留言）、消息**不出现在列表**（pending）。
+  const msg = read('../src/views/site/Messages.vue');
+  ok('提交前校验昵称', /请填写昵称/.test(msg));
+  ok('校验留言内容（并说明不能只有空格）', /请填写留言内容/.test(msg));
+  // 提交成功后要清空内容、但保留昵称 —— 连着留言两次不用重打名字
+  const fn = (msg.match(/async function submit[\s\S]{0,1400}/) || [''])[0];
+  // 实际写法是整体替换 form.value：{ nickname, email, content: '' }
+  // —— 昵称与邮箱沿用当前值、只把正文清空，这正是「连续留言不用重打名字」
+  ok('成功后清空留言内容', /content:\s*''/.test(fn), fn.slice(0, 60));
+  ok('成功后保留昵称与邮箱', /\{\s*nickname,\s*email:/.test(fn));
+  // 有草稿机制：成功提交后必须清掉，否则下次进页面会恢复已发出的内容
+  ok('提交成功后清理本地草稿', /clearDraft\(\)/.test(fn));
+  // 表单令牌要刷新，否则同一令牌可被重复使用
+  ok('提交后刷新表单令牌', /refreshFormToken/.test(fn));
+
+  // 服务端：长度上限 + 待审核 + 昵称保留
+  const srv = read('../../server/src/routes/messages.js');
+  ok('服务端截断正文到 2000', /cleanText\(content, 2000\)/.test(srv));
+  ok('服务端截断昵称到 50', /cleanLine\(nickname, 50\)/.test(srv));
+  ok('博主昵称保留（防冒充）', /已被占用/.test(srv));
+}
+
 console.log('\n【灯箱：双击 1x/2x、滚轮缩放，且缩放要有上下限】');
 {
   // 实测：双击后 transform 变 matrix(2,...) 并加 zoomed 类；滚轮再放大到 2.25x；
