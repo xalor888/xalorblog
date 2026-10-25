@@ -307,7 +307,31 @@ console.log('\n【模态弹层的焦点必须被锁住】');
   const lb = read('../src/components/ui/ImageLightbox.vue');
   ok('灯箱有 role=dialog + aria-modal', /role="dialog"[\s\S]{0,120}?aria-modal="true"/.test(lb));
   ok('灯箱有焦点陷阱', /function onTabTrap/.test(lb) && /addEventListener\('keydown', onTabTrap\)/.test(lb));
-  ok('灯箱打开时聚焦关闭按钮、关闭时还焦点', /lastFocused = document\.activeElement/.test(lb) && /lastFocused\.focus\(\)/.test(lb));
+  ok(
+    '灯箱打开时聚焦关闭按钮、关闭时还焦点',
+    /const active = document\.activeElement/.test(lb)
+      && /lastFocused = active && active !== document\.body \? active : null/.test(lb)
+      && /lastFocused\.focus\(\)/.test(lb)
+  );
+  // 实测出来的两个坑，都写成断言
+  ok(
+    '灯箱不把 body 当作有效的焦点返回点',
+    /active !== document\.body \? active : null/.test(lb),
+    '点图片打开时 activeElement 是 body，记下来等于「恢复到 body」'
+  );
+  ok(
+    '灯箱关闭时把焦点还给触发图片（<img> 不可聚焦，需显式传入）',
+    /lastFocusedImg = opener/.test(lb) && /function open\(s, a, opener\)/.test(lb)
+  );
+  ok(
+    '恢复焦点时优先最近的交互容器，不退到 <main tabindex="-1">',
+    /closest\('a\[href\], button, \[role="button"\]'\)/.test(lb),
+    'layout 的 <main> 带 tabindex=-1，closest([tabindex]) 会一路匹到它'
+  );
+  {
+    const detail = read('../src/views/site/ArticleDetail.vue');
+    ok('调用灯箱时把被点的图片一起传进去', /lightboxRef\.value\?\.open\(img\.src, caption, img\)/.test(detail));
+  }
 }
 
 console.log('\n【全库扫描：watch 源不能是新建的数组/对象字面量】');

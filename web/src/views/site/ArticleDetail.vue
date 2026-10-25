@@ -458,7 +458,7 @@ function onContentClick(e) {
     // alt 优先；缺 alt 时用 addImgAttrs 兜底的 aria-label（文件名），
     // 让灯箱底部也有名字可念，而不是一片空白
     const caption = img.alt || img.getAttribute('aria-label') || '';
-    lightboxRef.value?.open(img.src, caption);
+    lightboxRef.value?.open(img.src, caption, img);
   }
 }
 

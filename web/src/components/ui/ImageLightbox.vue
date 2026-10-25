@@ -74,14 +74,29 @@ const imgStyle = computed(() => ({
 // 记住「是谁打开的灯箱」，关闭后把焦点还回去 —— 否则焦点落在 body，
 // 键盘用户会从页面顶部重新 Tab 一遍。
 let lastFocused = null;
+// 打开灯箱的那张 <img> 本身不可聚焦，关闭时把焦点还给它的父级可聚焦容器
+// （正文图片被包在可聚焦的 <a>/<figure> 里时就能自然恢复）。
+let lastFocusedImg = null;
 
-function open(s, a) {
+/**
+ * @param {string} s 图片地址
+ * @param {string} a 替代文本（读屏用）
+ * @param {Element} [opener] 触发灯箱的元素。<img> 本身不可聚焦，关闭时
+ *   要把焦点还给它 —— 所以要显式传进来，不能依赖 document.activeElement。
+ */
+function open(s, a, opener) {
   src.value = s;
   alt.value = a || '';
   zoom.value = 1;
   dragging.value = false;
   dragStart = null;
-  lastFocused = document.activeElement;
+  // 只记录**真正可聚焦**的元素。点图片打开灯箱时 document.activeElement 是
+  // body（<img> 默认不可聚焦），记下来等于「关闭后恢复到 body」——
+  // 实测 Esc 后焦点确实落在 body，键盘用户得从页首重新 Tab。
+  // body 不是有效返回点，记 null，关闭时退回「当前打开的那张图」。
+  const active = document.activeElement;
+  lastFocused = active && active !== document.body ? active : null;
+  lastFocusedImg = opener || null;
   if (!visible.value) lockScroll();
   visible.value = true;
   // 聚焦关闭按钮：读屏会念出「关闭」，键盘用户立刻知道自己在弹层里
@@ -95,8 +110,23 @@ function close() {
   dragStart = null;
   if (lastFocused && typeof lastFocused.focus === 'function') {
     lastFocused.focus();
+  } else if (lastFocusedImg) {
+    // 图片本身不可聚焦，要给它找一个「最近的」能接焦点的容器。
+    //
+    // ⚠ 不能直接写 closest('[tabindex]') —— 布局层的 <main> 带 tabindex="-1"
+    // （skip-link 的落地目标），一路向上会匹配到它，实测焦点被送到 <main>，
+    // 离用户刚才看的图很远。先试真正的可交互祖先，都没有才退化到图片本身。
+    const holder =
+      lastFocusedImg.closest('a[href], button, [role="button"]') || lastFocusedImg;
+    if (holder && typeof holder.focus === 'function') {
+      if (holder === lastFocusedImg && !holder.hasAttribute('tabindex')) {
+        holder.setAttribute('tabindex', '-1');
+      }
+      holder.focus({ preventScroll: true });
+    }
   }
   lastFocused = null;
+  lastFocusedImg = null;
 }
 
 function lockScroll() {
