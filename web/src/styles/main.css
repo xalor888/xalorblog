@@ -1752,7 +1752,12 @@ select:focus-visible,
      代码块右上角的「复制」，和「复制本文链接」（.cc-btn）。
      它们的唯一作用是把内容送进剪贴板 —— 纸上没有剪贴板。 */
   .code-copy,
-  .cc-btn {
+  .cc-btn,
+  /* 实测扫描八条路由后，只有首页还留着三个按钮：
+     首屏的「阅读文章」CTA（.hero-btn）与热门区那组切换标签（.hot-tabs）。
+     打印出来既点不动、又占掉首屏篇幅 —— 首页打印的意义是看内容，不是留住入口。 */
+  .hero-actions,
+  .hot-tabs {
     display: none !important;
   }
 }

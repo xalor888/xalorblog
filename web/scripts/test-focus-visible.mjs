@@ -387,6 +387,11 @@ console.log('\n【后台打印：留下数据，去掉操作界面】');
   // 而纸上没有剪贴板。（修完后前台文章页可见按钮数 = 0）
   ok('代码块复制按钮打印时隐藏', /\.code-copy/.test(printBlock));
   ok('复制本文链接按钮打印时隐藏', /\.cc-btn/.test(printBlock));
+  // 扫描八条路由后，只有首页还剩三个按钮：首屏「阅读文章」CTA（.hero-actions）
+  // 与热门区那组切换标签（.hot-tabs）。修完后八条路由打印时可见按钮全为 0，
+  // 而热门区的标题文字本身仍在。
+  ok('首页首屏按钮打印时隐藏', /\.hero-actions/.test(printBlock));
+  ok('热门区切换标签打印时隐藏', /\.hot-tabs/.test(printBlock));
   // 只检查规则本身，先剥掉注释 —— 注释里提到这个反面写法（作为说明）不算违规
   const printRules = printBlock.replace(/\/\*[\s\S]*?\*\//g, '');
   ok(
