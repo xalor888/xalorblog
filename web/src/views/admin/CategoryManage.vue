@@ -234,7 +234,13 @@ async function saveEdit() {
 
 async function remove(row) {
   try {
-    await ElMessageBox.confirm(`确定删除分类「${row.name}」吗？该分类下的文章将变为未分类。`, '删除确认', {
+    // 把「会影响几篇文章」写进问句里。
+    // 原先是一句固定文案，不区分分类下有没有文章 ——
+    // 删「技术笔记」（3 篇）和删一个空分类弹的是一模一样的话，
+    // 而这两种操作的实际后果差得很远。数量为 0 时不提这件事，免得制造无谓的紧张。
+    const n = Number(row.article_count) || 0;
+    const impact = n > 0 ? `该分类下的 ${n} 篇文章将变为未分类。` : '该分类下没有文章。';
+    await ElMessageBox.confirm(`确定删除分类「${row.name}」吗？${impact}`, '删除确认', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
