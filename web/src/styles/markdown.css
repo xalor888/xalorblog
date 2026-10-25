@@ -321,6 +321,20 @@
     display: block;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    /* 右侧渐隐：暗示「右边还有内容，可以滑动」。
+       实测 7 列表格在 360px 下需要横向滚动（342 > 292），
+       但原本没有任何视觉提示，用户不会想到去滑。 */
+    background:
+      linear-gradient(to left, var(--bg-soft), transparent) right center / 22px 100% no-repeat;
+    background-attachment: local, scroll;
+  }
+
+  /* 键盘用户也要能滚动：可聚焦 + 明确的焦点环。
+     没有 tabindex 的话，方向键在表格上完全无效，
+     键盘/读屏用户永远看不到右侧那几列。 */
+  .markdown-body table:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 }
 

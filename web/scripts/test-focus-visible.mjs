@@ -304,6 +304,33 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【表格：语义完整且窄屏可达】');
+{
+  // 全站 6 篇文章原本 0 个表格，这块代码从未被真实内容检验过。
+  // 实测插入表格后发现：th 无 scope；窄屏超宽表格无法用键盘滚动。
+  const md = read('../src/utils/markdown.js');
+  ok('有 addTableScopes 处理表头', /function addTableScopes/.test(md));
+  ok('给 th 补 scope="col"', md.includes('<th scope="col"'));
+  ok(
+    '已存在 scope 时不重复添加',
+    md.includes('(?![^>]*\\bscope=)'),
+    '否则重复渲染会给 th 叠两个 scope'
+  );
+  ok('只在有 thead 时处理（不猜无表头的结构）', /if \(!\/<thead\\b\/i\.test\(inner\)\) return whole;/.test(md));
+  ok('表格可聚焦（键盘能横向滚动超宽表格）', md.includes('tabindex="0">${fixed}'));
+  ok(
+    '**没有**给 table 加 role（否则会覆盖 table 角色，行列关系全丢）',
+    !/<table[^>]*role="group"/.test(md) && !/<table\$\{attrs\} role=/.test(md),
+    '这条是给未来自己踩刹车用的'
+  );
+
+  const css = read('../src/styles/main.css');
+  const mdcss = read('../src/styles/markdown.css');
+  ok('窄屏表格横向滚动而非挤压', /@media \(max-width: 640px\)[\s\S]{0,120}?overflow-x: auto/.test(mdcss));
+  ok('窄屏有「右侧还有内容」的视觉暗示', /linear-gradient\(to left/.test(mdcss));
+  ok('表格聚焦时有可见焦点环', /\.markdown-body table:focus-visible/.test(mdcss));
+}
+
 console.log('\n【快捷键帮助弹层：模态语义与焦点陷阱】');
 {
   const help = read('../src/components/ui/ShortcutHelp.vue');
@@ -739,8 +766,9 @@ console.log('\n【标题大纲：每页一个 h1、不跳级】');
     '文章页已有自己的 h1，正文再来一个会让读屏看到两个主标题'
   );
   ok(
-    'demoteH1 在 sanitize 之前/之内生效',
-    /DOMPurify\.sanitize\(demoteH1\(raw\)\)/.test(md)
+    'demoteH1 在 sanitize 链里生效（不匹配精确调用形状）',
+    /DOMPurify\.sanitize\([^;]*demoteH1\(raw\)[^;]*\)/.test(md),
+    '曾写死 sanitize(demoteH1(raw))，加了 addTableScopes 后就误报'
   );
 
   const card = read('../src/components/site/ArticleCard.vue');

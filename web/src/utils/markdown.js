@@ -89,7 +89,37 @@ marked.use({ renderer });
  */
 export function renderMarkdown(md = '') {
   const raw = marked.parse(md, { breaks: true, gfm: true });
-  return DOMPurify.sanitize(demoteH1(raw));
+  return DOMPurify.sanitize(addTableScopes(demoteH1(raw)));
+}
+
+/**
+ * 给表头补 scope 属性。
+ *
+ * 为什么：读屏用户停在某个数据格上时，需要知道「这一格对应哪个表头」，
+ * 而这依赖 `scope`。浏览器对**简单表格**能自动推断，但一旦出现
+ * 合并单元格、多行表头或嵌套结构就失效 —— 全站现有 6 篇文章都没有表格，
+ * 这块从未被真实内容检验过（实测补插一个 4×4 表格后确认 `scope` 全为 null）。
+ *
+ * 只标记第一行表头为 col：GFM 的表格语法不产生行表头，
+ * 标错反而会误导读屏。
+ */
+function addTableScopes(html) {
+  return String(html || '').replace(
+    /<table\b([^>]*)>([\s\S]*?)<\/table>/gi,
+    (whole, attrs, inner) => {
+      // 只在有 thead 时处理；没有 thead 的表格不猜结构
+      if (!/<thead\b/i.test(inner)) return whole;
+      const fixed = inner.replace(/<th\b(?![^>]*\bscope=)/gi, '<th scope="col"');
+      // tabindex="0"：让键盘用户能聚焦表格并用方向键横向滚动。
+      // 没有它，超宽表格在窄屏上右侧的列对键盘/读屏用户是**不可达**的 ——
+      // 实测 7 列表格在 360px 下需要横向滚动，但原本完全无法用键盘滚动。
+      //
+      // ⚠ 这里**不能加 role**：`role="group"` 之类会覆盖 table 的角色，
+      // 读屏就不再把它当表格播报（行列关系全丢）。保持隐式 table 角色，
+      // 只用 tabindex 让它可以被聚焦。
+      return `<table${attrs} tabindex="0">${fixed}</table>`;
+    }
+  );
 }
 
 /**
