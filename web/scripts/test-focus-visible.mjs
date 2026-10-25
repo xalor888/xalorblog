@@ -317,10 +317,25 @@ console.log('\n【列表滚动位置：由路由 scrollBehavior 负责】');
     'hash 路由下 savedPosition 经常是 null，只靠它等于不恢复'
   );
   ok('兜底只在位置 > 0 时用（新页面仍从顶部开始）', /stateScroll\.top > 0/.test(factory));
+  // ⚠ 上一轮这里写错了。我断言「同路径 query 变化应保持不动」，
+  // 但实测产品意图是相反的：**换筛选应该回到顶部**（读者要看新结果的第一条），
+  // 而**浏览器后退应该回到原处**。两者都合理，只是触发源不同。
+  // 现在记录的是真实分工：
+  //   - 换筛选 → ArticleList 的 watch(filterKey) 主动 scrollTo(0)，合理，保留；
+  //   - 后退/前进 → 路由 scrollBehavior 用 history.state.scroll 恢复。
   ok(
-    '同路由只改 query（翻页/筛选）时保持不动',
-    /to\.name === from\.name && to\.path === from\.path\) return false;/.test(factory),
-    '否则点「下一页」会被甩回顶部'
+    '后退恢复带筛选也能用（history.state.scroll 与 query 无关）',
+    /window\.history\.state\?\.scroll/.test(factory),
+    '实测：无筛选 500→500、?tag=node.js 300→300，两条都精确恢复'
+  );
+  ok(
+    '换筛选时主动回到顶部（看新结果的第一条）',
+    /watch\(filterKey,[\s\S]{0,300}?window\.scrollTo\(\{ top: 0 \}\)/.test(read('../src/views/site/ArticleList.vue')),
+    '这条不是 bug —— 我一度把它当成 bug 并断言成反的'
+  );
+  ok(
+    '路由仍保留 return false 分支（同路径时不自作主张）',
+    /to\.name === from\.name && to\.path === from\.path\) return false;/.test(factory)
   );
 
   // 列表页不该再自己实现一套 —— 抢不过路由（路由在挂载后执行）
