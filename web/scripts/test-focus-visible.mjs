@@ -353,6 +353,21 @@ console.log('\n【分享元信息：og:image 必须是绝对 URL】');
   }
 }
 
+console.log('\n【打印时不能把 fixed 元素印到纸上】');
+{
+  const css = read('../src/styles/main.css');
+  const printBlock = (css.match(/@media print \{[\s\S]*?\n\}/) || [''])[0];
+  // 实测：skip-link 靠 `position: fixed; top: -100px` 藏到视口外 ——
+  // 那套做法只在**连续媒体**里成立。打印是分页媒体、没有「视口」，
+  // fixed 在分页上下文里行为未定义，多数浏览器会把它渲染到第一页。
+  // 打印模拟下它 display 仍是 block、高度 45px、内容是「跳到主要内容」。
+  ok('skip-link 在打印时被隐藏', /\.skip-link,/.test(printBlock));
+  ok('ambient 装饰层在打印时被隐藏', /\.ambient,/.test(printBlock));
+  ok('float-dock 容器在打印时被隐藏', /\.float-dock,/.test(printBlock));
+  ok('导航/页脚/评论仍在隐藏列表里（未被破坏）',
+     /\.site-nav,/.test(printBlock) && /\.site-footer,/.test(printBlock) && /\.comment-section,/.test(printBlock));
+}
+
 console.log('\n【导出的 Markdown 必须是合法结构】');
 {
   const detail = read('../src/views/site/ArticleDetail.vue');

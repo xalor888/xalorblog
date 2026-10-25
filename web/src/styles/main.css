@@ -1622,6 +1622,19 @@ select:focus-visible,
    打印样式：阅读体验优先
    ============================================================ */
 @media print {
+  /* skip-link 必须显式隐藏。
+     它在屏幕上靠 `position: fixed; top: -100px` 藏到视口外 ——
+     那套做法**只在连续媒体里成立**。打印是分页媒体、没有「视口」这个概念，
+     fixed 定位在分页上下文里的行为未定义，多数浏览器会把元素渲染到第一页上。
+     实测打印模拟下它 display 仍是 block、高度 45px、内容「跳到主要内容」。
+     一个只在键盘聚焦时才有意义的跳转链接，不该出现在纸上。 */
+  .skip-link,
+  /* ambient 是纯装饰的 fixed 背景层（无子元素、无背景图），
+     打印时只会白占位并可能吃掉一页的墨水。 */
+  .ambient,
+  /* float-dock 是浮动操作栏的**容器**：里面的 .float-actions 已被隐藏，
+     但容器本身还是 fixed 且带 37 个可见子节点，打印时会留下一条空浮层。 */
+  .float-dock,
   .site-nav,
   .ticker,
   .site-footer,
@@ -1655,8 +1668,15 @@ select:focus-visible,
     gap: 0 !important;
   }
 
+  /* 打印字号 12pt。
+     ⚠ 读 computed 值时别被「16px」骗了：**12pt = 16px**（12 × 96/72）。
+     基线是 1.02rem（≈16.32px），四舍五入后两者在 devtools 里都显示 16px，
+     很容易误判成「规则没生效」—— 我为此排查了好几轮，
+     直到手动注入 20pt 得到 26.67px 才确认媒体查询与优先级都是好的。
+     !important 保留：详情页 `.markdown-body` 是 scoped 的，
+     实际选择器 `.markdown-body[data-v-x]` 与本条同权重，而组件样式后注入。 */
   .detail-content .markdown-body {
-    font-size: 12pt;
+    font-size: 12pt !important;
     line-height: 1.8;
   }
 
