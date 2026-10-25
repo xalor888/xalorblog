@@ -83,12 +83,13 @@ import { getFormTokenInfo, refreshFormToken, getHpField } from '@/utils/formToke
 import { useSiteStore } from '@/stores/site';
 
 // 浏览器标签页标题
+
+const site = useSiteStore();
+
 watchEffect(() => {
   const siteName = site.settings.site_name || 'Xalor的小站';
   document.title = `友情链接 · ${siteName}`;
 });
-
-const site = useSiteStore();
 const mailNotify = computed(() => !!site.settings.mail_notify);
 const links = ref([]);
 const submitting = ref(false);

@@ -44,12 +44,13 @@ import { renderMarkdown, addImgAttrs } from '@/utils/markdown';
 import { formatNumber } from '@/utils/format';
 
 // 浏览器标签页标题
+
+const site = useSiteStore();
+
 watchEffect(() => {
   const siteName = site.settings.site_name || 'Xalor的小站';
   document.title = `关于 · ${siteName}`;
 });
-
-const site = useSiteStore();
 
 const socials = computed(() => {
   const list = [];

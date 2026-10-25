@@ -304,6 +304,45 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【后台：每页要有页面级标题；立即求值的调用不能引用后声明变量】');
+{
+  // 实测 18 个后台页里**只有登录页有 h1**，其余 17 页的标题只是个 span，
+  // 读屏按标题导航时在整个后台找不到任何标题。
+  const layout = read('../src/views/admin/Layout.vue');
+  ok(
+    '后台顶栏标题是 h1（一处修复覆盖全部 17 页）',
+    /<h1 class="header-title">/.test(layout) && !/<span class="header-title">/.test(layout)
+  );
+  ok('h1 清掉默认 margin（否则顶栏被撑高）', /\.header-title \{[\s\S]{0,200}?margin: 0/.test(layout));
+
+  // 立即求值的调用（watchEffect / watch 的 getter）不能引用后声明的变量
+  const about = read('../src/views/site/About.vue');
+  const links = read('../src/views/site/Links.vue');
+  const msgs = read('../src/views/site/Messages.vue');
+  for (const [name, src] of [['关于页', about], ['友链页', links], ['留言页', msgs]]) {
+    ok(
+      `${name}：const site 在使用它的 watchEffect 之前声明`,
+      (() => {
+        const a = src.indexOf('const site = useSiteStore()');
+        const b = src.indexOf('watchEffect(');
+        return a !== -1 && (b === -1 || a < b);
+      })(),
+      'watchEffect 立即执行，排在声明前就是 TDZ，整页报「页面遇到了一点问题」'
+    );
+  }
+
+  const edit = read('../src/views/admin/ArticleEdit.vue');
+  ok(
+    '写文章页：标题 watch 在 const form 之后（watch 的 getter 也会立即求值）',
+    (() => {
+      const f2 = edit.indexOf('const form = ref({');
+      const w = edit.indexOf('watch(\n  () => form.value.title');
+      return f2 !== -1 && w !== -1 && f2 < w;
+    })(),
+    '换成 watch 也不够 —— getter 立即求值，同样 TDZ'
+  );
+}
+
 console.log('\n【之前从未检查过的路由】');
 {
   // 实测 5 个页面（归档/标签/收藏/友链/404）：友链页 h1→h3 跳级，其余正常。

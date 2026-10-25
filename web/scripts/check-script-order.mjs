@@ -180,6 +180,91 @@ for (const file of collect(root)) {
   }
 }
 
+/**
+ * 第二类检查：**立即求值的响应式调用**在多行写法里引用后声明的变量。
+ *
+ * 为什么单独加：上面那段只看顶层行（`line === line.trimStart()`），
+ * 而真实代码几乎总是多行写法：
+ *
+ *   watch(
+ *     () => form.value.title,     ← 缩进行，被跳过
+ *     () => { ... }
+ *   );
+ *   const form = ref({ ... });    ← 更靠下
+ *
+ * 实测就漏掉了这一处：`watch` 的**第一个参数（getter）在调用时立即求值**
+ * 去收集依赖，于是一打开「写文章」页就抛
+ * `Cannot access 'form' before initialization`，整页底部显示
+ * 「页面遇到了一点问题」，而编辑器已经渲染出来 —— 看起来能用，其实半死。
+ * 换用 `watchEffect` 也一样（它本身就立即执行一次）。
+ */
+const EAGER_CALLS = /^(?:watch|watchEffect|computed|onMounted|onBeforeMount)\s*\(/;
+for (const file of collect(root)) {
+  const raw = readFileSync(file, 'utf8');
+  const code = stripNoise(scriptOf(file, raw));
+  if (!code.trim()) continue;
+  const lines = code.split('\n');
+  const decl = new Map();
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = lines[i].match(DECL_RE);
+    if (!m || decl.has(m[1])) continue;
+    if (/^(?:async\s+function|function|var)\b/.test(lines[i])) continue;
+    decl.set(m[1], i);
+  }
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!EAGER_CALLS.test(lines[i])) continue;
+    // 取这次调用的整个参数区：从该行到括号配平为止
+    let depth = 0, end = i;
+    for (let j = i; j < lines.length; j += 1) {
+      for (const ch of lines[j]) {
+        if (ch === '(') depth += 1;
+        else if (ch === ')') depth -= 1;
+      }
+      if (depth === 0) { end = j; break; }
+    }
+    // ⚠ 只检查**立即求值**的部分，不能整段都算。
+    //   - `watchEffect(() => { ... })`：函数体立即执行 → 整段算
+    //   - `watch(() => x.y, () => { ... })`：**只有第一个 getter 立即求值**，
+    //     回调要等值变化才跑，回调体里引用后声明变量是安全的。
+    //     实测 SearchModal 的 `watch(() => route.fullPath, () => { if (open.value) ... })`
+    //     曾被误报：`open` 在回调里，页面完全正常。
+    //   - `onMounted` / `computed`：回调惰性/首次渲染才求值，同样不算立即执行。
+    const raw = lines.slice(i, end + 1).join('\n');
+    const isWatch = /^watch\s*\(/.test(lines[i].trim());
+    let body = raw;
+    if (isWatch) {
+      // 取第一个参数（getter）为止：从 '(' 后到括号配平或第一个顶层逗号
+      const open = raw.indexOf('(');
+      let depth2 = 0, cut = raw.length;
+      for (let k = open; k < raw.length; k += 1) {
+        const ch = raw[k];
+        if (ch === '(' || ch === '[' || ch === '{') depth2 += 1;
+        else if (ch === ')' || ch === ']' || ch === '}') {
+          depth2 -= 1;
+          if (depth2 === 0) { cut = k; break; }
+        } else if (ch === ',' && depth2 === 1) { cut = k; break; }
+      }
+      body = raw.slice(0, cut);
+    } else if (/^onMounted\s*\(|^computed\s*\(/.test(lines[i].trim())) {
+      continue; // 惰性求值，不产生 TDZ
+    }
+    const masked = maskNonRefs(body);
+    for (const [name, at] of decl) {
+      if (at <= i) continue; // 声明在调用之前 → 安全
+      if (new RegExp(`\\b${name}\\b`).test(masked)) {
+        findings.push({
+          file: path.relative(path.resolve(root, '..'), file),
+          declarationLine: at + 1,
+          useLine: i + 1,
+          name,
+          snippet: `${lines[i].trim().slice(0, 60)} … 引用 ${name}（声明在第 ${at + 1} 行）`,
+          eager: true,
+        });
+      }
+    }
+  }
+}
+
 if (!findings.length) {
   console.log(`✓ script-order 检查通过（扫描 ${collect(root).length} 个文件，未发现「先引用后声明」）`);
   process.exit(0);

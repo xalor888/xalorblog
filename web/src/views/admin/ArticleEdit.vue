@@ -201,11 +201,6 @@ const router = useRouter();
 
 const editingId = computed(() => route.params.id || null);
 
-watchEffect(() => {
-  const mode = editingId.value ? '编辑文章' : '写文章';
-  const title = form.value.title ? `${form.value.title} · ${mode}` : mode;
-  document.title = `${title} · 管理后台`;
-});
 
 function goBack() {
   router.push(adminHref('articles'));
@@ -315,6 +310,27 @@ const form = ref({
   status: 'draft',
   published_at: '',
 });
+
+/**
+ * 浏览器标签页标题。
+ *
+ * ⚠ 这个 watch **必须写在 `form` 声明之后**，原因有两层：
+ * 1. `watchEffect` 会立即同步跑一次 → form 还在 TDZ 里；
+ * 2. **把 watchEffect 换成 watch 并不够** —— `watch` 的**第一个参数（getter）
+ *    同样会立即求值**来收集依赖，所以 `() => form.value.title` 在声明处就抛
+ *    `Cannot access 'form' before initialization`。
+ * 实测这两种写法都会让整页底部显示「页面遇到了一点问题，请刷新重试」，
+ * 而编辑器已经渲染出来 —— 页面处于「看起来能用、其实半死」的状态。
+ * 放到 form 之后，问题一起消失。
+ */
+watch(
+  () => form.value.title,
+  () => {
+    const mode = editingId.value ? '编辑文章' : '写文章';
+    const title = form.value.title ? `${form.value.title} · ${mode}` : mode;
+    document.title = `${title} · 管理后台`;
+  }
+);
 
 // ---------- 本地自动保存（防误关丢稿） ----------
 const DRAFT_KEY = () => `xalor_draft_${editingId.value || 'new'}`;

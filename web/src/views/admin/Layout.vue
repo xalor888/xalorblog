@@ -51,7 +51,12 @@
         <button class="collapse-btn" :title="sideToggleTitle" :aria-label="sideToggleTitle" @click="toggleSide">
           <XIcon :name="isMobile ? 'Menu' : collapsed ? 'PanelLeftOpen' : 'PanelLeftClose'" :size="18" />
         </button>
-        <span class="header-title">{{ currentTitle }}</span>
+        <!-- 用 h1 而不是 span：实测 18 个后台页里**只有登录页有 h1**，
+             其余 17 页的标题都只是这个 span。读屏用户按标题导航时
+             在整个后台找不到任何标题，等于无法判断自己在哪一页。
+             路由 meta.title 本来就齐全（仪表盘/文章管理/写文章…），
+             只是渲染成了非标题元素。改成 h1 一处修复覆盖全部 17 页。 -->
+        <h1 class="header-title">{{ currentTitle }}</h1>
         <div class="header-right">
           <button
             class="theme-btn ai-trigger"
@@ -394,6 +399,11 @@ async function logout() {
 .header-title {
   font-weight: 650;
   font-size: 0.98rem;
+  /* 现在是 h1：清掉浏览器默认的 margin，否则顶栏会被撑高。
+     视觉尺寸沿用原来的 0.98rem，不因为换成 h1 而变大 ——
+     这里要的是语义，不是更大的字。 */
+  margin: 0;
+  line-height: 1.3;
 }
 
 .header-right {
