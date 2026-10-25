@@ -370,6 +370,25 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【更新接口必须和创建接口一样拦住空名称】');
+{
+  // 实测缺陷：PUT /categories/:id 传 {name:''} 时，
+  // cleanLine('') 返回 ''，而代码只判断 `patch.name` 是否存在就照常 update ——
+  // 分类名可以被改成空白，前台分类列表出现无名条目。
+  // 创建接口一直有 `if (!cleanName) return fail(...)`，更新接口漏了同一道检查。
+  const adm = read('../../server/src/routes/admin.js');
+  const iPut = adm.indexOf("router.put('/categories/:id'");
+  ok('找到分类更新路由', iPut > 0);
+  const put = adm.slice(iPut, iPut + 1600);
+  ok('更新时清洗后为空要报错', /if \(!cleanName\) return fail\(res, '分类名称不能为空'\)/.test(put));
+  // 创建接口的同名校验不能被顺手删掉
+  const iPost = adm.indexOf("router.post('/categories'");
+  const post = adm.slice(iPost, iPost + 800);
+  ok('创建接口的空名称校验仍在', /if \(!cleanName\) return fail/.test(post));
+  // 传 undefined（不传该字段）时不该被拦 —— 只改颜色不该报「名称不能为空」
+  ok('仅在传了 name 字段时才校验', /if \(name !== undefined\)/.test(put));
+}
+
 console.log('\n【内联创建表单：成功后要清空，才能连着建】');
 {
   // 实测：分类管理用**内联表单**（不是弹框）—— 我先按弹框去测，白跑两轮。

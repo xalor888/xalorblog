@@ -820,7 +820,16 @@ router.put('/categories/:id', async (req, res) => {
     if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
     const { name, description, color, slug, sort } = req.body;
     const patch = {};
-    if (name !== undefined) patch.name = cleanLine(name, 50);
+    if (name !== undefined) {
+      // 传了 name 就必须清洗后仍非空。
+      // 原来这里直接 patch.name = cleanLine(name, 50) ——
+      // 传空串会得到一个 name:'' 的 patch 并照常 update，
+      // 分类名于是可以被改成空白，前台分类列表出现无名条目。
+      // （创建接口有 `if (!cleanName) return fail(...)`，更新接口漏了同一道检查。）
+      const cleanName = cleanLine(name, 50);
+      if (!cleanName) return fail(res, '分类名称不能为空');
+      patch.name = cleanName;
+    }
     if (description !== undefined) patch.description = cleanLine(description, 255);
     if (color !== undefined) patch.color = validHexColor(color);
     if (slug) {
