@@ -304,6 +304,44 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【对话框：改了内容点取消不能静默丢弃】');
+{
+  // 全库此前没有任何 el-dialog 做过关闭前确认（grep before-close = 0）。
+  // 分类编辑对话框是典型的「改了名/描述，手滑点取消就没了」。
+  const cat = read('../src/views/admin/CategoryManage.vue');
+  ok('分类编辑对话框有未保存判断', /function dialogDirty\(\)/.test(cat));
+  ok(
+    '取消按钮在关闭前先判断（不是直接赋值关掉）',
+    /async function cancelEdit\(\)[\s\S]{0,300}?if \(!dialogDirty\(\)\)/.test(cat)
+  );
+  ok('有未保存判断时弹确认', /ElMessageBox\.confirm\([\s\S]{0,200}?尚未保存的修改/.test(cat));
+  ok(
+    '点遮罩不关闭（编辑表单误点旁边一下不该丢内容）',
+    /:close-on-click-modal="false"/.test(cat)
+  );
+  ok(
+    '快照与脏判断都只取 name/slug/description（避开会被规范化的 color）',
+    (() => {
+      const snap = cat.match(/editSnapshot = \[([^\]]*)\]\.join/);
+      const pick = cat.match(/const pick = \(f\) => \[([^\]]*)\]\.join/);
+      const fields = (m) => (m ? m[1].match(/\b(name|slug|description|color)\b/g) || [] : []);
+      const a = fields(snap), b = fields(pick);
+      return a.length === 3 && b.length === 3 && a.join() === b.join() && !a.includes('color');
+    })(),
+    '两边字段不一致会永远判定为已修改（这个错已犯过一次）'
+  );
+  ok(
+    '未修改时直接关闭、不弹窗',
+    /if \(!dialogDirty\(\)\) \{\s*\n\s*dialogVisible\.value = false;\s*\n\s*return;/.test(cat)
+  );
+  ok('不再残留 pendingDirty 之类的死变量', !cat.includes('pendingDirty'));
+  // 注意：注释里可以提到 before-close（解释为何不用），只禁止真正绑定
+  ok(
+    '不再绑定 before-close（本地这版不触发）',
+    !/:before-close=/.test(cat)
+  );
+}
+
 console.log('\n【保存成功后必须重置基线，否则误报「未保存」】');
 {
   // 上一轮刚加的未保存保护引入了一个反向缺陷，实测复现：

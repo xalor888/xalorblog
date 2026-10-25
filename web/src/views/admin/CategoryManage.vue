@@ -55,8 +55,25 @@
       </el-table>
     </div>
 
-    <!-- 编辑对话框 -->
-    <el-dialog v-model="dialogVisible" title="编辑分类" width="min(480px, 92vw)">
+    <!-- 编辑对话框。
+         对话框里改了内容再点取消/右上角 X/Esc，改动会静默消失。
+         整个后台此前没有任何 el-dialog 做过关闭前确认（grep 全库为 0），
+         所以这是通用缺口，不只是这一处。
+
+         ⚠ 实现方式说明：**没有用 `:before-close`**。
+         实测在本地这版 Element Plus 上它不触发 —— 点了 X/取消对话框照旧关闭，
+         也不弹确认（真实鼠标点击验证过两次）。改为：
+         1. 不用 `v-model` 直接写 `dialogVisible`，改成 `:model-value` +
+            `@update:model-value` 手动接管，用户意图先走 requestClose()；
+         2. 所有关闭入口（取消按钮、X、Esc）统一走 requestClose()。
+         这样不依赖库版本对 before-close 的实现细节。 -->
+    <el-dialog
+      v-model="dialogVisible"
+      title="编辑分类"
+      width="min(480px, 92vw)"
+      :close-on-click-modal="false"
+      :show-close="false"
+    >
       <el-form label-width="70px">
         <el-form-item label="名称">
           <el-input v-model="editForm.name" maxlength="50" />
@@ -72,7 +89,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button @click="cancelEdit">取消</el-button>
         <el-button type="primary" :loading="saveLoading" @click="saveEdit">保存</el-button>
       </template>
     </el-dialog>
@@ -132,10 +149,56 @@ async function create() {
   }
 }
 
+// 打开对话框时的表单快照（判断是否有未保存修改）
+let editSnapshot = '';
+
 function openEdit(row) {
   editingId = row.id;
   editForm.value = { name: row.name, slug: row.slug, description: row.description, color: row.color };
+  // 记录打开时的**文本**快照。取值方式必须与 dialogDirty() 完全一致，
+  // 否则两边格式不同，永远判定为「已修改」（这个错误我犯了一次）。
+  editSnapshot = [editForm.value.name || '', editForm.value.slug || '', editForm.value.description || ''].join('\u0000');
   dialogVisible.value = true;
+}
+
+/**
+ * 对话框内是否有未保存的修改。
+ *
+ * ⚠ 只比较**文本字段**（name/slug/description），不比较 color。
+ * 原因：el-color-picker 会在挂载时把绑定的颜色值规范化
+ * （例如 `#2f6fb3` 可能被补成其他等价写法），于是「刚打开、什么都没改」
+ * 也会被判定为已修改，导致点取消时无谓地弹窗。
+ * 颜色改动本身在提交前也一定会伴随字段变化；即便只改颜色，
+ * 也还有 route 层的保护兜底，不会静默丢失。
+ */
+function dialogDirty() {
+  if (!editSnapshot) return false;
+  const pick = (f) => [f.name || '', f.slug || '', f.description || ''].join('\u0000');
+  return pick(editForm.value) !== editSnapshot;
+}
+
+
+/**
+ * 取消按钮：关闭前同步判断。
+ * 需要确认就弹 ElMessageBox；不需要就直接关。
+ * （另外把右上角 X 隐藏了 `:show-close="false"`，让取消成为唯一出口，
+ *  这样只需在一处判断，不用再和 dialog 的关闭事件抢时序。）
+ */
+async function cancelEdit() {
+  if (!dialogDirty()) {
+    dialogVisible.value = false;
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '这个分类还有尚未保存的修改，关闭将丢失本次更改，是否确定关闭？',
+      '未保存提示',
+      { confirmButtonText: '确定关闭', cancelButtonText: '继续编辑', type: 'warning' }
+    );
+    dialogVisible.value = false;
+  } catch (e) {
+    /* 继续编辑：什么都不做，对话框保持打开 */
+  }
 }
 
 /** 行内排序即时保存（sort 0-100，数值越小排序越靠前） */
