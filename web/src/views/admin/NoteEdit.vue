@@ -189,7 +189,21 @@ async function save(status) {
     } else {
       await noteApi.create(payload);
     }
+    // 这一步会**同步触发** form 的深 watch（见上方 watch(form, …)），
+    // 而那个 watch 会把 dirty 设回 true —— 于是下面的 dirty.value = false 白做，
+    // 接着 router.push 被 onBeforeRouteLeave 拦下，弹出
+    // 「当前手记有尚未保存的修改，离开将丢失本次更改」。
+    // 实测就是这条：发布明明成功（库里已有记录），却告诉用户「尚未保存」。
+    // 用 suppressWatch 包住这次赋值，再清 dirty，顺序才是对的。
+    suppressWatch = true;
     form.status = status === 'published' ? 'published' : form.status;
+    suppressWatch = false;
+    dirty.value = false;
+    // watch 是**同步**触发的，但 Vue 的 deep watch 走 flush: 'pre'，
+    // 实际回调排在下一个微任务/渲染前 —— 所以上面 suppressWatch 复位后
+    // 回调才真正执行，看到的 suppressWatch 已是 false，又把 dirty 置回 true。
+    // 因此必须**等一个 tick**、让这次 pending 的回调跑完，再清一次 dirty。
+    await nextTick();
     dirty.value = false;
     ElMessage.success(status === 'published' ? '已发布' : '草稿已保存');
     router.push(adminHref('notes'));

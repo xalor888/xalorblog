@@ -370,6 +370,24 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【发布成功不能反过来告诉用户「尚未保存」】');
+{
+  // 实测缺陷：手记发布后确实建了记录（库里 status=published），
+  // 却弹出「当前手记有尚未保存的修改，离开将丢失本次更改」并**卡在编辑页**。
+  // 根因：`form.status = ...` 同步改了 form，触发深 watch 把 dirty 置回 true；
+  // 而 watch 是 flush:'pre'，回调排在下一 tick ——
+  // 所以「先 suppressWatch 包住赋值、再清 dirty」也无效。
+  // 必须 await nextTick() 让 pending 回调跑完，再清一次。
+  const ne = read('../src/views/admin/NoteEdit.vue');
+  const save = (ne.match(/async function save[\s\S]{0,2200}/) || [''])[0];
+  ok('发布成功后会清 dirty', /dirty\.value = false/.test(save));
+  ok('清 dirty 之前先等 watch flush', /await nextTick\(\)[\s\S]{0,120}dirty\.value = false/.test(save),
+     (save.match(/await nextTick\(\)[\s\S]{0,80}/) || [''])[0].slice(0, 60));
+  ok('成功后跳回列表', /router\.push\(adminHref\('notes'\)\)/.test(save));
+  // 改动 form 时要临时抑制 watch，否则一进编辑页就算「有改动」
+  ok('改 form 时用 suppressWatch 抑制', /suppressWatch = true/.test(ne));
+}
+
 console.log('\n【分享页：社交预览靠 OG meta，且必须转义】');
 {
   // 实测：/api/share/:slug 返回 200，og:type/title/description/image/url/site_name/locale 齐全，
