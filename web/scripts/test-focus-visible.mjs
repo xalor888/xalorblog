@@ -370,6 +370,25 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【文章分页：翻页、改每页条数、末页禁用下一页】');
+{
+  // 实测 24 篇 / 每页 8：3 页，第 3 页「下一页」**禁用**；
+  // 切到 32/页 → 24 条、分页区消失（24 < 32）；
+  // 从第 3 页切到 16/页 → **回到第 1 页**（1/2），不会停在不存在的第 3 页。
+  const al = read('../src/views/site/ArticleList.vue');
+  // 分页只在需要时出现，别在只有一页时也画一排页码
+  ok('分页区按 total > pageSize 显示', /v-if="total > pageSize"/.test(al));
+  ok('末页禁用下一页', /:disabled="page >= totalPages"/.test(al));
+  // 改每页条数必须重置到第 1 页 —— 否则会停在越界页码上看到空白
+  ok('改每页条数时重置页码',
+     /onPageSizeChange[\s\S]{0,220}(page\.value = 1|load\(1\))/.test(al),
+     (al.match(/function onPageSizeChange[\s\S]{0,100}/) || [''])[0].slice(0, 60));
+  // 行序号要跨页连续，不能每页都从 01 开始
+  ok('行序号跨页连续', /\(page - 1\) \* pageSize/.test(al));
+  // 每页条数要有上限，防止一次拉全部文章
+  ok('每页条数有上限选项', /pageSize/.test(al) && /32/.test(al));
+}
+
 console.log('\n【标签云：零文章标签也要显示（不能悄悄消失）】');
 {
   // 实测 10 个标签：4 个有 2 篇、4 个有 1 篇、2 个**零篇**。
