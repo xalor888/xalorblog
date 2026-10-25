@@ -517,9 +517,15 @@ function onGlobalKeydown(e) {
     closeMobile();
     return;
   }
-  // Ctrl/Cmd + K：帮助面板里一直列着这条，但**从来没实现过** ——
-  // 文档承诺了一个不存在的快捷键。这里补上。
-  // 它比 "/" 更该优先：多数键盘布局上 "/" 要按 Shift，且部分布局根本没有这个键位。
+  // Ctrl/Cmd + K —— 帮助面板里一直列着它。
+  // SearchModal 自己也处理这个组合键，但它在**懒加载**：
+  // 首次进站、或从没开过搜索时，那一屏的 SearchModal 还没挂载，它的 handler 也就不存在。
+  // 实测：只在 #/articles 测时 Ctrl+K 没反应，而把这段删掉后**仍然没反应** ——
+  // 说明确实需要这一份，且放在 Layout（始终挂载）里才覆盖得到。
+  //
+  // 它比 "/" 更该优先：多数键盘布局上 "/" 要按 Shift，部分布局甚至没有这个键位。
+  // 重复触发不会开两次（openSearch 只是派发 'xalor-open-search' 事件，
+  // SearchModal 的 open() 是幂等的），实测只派发 1 次。
   if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
     e.preventDefault();
     openSearch();

@@ -376,7 +376,14 @@ console.log('\n【帮助面板列出的快捷键必须真的能用】');
   // 但整个代码库里**没有任何 ctrlKey / metaKey 处理器** ——
   // 文档承诺了一个从未实现的快捷键。"/" 能用，Ctrl+K 不能。
   const layout = read('../src/views/site/Layout.vue');
-  ok('实现了 Ctrl/Cmd K', /e\.ctrlKey \|\| e\.metaKey/.test(layout) && /e\.key === 'k' \|\| e\.key === 'K'/.test(layout));
+  // 实测：SearchModal 有实现，但它是**懒加载**的 ——
+  // 把它那边当唯一来源时，未挂载的屏幕上 Ctrl+K 会失效（删掉 Layout 这段后复现过）。
+  // Layout 始终挂载，所以这份是覆盖懒加载窗口的兜底，不是冗余。
+  ok('Layout 里有 Ctrl/Cmd K 兜底',
+     /e\.ctrlKey \|\| e\.metaKey/.test(layout) && /e\.key === 'k' \|\| e\.key === 'K'/.test(layout));
+  const sm = read('../src/components/ui/SearchModal.vue');
+  ok('SearchModal 自身也处理（挂载后生效）', /ctrlKey \|\| e\.metaKey[\s\S]{0,60}'k'/.test(sm));
+  ok('openSearch 是派发事件（重复调用幂等）', /xalor-open-search/.test(layout));
   ok('Ctrl+K 打开搜索（不是别的东西）', /ctrlKey[\s\S]{0,140}openSearch\(\)/.test(layout));
   // Cmd 键也要支持（macOS 用户按的是 Cmd）
   ok('同时支持 metaKey（macOS）', /metaKey/.test(layout));
