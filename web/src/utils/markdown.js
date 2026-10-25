@@ -455,6 +455,12 @@ function legacyCopy(text) {
 function resetCopyButton(btn) {
   btn.textContent = '复制';
   btn.classList.remove('copied', 'copy-failed');
+  // 状态元素也要清空：showCopyResult 写了「代码已复制到剪贴板」，
+  // 若不复位，这串文字会永久留在 role=status 里 ——
+  // 读屏再次导航到该按钮时会念出这句已经过期的结果，而按钮本身早已回到「复制」。
+  // 清空也必须走「先清后写」的反向操作：直接置空即可，live region 不会播报空串。
+  const status = btn.parentElement?.querySelector('.code-copy-status');
+  if (status) status.textContent = '';
 }
 
 /**

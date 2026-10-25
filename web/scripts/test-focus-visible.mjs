@@ -370,6 +370,27 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【代码块复制：真实点击成功、1.6s 复位、且状态播报也要清空】');
+{
+  // 实测（真实鼠标事件 + 先 scrollIntoView）：
+  // 点击 → 按钮「已复制 ✓」、role=status 读出「代码已复制到剪贴板」；
+  // 1.8s 后按钮回到「复制」—— 但 **status 里那串字残留不散**，
+  // 读屏再次导航到该按钮会念出过期结果。修：resetCopyButton 里也清 status。
+  const md = read('../src/utils/markdown.js');
+  ok('有 data-copy 按钮', /data-copy/.test(md));
+  ok('状态元素是 role=status + aria-live=polite', /role="status"/.test(md) && /aria-live="polite"/.test(md));
+  // 复位必须同时清按钮文字、类名、以及 status 文本
+  const reset = (md.match(/function resetCopyButton[\s\S]{0,600}/) || [''])[0];
+  ok('复位清按钮文字', /btn\.textContent = '复制'/.test(reset));
+  ok('复位清类名', /classList\.remove\('copied', 'copy-failed'\)/.test(reset));
+  ok('复位也清 status（否则念出过期结果）', /code-copy-status/.test(reset) && /textContent = ''/.test(reset),
+     reset.slice(-80));
+  // 连点保护：data-copying 挡住重复复制，也不叠定时器
+  ok('连点不加倍复制', /dataset\.copying === '1'/.test(md));
+  // 取 textContent 而非 innerText —— 缩进会丢
+  ok('取 textContent（保缩进）', /code\.textContent/.test(md) && !/pre code'\)\.innerText/.test(md));
+}
+
 console.log('\n【Markdown 正常语法不被误伤，任务列表的 aria-label 不能二次转义】');
 {
   // 实测十种语法全部正常：标题降级(data-demoted)、代码块(code-block/code-head)、
