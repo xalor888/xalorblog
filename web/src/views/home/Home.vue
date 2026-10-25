@@ -350,6 +350,13 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  /* 触摸目标：原来 42×23，手指点「全部 / 更多 / 详情」经常落空。
+     视觉上字号不变，靠 min-height + 负 margin 把可点区域撑到 40px，
+     不改变这一行的排版节奏。 */
+  min-height: 40px;
+  margin-top: -8px;
+  margin-bottom: -8px;
+  padding: 0 2px;
   font-size: 13px;
   color: var(--text-3);
   text-decoration: none;

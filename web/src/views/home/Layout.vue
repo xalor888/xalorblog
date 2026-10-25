@@ -240,6 +240,8 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   display: inline-flex;
   align-items: center;
   gap: 9px;
+  /* 品牌链接也是导航入口（回首页）：原来只有 28px 高，拇指容易点到旁边的空白 */
+  min-height: 44px;
   font-weight: 650;
   color: inherit;
   text-decoration: none;

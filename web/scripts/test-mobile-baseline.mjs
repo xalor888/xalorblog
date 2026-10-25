@@ -222,5 +222,28 @@ for (const f of scrollContainers) {
   );
 }
 
+// ---------- 11. 个人主页（xalor.cn）也有独立的 Layout，必须同样达标 ----------
+// 实测（390×844）：.block-more（「全部 / 更多 / 详情」）只有 42×23，
+// .brand（回首页入口）28px —— 都是拇指点不中的尺寸。
+{
+  const homeHome = read('src/views/home/Home.vue');
+  const homeLayout = read('src/views/home/Layout.vue');
+
+  ok(
+    '个人主页「更多」链接可点区域 ≥40px',
+    /\.block-more \{[\s\S]{0,500}?min-height:\s*4[0-9]px/.test(homeHome),
+    '原来 42×23，最常点的「全部 / 详情」经常落空'
+  );
+  ok(
+    '个人主页品牌链接（回首页）≥44px',
+    /\.brand \{[\s\S]{0,400}?min-height:\s*44px/.test(homeLayout)
+  );
+  // 两个入口共用 main.css 的基线，这里确认 home.html 也带着 viewport 兜底
+  ok(
+    'home.html 与 index.html 共用同一套 viewport（安全区）',
+    /viewport-fit\s*=\s*cover/i.test(homeHtml)
+  );
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
