@@ -370,6 +370,27 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【新页面要穿同一套皮肤：结构、深色、无溢出、按钮可聚焦】');
+{
+  // 实测：足迹页与收藏页根类名同为 .bookmarks-page、.bm-grid 同为 grid、条目数一致；
+  // 深色主题下卡片文字 rgb(236,232,221)、body 背景 rgb(18,17,15)，有 box-shadow；
+  // 390px 宽移动端无横向溢出；移除按钮带 backdrop-filter: blur(4px)（液态玻璃特征）。
+  // 清空按钮原本没有 aria-label —— 补成「清空全部收藏/足迹（共 N 条）」，把数量念出来。
+  const css = read('../src/styles/list-page.css');
+  ok('共用样式文件存在', css.length > 0);
+  ok('共用样式覆盖到 .bm-grid', /\.bm-grid\s*\{/.test(css));
+  // 液态玻璃：移除按钮要有 backdrop-filter
+  ok('保留液态玻璃（backdrop-filter）', /backdrop-filter/.test(css));
+
+  for (const [name, p] of [['收藏页', '../src/views/site/Bookmarks.vue'],
+                            ['足迹页', '../src/views/site/History.vue']]) {
+    const src = read(p);
+    ok(`${name}导入共用样式`, /@import '@\/styles\/list-page\.css'/.test(src), p);
+    // 清空是破坏性操作，aria-label 要带上数量
+    ok(`${name}清空按钮带 aria-label 与数量`, /:aria-label="'清空全部[^"]*（共 ' \+/.test(src), p);
+  }
+}
+
 console.log('\n【新功能：阅读足迹（本机记录、去重、上限、可清空）】');
 {
   // 实测：读两篇 → 足迹 2 条、最新在前；重复读同一篇**仍 2 条**（去重且移到最前）；

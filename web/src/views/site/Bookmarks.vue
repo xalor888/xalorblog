@@ -5,7 +5,7 @@
         <p class="eyebrow">BOOKMARKS</p>
         <h1>我的收藏</h1>
         <p class="lead">共 {{ bookmarks.length }} 篇收藏的文章</p>
-        <button v-if="bookmarks.length" class="bm-clear" @click="clearAll">
+        <button v-if="bookmarks.length" class="bm-clear" :aria-label="'清空全部收藏（共 ' + bookmarks.length + ' 条）'" @click="clearAll">
           <XIcon name="Trash2" :size="13" /> 清空全部
         </button>
       </div>

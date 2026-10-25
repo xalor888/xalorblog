@@ -7,7 +7,7 @@
         <p class="lead">
           本机最近读过 {{ history.length }} 篇文章<template v-if="history.length">，只存在这台设备上，不上传</template>
         </p>
-        <button v-if="history.length" class="bm-clear" @click="clearAll">
+        <button v-if="history.length" class="bm-clear" :aria-label="'清空全部阅读足迹（共 ' + history.length + ' 条）'" @click="clearAll">
           <XIcon name="Trash2" :size="13" /> 清空足迹
         </button>
       </div>
