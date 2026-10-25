@@ -912,6 +912,7 @@ function onScroll() {
   ticking = true;
   requestAnimationFrame(() => {
     progress.value = computeReadingProgress();
+    syncActiveHeading();
     ticking = false;
   });
 }
@@ -952,25 +953,70 @@ function revealActiveTocItem() {
   });
 }
 
+/**
+ * 计算「当前正在读的小节」：取最后一个已经越过激活线的标题。
+ *
+ * ⚠ 两条实现弯路都记在这里：
+ * 1. 原来从 IntersectionObserver 的 entries 里选 —— 但 **entries 只含变化的元素**，
+ *    于是几乎总只剩「刚进入的那个」，高亮永远领先一格（5 个标题错 4 个）。
+ * 2. 改成「量所有标题」后仍有偏差：观察器只在**进入/离开视口**时触发，
+ *    标题完全滚出视口后就不再回调，滚动到中间位置时高亮停在旧值。
+ * 所以最终**不依赖观察器**，直接在 scroll 的 rAF 里算（本来就已节流）。
+ */
+function computeActiveHeading() {
+  const line = 110; // 激活线：距视口顶部 110px
+  let current = '';
+  for (const t of toc.value) {
+    const el = document.getElementById(t.id);
+    if (!el) continue;
+    if (el.getBoundingClientRect().top - line <= 0) current = t.id;
+    else break; // 标题按文档顺序排列，后面的都还在下方
+  }
+  return current || (toc.value[0]?.id ?? '');
+}
+
+function syncActiveHeading() {
+  const id = computeActiveHeading();
+  if (id && activeHeading.value !== id) {
+    activeHeading.value = id;
+    revealActiveTocItem();
+  }
+}
+
 function setupTocObserver() {
   tocObserver?.disconnect();
   tocObserver = new IntersectionObserver(
-    (entries) => {
-      // 激活区 = 视口顶部往下 110px 起、高度 30% 的带状区域
-      const visible = entries.filter((e) => e.isIntersecting);
-      if (!visible.length) return;
-      let best = null;
-      for (const v of visible) {
-        const rect = v.target.getBoundingClientRect();
-        if (!best || rect.top < best.top) best = { id: v.target.id, top: rect.top };
+    () => {
+      // ⚠ 不要用 entries 来选「当前章节」。
+      //
+      // 原实现从 entries 里过滤 isIntersecting 再取 rect.top 最小的那个 ——
+      // 但 **entries 只包含本次发生变化的元素**，不是所有标题。
+      // 于是几乎总只剩下「刚进入激活区的那一个」，结果高亮永远领先一格：
+      // 实测滚到「为什么选 Knex」时高亮「基本用法」，
+      // 滚到「基本用法」时高亮「进阶：动态查询」，5 个标题里错 4 个。
+      // 甚至把标题精确停在激活区起点（top=110）也仍然错。
+      //
+      // 正确做法：每次回调都把**所有**标题的位置量一遍，
+      // 取「最后一个已经越过激活线上方」的标题 —— 那才是读者正在看的小节。
+      const line = 110; // 激活线：距视口顶部 110px
+      let current = null;
+      for (const t of toc.value) {
+        const el = document.getElementById(t.id);
+        if (!el) continue;
+        const top = el.getBoundingClientRect().top;
+        if (top - line <= 0) current = t.id; // 已经滚过去了
+        else break; // 标题按文档顺序排列，后面的都还在下方
       }
-      if (best) {
-        const changed = activeHeading.value !== best.id;
-        activeHeading.value = best.id;
-        if (changed) revealActiveTocItem();
+      // 还没滚过第一个标题时，进度的起点就是第一项
+      const id = current || (toc.value[0]?.id ?? '');
+      if (id && activeHeading.value !== id) {
+        activeHeading.value = id;
+        revealActiveTocItem();
       }
     },
-    { rootMargin: '-110px 0px -70% 0px', threshold: 0 }
+    // 观察范围放宽到整个视口：不需要「带状激活区」了，
+    // 因为判断逻辑改成量所有标题的位置。
+    { rootMargin: '0px', threshold: 0 }
   );
   for (const t of toc.value) {
     const el = document.getElementById(t.id);

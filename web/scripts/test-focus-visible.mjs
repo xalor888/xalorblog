@@ -304,6 +304,41 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【TOC 编号必须与正文标题一一对应】');
+{
+  // 第 19 轮加 h1 降级时引入的回归，第 37 轮才发现：
+  // demoteH1 把正文的 `# 标题` 变成 <h2>，而 addHeadingIds 给它也编了号（heading-0），
+  // 但 extractToc 只收原始 depth>=2 的标题、不编号 —— 两边**整体错位一位**。
+  // 实测：点 TOC 第一项跳到的是文章主标题，而不是它写的那一节。
+  const md = read('../src/utils/markdown.js');
+  ok('demoteH1 给降级标题打 data-demoted 标记', md.includes('data-demoted="1"'));
+  ok(
+    'addHeadingIds 跳过降级标题（不占 heading-N 序列）',
+    /const demoted = \/\\bdata-demoted="1"\//.test(md) && md.includes('id="heading-demoted"')
+  );
+  ok(
+    '清理已有的 id 属性（避免出现两个 id）',
+    md.includes('.replace(/\\s*id="[^"]*"/, \'\')')
+  );
+  ok(
+    'extractToc 与 addHeadingIds 都只认原始 depth 2-4',
+    /t\.depth >= 2 && t\.depth <= 4/.test(md) && /<h\(\[2-4\]\)/.test(md)
+  );
+
+  // TOC 高亮：不能用 entries（只含变化元素），也不能只靠观察器（滚出视口就不再回调）
+  const detail = read('../src/views/site/ArticleDetail.vue');
+  ok('有 computeActiveHeading 量所有标题', /function computeActiveHeading\(\)/.test(detail));
+  ok(
+    '取「最后一个越过激活线」的标题',
+    /top - line <= 0\) current = t\.id/.test(detail)
+  );
+  ok(
+    '在 scroll 的 rAF 里同步（不依赖观察器的触发时机）',
+    /progress\.value = computeReadingProgress\(\);\s*\n\s*syncActiveHeading\(\);/.test(detail),
+    '观察器只在进入/离开视口时触发，滚到中间会停在旧值'
+  );
+}
+
 console.log('\n【阅读进度以正文为准，不以整页为准】');
 {
   // 实测：原实现分母是 scrollHeight - innerHeight，而正文之后还有
@@ -506,7 +541,7 @@ console.log('\n【目录跳转要把焦点送到目标标题】');
   const md = read('../src/utils/markdown.js');
   ok(
     '标题带 tabindex="-1"（可脚本聚焦、不进 Tab 序列）',
-    /id="heading-\$\{index - 1\}" tabindex="-1"/.test(md),
+    (md.match(/tabindex="-1">/g) || []).length >= 2,
     '没有它 scrollIntoView 只是滚了一下，焦点留不住'
   );
 
@@ -845,7 +880,7 @@ console.log('\n【标题大纲：每页一个 h1、不跳级】');
   const md = read('../src/utils/markdown.js');
   ok(
     '正文里的 <h1> 被降为 <h2>（不产出第二个页面级标题）',
-    md.includes('function demoteH1') && md.includes("'<h2$1>$2</h2>'"),
+    md.includes('function demoteH1') && /<\/h1>/i.test(md) && md.includes('<h2$1'),
     '文章页已有自己的 h1，正文再来一个会让读屏看到两个主标题'
   );
   // 这条断言已经被两次「正确地失败」教训过：先是写死 sanitize(demoteH1(raw))，

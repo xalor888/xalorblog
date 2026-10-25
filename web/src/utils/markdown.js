@@ -172,7 +172,15 @@ function addTableScopes(html) {
  * 这里只降一级且最低到 h6，不会越界。
  */
 function demoteH1(html) {
-  return String(html || '').replace(/<h1(\b[^>]*)>([\s\S]*?)<\/h1>/gi, '<h2$1>$2</h2>');
+  return String(html || '').replace(
+    /<h1(\b[^>]*)>([\s\S]*?)<\/h1>/gi,
+    // data-demoted：标记「这个 h2 原本是 h1」。
+    // addHeadingIds 必须跳过它 —— 否则会给它编一个 id（heading-0），
+    // 而 extractToc 只收 depth>=2 的原始标题、不给它编号，
+    // 两边就**整体错位一位**：TOC 点「为什么选 Knex」跳到文章主标题。
+    // 这是第 19 轮加 h1 降级时引入的回归，第 37 轮才发现。
+    '<h2$1 data-demoted="1">$2</h2>'
+  );
 }
 
 // 外链加固：所有渲染出的 <a> 统一注入安全 rel（站内链接保留权重，外链 nofollow 防 SEO
@@ -243,12 +251,22 @@ export function extractToc(md = '') {
 /** 给渲染后的 HTML 中的标题添加 id（供 TOC 锚点跳转） */
 export function addHeadingIds(html) {
   let index = 0;
-  return html.replace(/<h([2-4])\b/g, (m, level) => {
+  return String(html).replace(/<h([2-4])\b([^>]*)>/g, (whole, level, attrs) => {
+    // 由 h1 降级来的标题不参与 TOC 编号（extractToc 只收原始 depth>=2 的标题）。
+    // 给它编号会让 TOC 与正文整体错位一位 —— 实测点 TOC 第一项会跳到文章主标题。
+    // 它仍保留一个独立 id 以便锚点唯一，但不占 heading-N 序列。
+    const demoted = /\bdata-demoted="1"/.test(attrs);
+    // 去掉降级标记与可能已存在的 id，避免出现两个 id 属性
+    const cleanAttrs = attrs
+      .replace(/\s*data-demoted="1"/, '')
+      .replace(/\s*id="[^"]*"/, '');
+    if (demoted) return `<h${level}${cleanAttrs} id="heading-demoted" tabindex="-1">`;
+    const id = `heading-${index}`;
     index += 1;
     // tabindex="-1"：让标题可以被**脚本**聚焦（不进 Tab 序列）。
     // 目录跳转时把焦点送到目标标题，键盘用户和读屏才知道「现在到了哪一节」；
     // 没有它 scrollIntoView 只是滚了一下，焦点仍留在目录链接甚至掉到 body。
-    return `<h${level} id="heading-${index - 1}" tabindex="-1"`;
+    return `<h${level}${cleanAttrs} id="${id}" tabindex="-1">`;
   });
 }
 
