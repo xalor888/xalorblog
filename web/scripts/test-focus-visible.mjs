@@ -304,6 +304,35 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【保存成功后必须重置基线，否则误报「未保存」】');
+{
+  // 上一轮刚加的未保存保护引入了一个反向缺陷，实测复现：
+  // 改字段 → 保存（提示「设置已保存」）→ 点离开，仍被「尚有未保存的修改」拦住。
+  // 用户刚保存过，页面却说没保存 —— 误报比漏报更伤信任。
+  for (const [path, label, anchor] of [
+    ['../src/views/admin/Settings.vue', '站点设置', 'setBaseline(form.value);'],
+    ['../src/views/admin/HomeSettings.vue', '主页设置', 'setBaseline();'],
+  ]) {
+    const src = read(path);
+    // 找 save 函数体，断言里面调用了 setBaseline（且不是在 load 里那个）
+    const m = src.match(/async function save\(\)[\s\S]*?\n\}/);
+    const body = m ? m[0] : '';
+    ok(`${label}：save() 里重置基线`, body.includes(anchor.trim()), '否则保存后离开会误拦');
+    ok(
+      `${label}：重置基线在 save 成功路径内（不是 catch 里）`,
+      body.indexOf(anchor.trim()) > body.indexOf('try {')
+    );
+  }
+  // HomeSettings 还有个顺序要求：先同步服务端清洗结果、再记基线
+  const hs = read('../src/views/admin/HomeSettings.vue');
+  const idxClean = hs.indexOf('socialExtra.value = cleaned;');
+  const idxBase = hs.indexOf('setBaseline();', idxClean);
+  ok(
+    '主页设置：先同步 cleaned 再记基线（否则服务端清洗差异会被当成新修改）',
+    idxClean !== -1 && idxBase > idxClean
+  );
+}
+
 console.log('\n【出错要告诉用户，不能只写进控制台】');
 {
   const main = read('../src/main.js');

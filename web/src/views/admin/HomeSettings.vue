@@ -209,8 +209,12 @@ async function save() {
       home_since_date: form.home_since_date || '',
       home_social_extra: JSON.stringify(cleaned),
     });
-    ElMessage.success('主页设置已保存');
+    // 服务端会清洗/过滤社交项，所以先同步回本地（cleaned），
+    // 再记录基线 —— 顺序不能反：拿「保存前的表单」当基线，
+    // 服务端的清洗差异会立刻被判定成新的未保存修改。
     socialExtra.value = cleaned;
+    setBaseline();
+    ElMessage.success('主页设置已保存');
   } catch (e) {
     /* 拦截器已提示 */
   } finally {

@@ -690,6 +690,11 @@ async function save() {
     const site = useSiteStore();
     site.loaded = false;
     await site.fetchSettings();
+    // **保存成功后必须重置基线**，否则 dirty 仍为 true ——
+    // 实测：改字段 → 保存（提示「设置已保存」）→ 点离开，仍被「尚有未保存的修改」拦住。
+    // 那是明显的误报：用户刚保存过，页面却说没保存。
+    // 放在清空密钥之后，因为清空密钥本身也是一次 form 变更。
+    setBaseline(form.value);
     ElMessage.success('设置已保存');
   } catch (e) {
     /* 拦截器已提示 */
