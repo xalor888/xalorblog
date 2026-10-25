@@ -359,6 +359,15 @@
       </aside>
     </div>
 
+    <!-- 上次阅读位置已恢复：给一条可关闭的说明 + 一键跳回开头。
+         不给提示的话，读者一进来就在文中，会以为文章开头丢了。 -->
+    <transition name="rp-toast">
+      <div v-if="restoredPos" class="restore-tip" role="status">
+        <span>已回到上次读到的位置</span>
+        <button type="button" class="restore-top" @click="backToTop">回到开头</button>
+      </div>
+    </transition>
+
     <!-- 读者问答：仅在被 gate 放行且站点配了模型时出现（组件内部自查） -->
     <AskAi v-if="article && article.slug" :slug="article.slug" />
   </div>
@@ -413,6 +422,8 @@ const toc = ref([]);
 const liked = ref(false);
 const activeHeading = ref('');
 const progress = ref(0);
+/** 刚恢复了上次阅读位置：显示一条可关闭的提示 */
+const restoredPos = ref(false);
 const shareMenu = ref(false);
 // 目录折叠偏好记忆（多数读者习惯固定展开/收起）
 const tocCollapsed = ref((() => {
@@ -719,6 +730,14 @@ async function load() {
     }
     await nextTick();
     setupTocObserver(); // 标题渲染完成后建立 TOC 高亮观察
+    // 内容排好之后再恢复阅读位置（否则此时文档高度还不完整，比例算出来是错的）
+    if (restoreScroll()) {
+      restoredPos.value = true;
+      // 提示条 6 秒后自己消失，不打扰阅读
+      setTimeout(() => { restoredPos.value = false; }, 6000);
+      // 恢复后立刻同步一次进度/高亮，避免还停在 0%
+      onScroll();
+    }
   } catch (e) {
     if (my !== loadSeq) return; // 过期请求的错误同样丢弃
     article.value = null;
@@ -733,6 +752,13 @@ async function load() {
   } finally {
     if (my === loadSeq) loading.value = false;
   }
+}
+
+/** 从「恢复的阅读位置」回到文章开头 */
+function backToTop() {
+  restoredPos.value = false;
+  forgetScroll(route.params.slug);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 /** 失败后重试 */
@@ -905,6 +931,81 @@ function computeReadingProgress() {
   return Math.max(0, Math.min(100, (window.scrollY / endScroll) * 100));
 }
 
+/**
+ * 阅读位置记忆。
+ *
+ * 为什么要有：实测读完一半离开、再回来，滚动位置回到 0 ——
+ * 长文读者每次都得重新找位置。正文页最该记住的东西就是这个。
+ *
+ * 实现要点：
+ * - 以 `slug` 为键，每篇独立；
+ * - 记录的是**归一化比例**（0~1）而不是像素：字号、窗口宽度、图片加载
+ *   都会改变文档总高度，存像素回来就偏了；
+ * - 写 localStorage 走 500ms 节流 —— scroll 每帧都可能触发，
+ *   逐帧写会明显拖慢长文滚动；
+ * - 读回来时**只在「刚加载完、还没滚动过」时应用一次**，
+ *   否则用户自己滚回去会被旧位置抢走。
+ */
+const SCROLL_KEY_PREFIX = 'xalor_readpos_';
+let lastScrollSave = 0;
+
+function rememberScroll() {
+  const slug = route.params.slug;
+  if (!slug) return;
+  const now = Date.now();
+  // ⚠ 首次滚动必须立刻写，不能让它等节流窗口。
+  // 实测：用滚动条一次性拖到中间只触发**一次** scroll 事件，
+  // 而那时 lastScrollSave 还没到 500ms 窗口 → 位置根本没存下来，
+  // 回到页面时仍是 0。真实用户拖滚动条就是这么操作的。
+  // 所以 lastScrollSave 为 0（本次进来还没存过）时跳过节流判断。
+  if (lastScrollSave && now - lastScrollSave < 500) return;
+  lastScrollSave = now;
+  // ⚠ 比例的分母必须是**正文可滚动区间**，不是整页。
+  // 用整页时：正文之后还有页脚和推荐，比例会偏小，恢复位置落不到原文处。
+  // （实测离开时 41%，回到的位置却在正文之外。）
+  // 这与阅读进度用同一套基准（computeReadingProgress），两处口径一致。
+  const endScroll = contentEndScroll();
+  // 太靠上或已经读完：都不值得记，下次从头开始更符合预期
+  if (endScroll <= 0 || window.scrollY < endScroll * 0.03 || window.scrollY >= endScroll * 0.98) {
+    forgetScroll(slug);
+    return;
+  }
+  try {
+    localStorage.setItem(SCROLL_KEY_PREFIX + slug, String(window.scrollY / endScroll));
+  } catch (e) { /* 隐私模式/配额满：静默忽略，不影响阅读 */ }
+}
+
+/** 正文末尾滚到视口顶部所需的位置：阅读进度与位置记忆共用的基准 */
+function contentEndScroll() {
+  const body = document.querySelector('.markdown-body');
+  if (!body) return document.documentElement.scrollHeight - window.innerHeight;
+  return body.getBoundingClientRect().bottom + window.scrollY - window.innerHeight;
+}
+
+function forgetScroll(slug) {
+  try {
+    localStorage.removeItem(SCROLL_KEY_PREFIX + slug);
+  } catch (e) { /* 同上 */ }
+}
+
+/** 恢复上次位置。返回是否真的恢复了，供调用方决定要不要聚焦正文。 */
+function restoreScroll() {
+  const slug = route.params.slug;
+  if (!slug) return false;
+  let ratio = 0;
+  try {
+    ratio = parseFloat(localStorage.getItem(SCROLL_KEY_PREFIX + slug) || '0');
+  } catch (e) {
+    return false;
+  }
+  if (!(ratio > 0.03 && ratio < 0.98)) return false; // 底部位置也不值得恢复
+  const endScroll = contentEndScroll();
+  if (endScroll <= 0) return false;
+  // 用 instant 而不是 smooth：恢复位置是「回到原处」，不是一段动画
+  window.scrollTo({ top: Math.round(endScroll * ratio), behavior: 'auto' });
+  return true;
+}
+
 /** 滚动监听：阅读进度（rAF 节流）+ TOC 高亮由 IntersectionObserver 负责 */
 let ticking = false;
 function onScroll() {
@@ -913,6 +1014,7 @@ function onScroll() {
   requestAnimationFrame(() => {
     progress.value = computeReadingProgress();
     syncActiveHeading();
+    rememberScroll();
     ticking = false;
   });
 }
@@ -1057,6 +1159,60 @@ onUnmounted(() => {
 <style scoped>
 .article-detail {
   padding-bottom: 40px;
+}
+
+/* 阅读位置恢复提示：固定在底部中央，不遮挡正文 */
+.restore-tip {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + var(--sab, 0px));
+  transform: translateX(-50%);
+  z-index: calc(var(--z-nav) + 2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-2);
+  font-size: 0.85rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  max-width: calc(100vw - 32px);
+}
+
+.restore-top {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.restore-top:hover {
+  background: var(--bg-soft);
+  border-color: var(--accent);
+}
+
+.restore-top:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.rp-toast-enter-active,
+.rp-toast-leave-active {
+  transition: opacity 0.22s var(--ease), transform 0.22s var(--ease);
+}
+
+.rp-toast-enter-from,
+.rp-toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 8px);
 }
 
 /* ============ 加载骨架 ============ */

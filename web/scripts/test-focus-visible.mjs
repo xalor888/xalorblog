@@ -304,6 +304,39 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【阅读位置记忆：离开再回来应回到原处】');
+{
+  const detail = read('../src/views/site/ArticleDetail.vue');
+  ok('有 rememberScroll / restoreScroll', /function rememberScroll\(\)/.test(detail) && /function restoreScroll\(\)/.test(detail));
+  ok(
+    '存的是归一化比例而不是像素',
+    /window\.scrollY \/ endScroll/.test(detail),
+    '存像素的话字号/宽度/图片加载一变就偏'
+  );
+  ok(
+    '比例分母是正文区间（与阅读进度同基准）',
+    /function contentEndScroll\(\)/.test(detail) && /body\.getBoundingClientRect\(\)\.bottom/.test(detail),
+    '用整页做分母会恢复到正文之外（实测偏到页脚）'
+  );
+  ok(
+    '首次滚动立即写，不等节流窗口',
+    /if \(lastScrollSave && now - lastScrollSave < 500\) return;/.test(detail),
+    '拖滚动条只触发一次 scroll，被节流挡掉就等于没记'
+  );
+  ok(
+    '恢复前排除「太靠上」与「已读完」',
+    /endScroll \* 0\.03/.test(detail) && /endScroll \* 0\.98/.test(detail) || /0\.98\)\) return false/.test(detail)
+  );
+  ok('恢复用 instant 不用 smooth（回到原处不是动画）', /behavior: 'auto'/.test(detail));
+  ok('有提示条告知位置已恢复', /class="restore-tip"/.test(detail) && /已回到上次读到的位置/.test(detail));
+  ok('提示条是 role=status（读屏会播报）', /class="restore-tip" role="status"/.test(detail));
+  ok(
+    '「回到开头」会清除记忆位置',
+    /function backToTop\(\)[\s\S]{0,160}?forgetScroll/.test(detail)
+  );
+  ok('localStorage 异常时静默忽略（隐私模式）', /catch \(e\) \{ \/\* 隐私模式\/配额满/.test(detail));
+}
+
 console.log('\n【后台：路由表齐全，且每页都能拿到标题】');
 {
   // 实测 15 个后台路由全部渲染正常（0 错误、每页恰好 1 个 h1、
@@ -457,9 +490,9 @@ console.log('\n【阅读进度以正文为准，不以整页为准】');
   ok('结果夹在 0–100', /Math\.max\(0, Math\.min\(100,/.test(detail));
   ok('onScroll 调用统一函数（三个进度显示共用一份计算）', /progress\.value = computeReadingProgress\(\);/.test(detail));
   ok(
-    '不再有第二处独立的整页进度计算',
-    (detail.match(/scrollHeight - window\.innerHeight/g) || []).length === 1,
-    '留着两套算法迟早会漂移'
+    '整页兜底只在正文缺失时用（不超过两处）',
+    (detail.match(/scrollHeight - window\.innerHeight/g) || []).length <= 2,
+    '一处在 computeReadingProgress 的兜底，一处在 contentEndScroll 的兜底；两处都是「正文还没渲染」时才走'
   );
 }
 
