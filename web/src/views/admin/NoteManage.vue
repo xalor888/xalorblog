@@ -160,7 +160,15 @@ async function togglePin(row) {
 
 async function remove(row) {
   try {
-    await ElMessageBox.confirm('删除后不可恢复，确定删除这条手记？', '删除确认', { type: 'warning' });
+    // 把「删的是哪一条」写进问句。
+    // 原先只有一句「删除后不可恢复，确定删除这条手记？」——
+    // 手记列表里每行长得都差不多，用户在点完删除之后、确认之前**看不到自己在删哪一条**，
+    // 点错行和点对行弹出的提示一字不差。
+    // 取正文前 40 字做引述；空内容退回 id，至少能对上号。
+    const excerpt = String(row.content || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    const which = excerpt ? `「${excerpt}${String(row.content || '').trim().length > 40 ? '…' : ''}」` : `#${row.id}`;
+    // 中文里「手记」与引号之间不留空格（原先写成 `手记 ${which} 吗` 会出现多余间距）
+    await ElMessageBox.confirm(`确定删除手记${which}吗？此操作不可恢复。`, '删除确认', { type: 'warning' });
   } catch (e) {
     return;
   }

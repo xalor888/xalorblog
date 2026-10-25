@@ -103,8 +103,13 @@ async function create() {
 
 async function remove(row) {
   try {
+    // 与分类删除保持同一套写法：把「影响几篇文章」写进问句。
+    // 原先只说「文章的标签关联将同步移除」，不区分这个标签挂着 0 篇还是 3 篇 ——
+    // 两种情况后果不同，而提示一模一样。
+    const n = Number(row.article_count) || 0;
+    const impact = n > 0 ? `该标签将从 ${n} 篇文章上移除。` : '当前没有文章使用这个标签。';
     await ElMessageBox.confirm(
-      `确定删除标签「${row.name}」吗？文章的标签关联将同步移除。`,
+      `确定删除标签「${row.name}」吗？${impact}`,
       '删除确认',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
     );
