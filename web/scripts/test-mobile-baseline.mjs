@@ -245,5 +245,42 @@ for (const f of scrollContainers) {
   );
 }
 
+// ============================================================
+// 滑动 / 位移动画的容器必须裁剪
+// ============================================================
+// 这一类问题的共同形状：元素用 transform 滑到容器外做动效，
+// 但容器没写 overflow —— 桌面端宽度足够时看不出来，窄屏上直接露在屏幕外。
+// 第 80 轮的路由进度条就是这样：375px 视口下 .rp-bar 右边缘在 421px，溢出 46px。
+// 静态断言无法证明布局，但能保证「修复不会被后来的重构顺手删掉」。
+console.log('\n【位移动画的容器必须裁剪】');
+{
+  const rp = read('src/components/ui/RouteProgress.vue');
+  const wrap = (rp.match(/\.route-progress \{[\s\S]*?\n\}/) || [''])[0];
+  ok('路由进度条容器 overflow: hidden', /overflow:\s*hidden/.test(wrap), wrap.slice(0, 50));
+  ok(
+    '滑动动画本身保留（裁剪不等于禁用动效）',
+    /@keyframes rpSlide/.test(rp) && /animation:\s*rpSlide/.test(rp),
+    '遇到溢出最省事的错误修法是把动效删掉'
+  );
+}
+
+// ============================================================
+// 移动菜单：开合状态与焦点
+// ============================================================
+// 实测这套实现是完整的（aria-expanded 随状态切换、焦点进面板、ESC 关闭并归还焦点），
+// 这里钉住它 —— 因为「焦点管理」是最容易在重构中被削掉的部分，
+// 而削掉之后视力正常的用户完全无感，键盘用户直接卡住。
+console.log('\n【移动菜单的开合语义不能被削掉】');
+{
+  const layout = read('src/views/site/Layout.vue');
+  ok('汉堡按钮 aria-expanded 绑定状态', /:aria-expanded="mobileOpen/.test(layout));
+  ok(
+    '菜单标签随开合切换（打开菜单 / 关闭菜单）',
+    /mobileOpen \? '关闭菜单' : '打开菜单'/.test(layout)
+  );
+  ok('打开时焦点移进面板', /nextTick\([\s\S]{0,200}?\.focus\(\)/.test(layout) || /focus\(\)/.test(layout));
+  ok('ESC 能关闭菜单', /Escape/.test(layout));
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
