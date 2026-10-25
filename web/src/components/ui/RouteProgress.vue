@@ -59,6 +59,20 @@ onUnmounted(() => {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s var(--ease);
+  /* 不可见时把动画停掉。
+     实测：这个条在**页面空闲时也一直有 animation 在 running 状态**
+     （document.getAnimations() 里能抓到 rpSlide），
+     而它此刻 opacity:0 —— 一帧都看不见，却仍在参与合成。
+     visibility:hidden + 暂停，让浏览器真正把它从动画时间线上摘下来。 */
+  visibility: hidden;
+}
+
+.route-progress:not(.visible) .rp-bar {
+  animation-play-state: paused;
+}
+
+.route-progress.visible {
+  visibility: visible;
 }
 
 .route-progress.visible {

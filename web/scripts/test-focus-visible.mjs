@@ -370,6 +370,33 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【看不见的动画也要停掉：空闲时不该有常驻合成】');
+{
+  // 实测发现的真问题：路由进度条 rpSlide 是 infinite 动画，
+  // 而 .route-progress 平时只有 opacity:0 —— **一帧都看不见，动画却一直在 running**，
+  // document.getAnimations() 里抓得到它。修复后：
+  //   running 只剩 sg-sheen-sweep（导航扫光，那是可见的装饰层）
+  //   rpSlide 变成 paused，父元素 visibility:hidden
+  // 并且验证了进度条本身没被弄坏：MutationObserver 抓到
+  //   `route-progress visible` 出现 372ms 后移除 —— 导航时照常显示。
+  //
+  // 顺带记一个教训：我第一次用 120ms 间隔轮询采样，采到的全是 hidden，
+  // 差点误判成自己把进度条弄坏了。**是采样太晚、错过了显示窗口**，
+  // 换成 MutationObserver 才看到真相。
+  const rp = read('../src/components/ui/RouteProgress.vue');
+  ok('不可见时暂停动画', /animation-play-state: paused/.test(rp));
+  ok('不可见时 visibility hidden', /visibility: hidden/.test(rp));
+  // visible 类必须能恢复可见，否则进度条彻底失效
+  ok('visible 能恢复可见', /\.route-progress\.visible[\s\S]{0,40}visibility: visible/.test(rp));
+
+  // 另一个常驻动画 sg-sheen-sweep 必须尊重 prefers-reduced-motion
+  const css = read('../src/styles/main.css');
+  ok('扫光动画尊重减弱动效', /@media \(prefers-reduced-motion: reduce\)[\s\S]{0,200}sg-liquid/.test(css));
+  // 它只动 background-position，不触发布局
+  const kf = (css.match(/@keyframes sg-sheen-sweep[\s\S]{0,200}/) || [''])[0];
+  ok('扫光只改 background-position（不触发布局）', /background-position/.test(kf) && !/width|height|top:|left:/.test(kf));
+}
+
 console.log('\n【Element Plus 的深/亮覆写要成对，不能只做一半】');
 {
   // 全量扫过一遍 CSS 变量：125 个定义里，未被 `var()` 引用的是 40 个 --el-*。
