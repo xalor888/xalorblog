@@ -126,9 +126,7 @@ async function likeComment() {
     const res = await commentApi.like(props.comment.id);
     if (res && typeof res.likes === 'number') props.comment.likes = res.likes;
     try {
-    try {
       localStorage.setItem(`xalor_clike_${props.comment.id}`, '1');
-    } catch (e) { /* 隐私模式忽略 */ }
     } catch (e) { /* 隐私模式忽略 */ }
   } catch (e) {
     // 失败回滚

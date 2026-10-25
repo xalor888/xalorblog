@@ -304,6 +304,30 @@ console.log('\n【后台大表单：未保存修改不能静默丢失】');
   }
 }
 
+console.log('\n【评论点赞：并发防护齐全，且没有嵌套重复代码】');
+{
+  const ci = read('../src/components/site/CommentItem.vue');
+  ok(
+    '点赞有并发门闩（liked || liking 时直接返回）',
+    /if \(liked\.value \|\| liking\.value\) return;/.test(ci)
+  );
+  ok(
+    'liking 在 finally 里复位（失败后仍可重试）',
+    /async function likeComment\(\)[\s\S]*?finally \{\s*\n\s*liking\.value = false;/.test(ci),
+    '不复位的话一次网络失败会让这条评论永久无法点赞'
+  );
+  ok(
+    '乐观更新失败会回滚',
+    ci.includes('Math.max(0, (props.comment.likes || 1) - 1)')
+  );
+  // 实测发现过一段嵌套两层的重复 try（编辑失误残留），清掉后加断言防回潮
+  ok(
+    '没有嵌套重复的 try 块',
+    !/try \{\s*\n\s*try \{/.test(ci),
+    '同一段 localStorage 写入被 try 包了两层'
+  );
+}
+
 console.log('\n【目录跳转要把焦点送到目标标题】');
 {
   // 实测：点目录后滚动生效但焦点掉到 body ——
