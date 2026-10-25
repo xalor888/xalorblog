@@ -370,6 +370,23 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【帮助面板列出的快捷键必须真的能用】');
+{
+  // 实测缺陷：帮助面板里写着「Ctrl/Cmd K 打开全局搜索」，
+  // 但整个代码库里**没有任何 ctrlKey / metaKey 处理器** ——
+  // 文档承诺了一个从未实现的快捷键。"/" 能用，Ctrl+K 不能。
+  const layout = read('../src/views/site/Layout.vue');
+  ok('实现了 Ctrl/Cmd K', /e\.ctrlKey \|\| e\.metaKey/.test(layout) && /e\.key === 'k' \|\| e\.key === 'K'/.test(layout));
+  ok('Ctrl+K 打开搜索（不是别的东西）', /ctrlKey[\s\S]{0,140}openSearch\(\)/.test(layout));
+  // Cmd 键也要支持（macOS 用户按的是 Cmd）
+  ok('同时支持 metaKey（macOS）', /metaKey/.test(layout));
+  // "/" 在输入框内要被抑制 —— 否则搜不了带斜杠的关键词
+  ok('"/" 在输入框内不触发', /tag === 'INPUT' \|\| tag === 'TEXTAREA'/.test(layout));
+  // 面板里列出的条目不能超出实际实现
+  const help = read('../src/components/ui/ShortcutHelp.vue');
+  ok('帮助面板仍列出 Ctrl/Cmd K', /Ctrl\/Cmd K/.test(help));
+}
+
 console.log('\n【搜索：SQL 通配符必须按字面量处理】');
 {
   // 实测边界：空关键词 → 6 篇；"Vue" → 2 篇；"%" / "_" / "'" / 200 个 a → 0 篇且有空状态。

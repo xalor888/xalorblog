@@ -517,6 +517,14 @@ function onGlobalKeydown(e) {
     closeMobile();
     return;
   }
+  // Ctrl/Cmd + K：帮助面板里一直列着这条，但**从来没实现过** ——
+  // 文档承诺了一个不存在的快捷键。这里补上。
+  // 它比 "/" 更该优先：多数键盘布局上 "/" 要按 Shift，且部分布局根本没有这个键位。
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    openSearch();
+    return;
+  }
   if (e.key !== '/') return;
   const tag = e.target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
