@@ -34,13 +34,18 @@ import XIcon from '@/components/ui/XIcon.vue';
 import ArticleCard from '@/components/site/ArticleCard.vue';
 import { getBookmarks, removeBookmark, clearBookmarks } from '@/utils/bookmark';
 import { useSiteStore } from '@/stores/site';
+import { applyPageMeta } from '@/utils/pageMeta';
 
 const site = useSiteStore();
 
 // 浏览器标签页标题
 watchEffect(() => {
   const siteName = site.settings.site_name || 'Xalor的小站';
-  document.title = `我的收藏 · ${siteName}`;
+  const pageTitle = '我的收藏';
+  document.title = `${pageTitle} · ${siteName}`;
+  // 元信息与标题同源设置：canonical / og:url / og:image 缺一都会让分享卡片降级
+
+  applyPageMeta({ title: pageTitle, description: '我在本站收藏的文章', path: '/bookmarks', site });
 });
 
 const bookmarks = ref(getBookmarks());

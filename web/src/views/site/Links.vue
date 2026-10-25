@@ -81,6 +81,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { linkApi } from '@/api';
 import { getFormTokenInfo, refreshFormToken, getHpField } from '@/utils/formToken';
 import { useSiteStore } from '@/stores/site';
+import { applyPageMeta } from '@/utils/pageMeta';
 
 // 浏览器标签页标题
 
@@ -88,7 +89,11 @@ const site = useSiteStore();
 
 watchEffect(() => {
   const siteName = site.settings.site_name || 'Xalor的小站';
-  document.title = `友情链接 · ${siteName}`;
+  const pageTitle = '友情链接';
+  document.title = `${pageTitle} · ${siteName}`;
+  // 元信息与标题同源设置：canonical / og:url / og:image 缺一都会让分享卡片降级
+
+  applyPageMeta({ title: pageTitle, description: '友链与申请方式', path: '/links', site });
 });
 const mailNotify = computed(() => !!site.settings.mail_notify);
 const links = ref([]);

@@ -42,6 +42,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import { useSiteStore } from '@/stores/site';
 import { renderMarkdown, addImgAttrs } from '@/utils/markdown';
 import { formatNumber } from '@/utils/format';
+import { applyPageMeta } from '@/utils/pageMeta';
 
 // 浏览器标签页标题
 
@@ -49,7 +50,11 @@ const site = useSiteStore();
 
 watchEffect(() => {
   const siteName = site.settings.site_name || 'Xalor的小站';
-  document.title = `关于 · ${siteName}`;
+  const pageTitle = '关于';
+  document.title = `${pageTitle} · ${siteName}`;
+  // 元信息与标题同源设置：canonical / og:url / og:image 缺一都会让分享卡片降级
+
+  applyPageMeta({ title: pageTitle, description: '关于我，以及这个站点', path: '/about', site });
 });
 
 const socials = computed(() => {

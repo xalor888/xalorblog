@@ -41,13 +41,18 @@
 import { ref, onMounted, watchEffect } from 'vue';
 import { tagApi } from '@/api';
 import { useSiteStore } from '@/stores/site';
+import { applyPageMeta } from '@/utils/pageMeta';
 
 const site = useSiteStore();
 
 // 浏览器标签页标题
 watchEffect(() => {
   const siteName = site.settings.site_name || 'Xalor的小站';
-  document.title = `标签云 · ${siteName}`;
+  const pageTitle = '标签云';
+  document.title = `${pageTitle} · ${siteName}`;
+  // 元信息与标题同源设置：canonical / og:url / og:image 缺一都会让分享卡片降级
+
+  applyPageMeta({ title: pageTitle, description: '全部标签，按文章数量排序', path: '/tags', site });
 });
 
 const tags = ref([]);

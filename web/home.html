@@ -29,7 +29,8 @@
     <meta property="og:title" content="Xalor 的个人主页" />
     <meta property="og:description" content="留下手记、日常和朋友。" />
     <meta property="og:site_name" content="Xalor" />
-    <meta property="og:image" content="/og-image.webp" />
+    <!-- og:image 不在这里硬编码：相对路径会被社交平台忽略（要求绝对 URL），
+         改由 src/utils/pageMeta.js 在运行时按站点域名绝对化后写入。 -->
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="Xalor 的个人主页" />
     <meta name="twitter:description" content="留下手记、日常和朋友。" />

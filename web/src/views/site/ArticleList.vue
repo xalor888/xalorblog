@@ -286,6 +286,7 @@ import { ref, computed, watch, watchEffect, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import SkeletonList from '@/components/ui/SkeletonList.vue';
+import { applyPageMeta } from '@/utils/pageMeta';
 import { articleApi, categoryApi, tagApi } from '@/api';
 import { formatDate, formatNumber } from '@/utils/format';
 import { useSiteStore } from '@/stores/site';
@@ -566,19 +567,27 @@ watch(filterKey, () => {
   window.scrollTo({ top: 0 });
 });
 
-// 浏览器标签页标题与当前筛选联动
+// 浏览器标签页标题与当前筛选联动。
+// 统一走 applyPageMeta：原来这里只补了 description，
+// 没有 canonical / og:url，og:image 还是 HTML 里硬编码的相对路径
+// （社交平台要求绝对 URL，相对路径会被忽略 → 分享卡片没图）。
 watchEffect(() => {
   const siteName = site.settings.site_name || 'Xalor的小站';
   document.title = `${pageTitle.value} · ${siteName}`;
-  // meta description 同步（浏览器/分享预览语义化）
-  const desc = `浏览${pageTitle.value}——按分类、标签或关键词筛选的博客文章列表`;
-  let el = document.querySelector('meta[name="description"]');
-  if (!el) {
-    el = document.createElement('meta');
-    el.setAttribute('name', 'description');
-    document.head.appendChild(el);
+  // canonical 与 og:url 要带上当前筛选，否则「搜 mysql」和「全部文章」
+  // 会指向同一个规范地址，重复内容
+  const q = route.query;
+  const params = new URLSearchParams();
+  for (const k of ['keyword', 'tag', 'category', 'page', 'pageSize', 'sort']) {
+    if (q[k]) params.set(k, String(q[k]));
   }
-  el.setAttribute('content', desc);
+  const qs = params.toString();
+  applyPageMeta({
+    title: pageTitle.value,
+    description: `浏览${pageTitle.value}——按分类、标签或关键词筛选的博客文章列表`,
+    path: '/articles' + (qs ? `?${qs}` : ''),
+    site,
+  });
 });
 
 /**

@@ -323,6 +323,36 @@ console.log('\n【首屏启动态：JS 到达前不能是纯白】');
   }
 }
 
+console.log('\n【分享元信息：og:image 必须是绝对 URL】');
+{
+  // 实测四类页面原本的差异：
+  //   文章页 og:url✓ canonical✓ og:image绝对✓
+  //   列表/标签/关于 og:url✗ canonical✗ og:image 是 HTML 里硬编码的 /og-image.webp
+  // 社交平台要求绝对 URL，相对路径直接被忽略 → 分享卡片没有配图。
+  const meta = read('../src/utils/pageMeta.js');
+  ok('有统一的 pageMeta 工具', /export function applyPageMeta/.test(meta));
+  ok('og:image 会绝对化', /export function absoluteUrl/.test(meta));
+  ok(
+    'twitter:* 按 name 写入（不是 property）',
+    /function setMetaByName/.test(meta),
+    'setMeta 按 ":" 判 property，会把 twitter:card 写成 property，Twitter 读不到'
+  );
+  ok('每页都写 canonical 与 og:url', meta.includes("'og:url'") && meta.includes("'canonical'"));
+
+  for (const [f, label] of [['../index.html', '博客'], ['../home.html', '个人主页']]) {
+    ok(
+      `${label}入口不再硬编码相对 og:image`,
+      !/property="og:image" content="\/og-image\.webp"/.test(read(f)),
+      '相对路径会被平台忽略，必须由 pageMeta 在运行时绝对化'
+    );
+  }
+
+  // 六个页面都接上了统一工具
+  for (const f of ['ArticleList', 'Tags', 'About', 'Archive', 'Links', 'Bookmarks']) {
+    ok(`${f} 页接了 applyPageMeta`, /applyPageMeta/.test(read(`../src/views/site/${f}.vue`)));
+  }
+}
+
 console.log('\n【启动失败兜底：不能永远停在「加载中」】');
 {
   // 实测：阻断 vue 依赖后 main.js 整个 import 失败，一行都不会执行，

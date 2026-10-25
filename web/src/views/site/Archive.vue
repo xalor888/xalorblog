@@ -56,13 +56,18 @@ import { ref, computed, onMounted, watchEffect } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import { articleApi } from '@/api';
 import { useSiteStore } from '@/stores/site';
+import { applyPageMeta } from '@/utils/pageMeta';
 
 const site = useSiteStore();
 
 // 浏览器标签页标题
 watchEffect(() => {
   const siteName = site.settings.site_name || 'Xalor的小站';
-  document.title = `归档 · ${siteName}`;
+  const pageTitle = '归档';
+  document.title = `${pageTitle} · ${siteName}`;
+  // 元信息与标题同源设置：canonical / og:url / og:image 缺一都会让分享卡片降级
+
+  applyPageMeta({ title: pageTitle, description: '按时间浏览全部文章', path: '/archive', site });
 });
 
 /** 年份快捷导航：平滑滚动到对应分组 */

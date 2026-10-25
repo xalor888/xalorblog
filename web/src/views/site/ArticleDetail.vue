@@ -785,9 +785,28 @@ function applyPageMeta() {
         ? a.cover
         : `${String(site.settings.site_url || window.location.origin).replace(/\/+$/, '')}${a.cover.startsWith('/') ? '' : '/'}${a.cover}`)
     : '';
-  if (cover) setMeta('og:image', cover);
+  // 无封面时回退站点默认图 —— 否则分享卡片完全没有配图。
+  // （HTML 里原先硬编码的 /og-image.webp 已移除：相对路径会被社交平台忽略。）
+  const ogImage = cover || site.settings.og_image || '/og-image.webp';
+  if (ogImage) {
+    const abs = /^https?:\/\//i.test(ogImage)
+      ? ogImage
+      : `${(site.settings.site_url || '').replace(/\/$/, '') || location.origin}${ogImage.startsWith('/') ? '' : '/'}${ogImage}`;
+    setMeta('og:image', abs);
+    setMeta('twitter:image', abs);
+  }
   // Twitter 卡片：有封面用大图卡，否则摘要卡
-  setMeta('twitter:card', cover ? 'summary_large_image' : 'summary');
+  // twitter:* 用 name 属性，而 setMeta 按 ':' 会写成 property —— Twitter 读不到。
+  // 这里显式按 name 写。
+  (function setByName(name, content) {
+    let el = document.querySelector(`meta[name="${name}"]`);
+    if (!el) {
+      el = document.createElement('meta');
+      el.setAttribute('name', name);
+      document.head.appendChild(el);
+    }
+    el.setAttribute('content', content);
+  })('twitter:card', ogImage ? 'summary_large_image' : 'summary');
   setMeta('twitter:title', `${a.title} · ${name}`);
   setMeta('twitter:description', (a.summary || a.title).slice(0, 200));
   if (cover) setMeta('twitter:image', cover);
