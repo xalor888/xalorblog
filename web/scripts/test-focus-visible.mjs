@@ -370,6 +370,29 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   ok("app.disable('etag') 仍在（安全取舍，别为了省事打开）", /app\.disable\('etag'\)/.test(app));
 }
 
+console.log('\n【主页设置改完要真的出现在前台，建站天数不能算出负数或 NaN】');
+{
+  // 实测：把 greeting 改「探针问候」、role 改「探针头衔」保存 →
+  // 前台 home.html 上**两处都出现了**（不是只存了库、页面没变）。
+  //
+  // 建站天数单独验了边界。代码：非法/空值退回 '2024-01-01'，
+  // Math.floor 后 `diff > 0 ? diff : 1`。四种输入实跑：
+  //   空值 → 1029、非法 'abc' → 1029（退回保底，不崩）、
+  //   未来日期 2030-01-01 → 1、今天 → 1。
+  // 没有负数、没有 NaN。（我手算过一次得 1028，那是我按 UTC 算的时区差，
+  // 代码用的是本地时间，1029 才是对的 —— 记一下，免得下次又怀疑它。）
+  const home = read('../../server/src/routes/home.js');
+  const fn = (home.match(/function runningDays[\s\S]{0,420}/) || [''])[0];
+  ok('非法日期退回保底', /'2024-01-01'/.test(fn));
+  ok('天数不会为负或零', /diff > 0 \? diff : 1/.test(fn), (fn.match(/return diff[^;]*/) || [''])[0].slice(0, 30));
+  ok('start 非有限数有兜底', /Number\.isFinite\(start\)/.test(fn));
+  ok('since_date 有默认值', /home_since_date \|\| '2024-01-01'/.test(home));
+
+  // 设置项要能被前台读到（不是只写进库就没下文）
+  ok('主页接口吐出 since_date', /since_date/.test(home));
+  ok('主页接口读设置表', /settings\./.test(home));
+}
+
 console.log('\n【主页设置：那个「重置」其实不是重置，而且一按就执行】');
 {
   // 实测原状：按钮叫「重置」，但 `load()` 是**重新拉服务端配置**，
