@@ -46,7 +46,7 @@ cd web && npm install && npm run dev
 ```bash
 cd server
 npm test          # 70 个离线套件 + WAF 模糊测试（零 DB、零端口；串行 50 秒左右）
-DB_NAME=xalor_blog_scratch npm run test:all  # 17 个集成套件（会写库：库名必须以 _scratch 结尾，否则拒绝执行）
+DB_NAME=xalor_blog_scratch npm run test:all  # 18 个集成套件（会写库：库名必须以 _scratch 结尾，否则拒绝执行）
 npm run e2e       # 端到端冒烟：PoW → 票据 → X-Sig 签名 → 业务接口（只读，不碰库）
 npm run bench     # 观测：只读接口的 SQL 条数 / 耗时 / EXPLAIN（不是门禁）
 ```

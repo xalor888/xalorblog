@@ -21,7 +21,7 @@ Vue 3 + Vite + Pinia 前端 与 Express + Knex + MySQL 8 后端组成的**个人
 | 目录 | 文件 | 行数 | 说明 |
 |---|---:|---:|---|
 | `server/src` | 61 | 14,317 | 18 个路由 + 12 个中间件 + 26 个工具 + 迁移/种子 |
-| `server/test` | 83 | 14024 | **80 个 `*.test.js`**（70 个在离线链、17 个在集成链，**其中 7 个两条链都跑**；并集 = 79，无孤儿）+ `run.js` + `helpers/` + WAF 语料 + `run-mac.sh` |
+| `server/test` | 83 | 14024 | **81 个 `*.test.js`**（70 个在离线链、18 个在集成链，**其中 7 个两条链都跑**；并集 = 80，无孤儿）+ `run.js` + `helpers/` + WAF 语料 + `run-mac.sh` |
 | `server/scripts` | 2 | 490 | `bench-read-paths.js`（SQL 基线）+ `e2e-smoke.js`（端到端冒烟） |
 | `web/src` | 102 | 33,083 | 35 个视图 + 14 个组件 + 30 个工具 + 5 store + 2 composables + 3 个图片资源（不计行） |
 | `web/public` | 15 | 467 | `theme-init.js` / `boot-guard.js` / `anti-debug.js`（不进打包）+ 图标/manifest（8 个二进制不计行） |
@@ -691,4 +691,4 @@ test-gate-integrity      **元门禁**：每道门禁能让 build 变红、在�
 
 ### 15.5 计数现状
 
-离线套件 **68**、集成套件 **17**、构建门禁 **36**、`*.test.js` **78**。
+离线套件 **70**、集成套件 **18**、构建门禁 **37**、`*.test.js` **81**。
