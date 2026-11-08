@@ -154,6 +154,25 @@ async function main() {
       const names = new Set(rows.map((r) => r.Key_name));
       assert.ok(names.has('idx_notes_status_published_at'), [...names].join(','));
     });
+    await okAsync('**notes 有 idx_notes_public_sort（手记列表的覆盖索引）**', async () => {
+      const rows = (await db.raw('SHOW INDEX FROM `notes`'))[0];
+      const names = new Set(rows.map((r) => r.Key_name));
+      assert.ok(names.has('idx_notes_public_sort'), [...names].join(','));
+      // 列顺序必须是 (status, is_pinned, published_at, id)：顺序错了就覆盖不到排序键
+      const cols = rows
+        .filter((r) => r.Key_name === 'idx_notes_public_sort')
+        .sort((a, b) => Number(a.Seq_in_index) - Number(b.Seq_in_index))
+        .map((r) => r.Column_name);
+      assert.deepStrictEqual(cols, ['status', 'is_pinned', 'published_at', 'id'], cols.join(','));
+    });
+    await okAsync('新库**不该**有那三条冗余索引（ensureIndex 已改成 dropRedundantIndex）', async () => {
+      const offenders = [];
+      for (const [t, name] of [['visits', 'idx_visits_day'], ['visit_uv', 'idx_visit_uv_day'], ['sessions', 'idx_sessions_jti']]) {
+        const rows = (await db.raw(`SHOW INDEX FROM \`${t}\``))[0];
+        if (rows.some((r) => r.Key_name === name)) offenders.push(`${t}.${name}`);
+      }
+      assert.deepStrictEqual(offenders, [], offenders.join(', '));
+    });
     await okAsync('**articles 有 idx_articles_status_published_at**', async () => {
       const rows = (await db.raw('SHOW INDEX FROM `articles`'))[0];
       const names = new Set(rows.map((r) => r.Key_name));

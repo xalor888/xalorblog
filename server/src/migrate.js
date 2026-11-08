@@ -447,9 +447,12 @@ async function migrate() {
   await ensureIndex('article_tags', 'idx_article_tags_tag_id', ['tag_id']);
   // 文章标签反查（列表/详情聚合）
   await ensureIndex('article_tags', 'idx_article_tags_article_id', ['article_id']);
-  await ensureIndex('visits', 'idx_visits_day', ['day']);
-  // UV 去重查询按 day
-  await ensureIndex('visit_uv', 'idx_visit_uv_day', ['day']);
+  // ⚠ 这两条原来都是 `ensureIndex(...)` —— 而建表时已经用 `.unique()` 产出了
+  // `visits_day_unique` / `visit_uv_day_h_unique`。结果是**每个新库都自带两条重复索引**：
+  // 写入维护两棵 B+ 树，读路径只用得到一条。判定交给分类器（它支持「左前缀覆盖」），
+  // 老库会自愈、新库本来就不会再建。
+  await dropRedundantIndex('visits', 'idx_visits_day', 'visits_day_unique');
+  await dropRedundantIndex('visit_uv', 'idx_visit_uv_day', 'visit_uv_day_h_unique');
   // 手记列表的排序键是 (is_pinned DESC, published_at DESC, id DESC)，最左的 is_pinned
   // 不在任何索引里 —— 复合索引只能覆盖「等值列之后」的排序键，缺最左键就整体用不上，
   // 所以 EXPLAIN 一直有 Using filesort。实测（notesSortIndex.test.js 的探针组）：
@@ -458,8 +461,9 @@ async function migrate() {
   // 数据量小的时候这条只是「顺手」，但它是**唯一**有效的那条，且成本仅是写放大一点点。
   await ensureIndex('notes', 'idx_notes_public_sort', ['status', 'is_pinned', 'published_at', 'id']);
   await ensureIndex('sessions', 'idx_sessions_user_id', ['user_id']);
-  // 每次认证按 jti 查会话（高频读路径）
-  await ensureIndex('sessions', 'idx_sessions_jti', ['jti']);
+  // `jti` 本身就是主键（`t.string('jti', 64).primary()`），这条普通索引是纯冗余：
+  // 同列已有 UNIQUE 的 PRIMARY，再建一条只让写入多维护一棵树。老库删、新库不建。
+  await dropRedundantIndex('sessions', 'idx_sessions_jti', 'PRIMARY');
   // 留言板状态筛选与排序
   await ensureIndex('messages', 'idx_messages_status_created', ['status', 'created_at']);
   // 友链状态筛选

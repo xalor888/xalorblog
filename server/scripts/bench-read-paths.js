@@ -166,6 +166,25 @@ async function main() {
     },
   ];
 
+  /**
+   * 预算表：**SQL 条数与响应体积**的上限。耗时不上预算（受机器负载影响，只作趋势）。
+   *
+   * 为什么值得做成门禁：这些优化当初只有「优化过」的说法，没有防线 —— 只要有人在
+   * 列表 handler 里为每条记录再查一次库，一切照常绿，只是每页多打 N+1 条 SQL。
+   * SQL 条数与缓存/查询结构直接相关、不受数据行数影响，是这里唯一能稳定断言的数字。
+   *
+   * 余量口径：cold 给实测值本身（缓存失效后应当精确可数）；体积给 +15%（内容会自然增长）。
+   * 热路径要求严格为 0（有缓存就该 0 条）；没接 invalidate 的用例（notes/tags）不设热预算。
+   */
+  const BUDGET = {
+    'GET /api/articles/archive': { cold: 1, warm: 0, size: 700 },
+    'GET /api/home/summary': { cold: 5, warm: 0, size: 1800 },
+    'GET /api/notes (page=1)': { cold: 2, size: 150 },
+    'GET /api/share-page/articles': { cold: 1, warm: 0, size: 2900 },
+    'GET /api/tags': { cold: 1, size: 620 },
+  };
+  const assertMode = process.argv.includes('--assert');
+  const overBudget = [];
   // 先说清楚基线是在什么数据规模下测的 —— 否则耗时数字会被误读
   const counts = {};
   for (const t of ['articles', 'notes', 'comments', 'tags', 'categories', 'links', 'messages']) {
@@ -210,6 +229,15 @@ async function main() {
       + `${fmt(median(cold.ms)).padStart(10)} ${fmt(median(warm.ms)).padStart(10)} ${String(size).padStart(8)}`
     );
     if (status !== 200) console.log(`  ⚠ 状态码 ${status}`);
+    // 预算比对（--assert 时用于判定红绿；平时只是打印）
+    const b = BUDGET[c.name];
+    if (b) {
+      if (median(cold.sql) > b.cold) overBudget.push(`${c.name}: 冷 SQL ${median(cold.sql)} > 预算 ${b.cold}`);
+      if (b.warm != null && median(warm.sql) > b.warm) overBudget.push(`${c.name}: 热 SQL ${median(warm.sql)} > 预算 ${b.warm}`);
+      if (size > b.size) overBudget.push(`${c.name}: 体积 ${size}B > 预算 ${b.size}B`);
+    } else {
+      overBudget.push(`${c.name}: 没有预算条目（新增用例必须登记，否则等于没有防线）`);
+    }
   }
 
   console.log('-'.repeat(78));
@@ -255,8 +283,13 @@ async function main() {
         .limit(5000).select('id', 'title', 'slug', 'published_at').toString(),
     },
     {
-      label: '手记列表（status + id desc）',
-      sql: db('notes').where('status', 'published').orderBy('id', 'desc').limit(10).select('id').toString(),
+      // ⚠ 这里的 SQL 必须与 routes/notes.js 的**真实排序键一致**（is_pinned → published_at → id）。
+      // 旧版写的是 `order by id desc`（简化版），于是 EXPLAIN 一直在报「Using filesort」，
+      // 而站点从来不跑那条语句 —— 一个不存在的慢查询被记录了十几轮，真正的成因与被修好的结果都被它盖住。
+      label: '手记列表（status + is_pinned/published_at/id desc，与 routes/notes.js 同形）',
+      sql: db('notes').where('status', 'published')
+        .orderBy([{ column: 'is_pinned', order: 'desc' }, { column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }])
+        .limit(10).select('id').toString(),
     },
     {
       label: '文章列表（status + published_at desc + 分页）',
@@ -277,12 +310,29 @@ async function main() {
       const scan = first.rows == null ? '-' : first.rows;
       console.log(`  · ${p.label}`);
       console.log(`      type=${type}  key=${key}  预估扫描=${scan}${extra}`);
+      // 手记这条查询有覆盖索引可用；仍然 filesort 只说明**当前这个库没迁移那条索引**
+      // （生产库就是这种情况 —— migrate.js 里有，但没执行过）。把这句话打出来，
+      // 免得下次有人看着 filesort 去重写 SQL。
+      if (/手记/.test(p.label) && /filesort/i.test(String(extra))) {
+        console.log('      ⚠ 仍在使用 filesort：当前库缺少 idx_notes_public_sort ——');
+        console.log('        跑 `node src/migrate.js` 后再看这里，应变成 Covering index lookup (reverse)');
+      }
     } catch (e) {
       console.log(`  · ${p.label} → EXPLAIN 失败：${e && e.message}`);
     }
   }
 
+  console.log('\n预算判定（--assert 时决定红绿）');
+  if (overBudget.length === 0) {
+    console.log('  ✓ 全部用例在预算内');
+  } else {
+    for (const o of overBudget) console.log('  ✗ ' + o);
+    console.log('  说明：SQL 条数上升通常意味着新增了一次查询或缓存没失效；');
+    console.log('        确认是有意的之后，改本文件的 BUDGET 并在提交信息里写清原因。');
+  }
+
   await db.destroy();
+  if (assertMode && overBudget.length) process.exit(1);
 }
 
 main().catch(async (e) => {

@@ -79,6 +79,31 @@ console.log('\n=== C. 多列同序时应当删除 ===');
     classifyRedundantIndex(rows, 'dup_ab', 'uniq_ab').drop === true);
 }
 
+console.log('\n=== C2. 左前缀覆盖（短索引被联合唯一索引包住） ===');
+{
+  const rows = [
+    row('uv_unique', 'day', 1, true), row('uv_unique', 'h', 2, true),
+    row('idx_day', 'day', 1, false),
+  ];
+  const v = classifyRedundantIndex(rows, 'idx_day', 'uv_unique');
+  ok('(day) 被 UNIQUE (day,h) 左前缀覆盖 → 可删', v.drop === true, JSON.stringify(v));
+  ok('理由里写明「左前缀」而不是「完全覆盖」', /左前缀/.test(v.reason), v.reason);
+
+  const reversed = [
+    row('u2', 'h', 1, true), row('u2', 'day', 2, true),
+    row('idx_day2', 'day', 1, false),
+  ];
+  ok('顺序相反（day 不是 (h,day) 的前缀）→ 不删',
+    classifyRedundantIndex(reversed, 'idx_day2', 'u2').drop === false);
+
+  const notUniquePrefix = [
+    row('plain_ab', 'a', 1, false), row('plain_ab', 'b', 2, false),
+    row('plain_a', 'a', 1, false),
+  ];
+  ok('覆盖者不是 UNIQUE 时，左前缀也不删（不替人做优化决定）',
+    classifyRedundantIndex(notUniquePrefix, 'plain_a', 'plain_ab').drop === false);
+}
+
 console.log('\n=== D. 脏输入不炸 ===');
 ok('空数组 → 不删', classifyRedundantIndex([], 'a', 'b').drop === false);
 ok('null → 不删', classifyRedundantIndex(null, 'a', 'b').drop === false);
@@ -101,6 +126,17 @@ console.log('\n=== E. 源码契约：migrate 不再建重复索引 ===');
     /dropRedundantIndex\('articles',\s*'idx_articles_slug',\s*'articles_slug_unique'\)/.test(code));
   ok('删索引前先查 SHOW INDEX（不能盲删）',
     /SHOW INDEX FROM/.test(code) && /classifyRedundantIndex\(rows, indexName, keeperName\)/.test(code));
+
+  // Q7 的三条（此前「需逐个人工确认」）：结论都是「删」，而且不能再用 ensureIndex 建回来
+  ok('visits.idx_visits_day 改为删除（被 visits_day_unique 完全覆盖）',
+    /dropRedundantIndex\('visits',\s*'idx_visits_day',\s*'visits_day_unique'\)/.test(code)
+    && !/ensureIndex\('visits',\s*'idx_visits_day'/.test(code));
+  ok('visit_uv.idx_visit_uv_day 改为删除（被 (day,h) 左前缀覆盖）',
+    /dropRedundantIndex\('visit_uv',\s*'idx_visit_uv_day',\s*'visit_uv_day_h_unique'\)/.test(code)
+    && !/ensureIndex\('visit_uv',\s*'idx_visit_uv_day'/.test(code));
+  ok('sessions.idx_sessions_jti 改为删除（jti 本身就是主键）',
+    /dropRedundantIndex\('sessions',\s*'idx_sessions_jti',\s*'PRIMARY'\)/.test(code)
+    && !/ensureIndex\('sessions',\s*'idx_sessions_jti'/.test(code));
 }
 
 console.log(`\nredundantIndex 套件结果: ${pass} 通过, ${fail} 失败`);
