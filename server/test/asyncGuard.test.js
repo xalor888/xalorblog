@@ -136,14 +136,20 @@ console.log('\n=== B. async rejection 必须走到 next（核心）===');
               const path = require('path');
               const dir = path.join(__dirname, '..', 'src', 'routes');
               const offenders = [];
+              const { stripCommentLines } = require('./helpers/sourceText');
               const re = /router\.(get|post|put|delete|patch)\(\s*'([^']+)'\s*,\s*(asyncGuard\()?async\s*\(\s*req\s*,\s*res\s*\)\s*=>\s*\{/g;
               for (const f of fs.readdirSync(dir)) {
                 if (!f.endsWith('.js')) continue;
-                const src = fs.readFileSync(path.join(dir, f), 'utf8');
+                // 必须剥注释再判：`if (/try {/在窗口内)` 会把「注释里写了 try {」当成有保护，
+                // 也能被「先写一大段注释把真正的 handler 头推出窗口」反向利用。
+                const raw = fs.readFileSync(path.join(dir, f), 'utf8');
+                const src = stripCommentLines(raw);
                 let m;
                 while ((m = re.exec(src))) {
                   if (m[3]) continue;
-                  const window = src.slice(m.index, m.index + 500);
+                  // 窗口 1200 字符（原来 500）：handler 开头常有几行注释/参数解构，
+                  // 500 会让「有 try 但开头较长」的 handler 被误报。
+                  const window = src.slice(m.index, m.index + 1200);
                   if (/try\s*\{/.test(window)) continue;
                   const line = src.slice(0, m.index).split('\n').length;
                   offenders.push(`${f}:${line} ${m[2]}`);
@@ -180,6 +186,20 @@ console.log('\n=== B. async rejection 必须走到 next（核心）===');
               check('自检：已包装的会被识别为已处理', () => {
                 assert.ok(mm2);
                 assert.strictEqual(mm2[3], 'asyncGuard(');
+              });
+
+              // 扫描必须先剥注释：注释里出现 `try {` 不能当成「handler 有 try」
+              check('自检：注释里的 try { 不会骗过判据', () => {
+                const { stripCommentLines } = require('./helpers/sourceText');
+                const commented = [
+                  "router.get('/x', async (req, res) => {",
+                  '  // 这里以前有 try { } 的保护，现在没了',
+                  '  await db();',
+                  '});',
+                ].join('\n');
+                const stripped = stripCommentLines(commented);
+                const win = stripped.slice(0, 1200);
+                assert.ok(!/try\s*\{/.test(win), '剥注释后仍然看到 try { —— 判据会被注释骗过');
               });
 
               // guard 真的有效：造一个会 reject 的 handler，确认 next 收到错误
