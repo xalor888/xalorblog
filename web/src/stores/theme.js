@@ -100,14 +100,20 @@ export const useThemeStore = defineStore('theme', () => {
     //   浏览器整条丢弃 → 深色下 EP 的 light-3/5/7/8/9 全部退回默认蓝）。
     const brightBase = isDark.value ? mix(accent.value, '#ffffff', 0.1) : accent.value;
     root.style.setProperty('--el-color-primary', brightBase);
+    // dark-2 语义上应当比 primary **更暗**（EP 用它做 hover/active 加深）。
+    // 旧值 mix(accent, white, 0.12) 反而更亮，与 primary(0.10) 只差 2% —— 视觉上等于同色。
     root.style.setProperty('--el-color-primary-dark-2', isDark.value
-      ? mix(accent.value, '#ffffff', 0.12)
+      ? mix(brightBase, '#12110f', 0.25)
       : shade(accent.value, 0.25));
-    root.style.setProperty('--el-color-primary-light-3', isDark.value ? mix(brightBase, '#12110f', 0.3) : mix(accent.value, '#ffffff', 0.55));
-    root.style.setProperty('--el-color-primary-light-5', isDark.value ? mix(brightBase, '#12110f', 0.55) : mix(accent.value, '#ffffff', 0.7));
-    root.style.setProperty('--el-color-primary-light-7', isDark.value ? mix(brightBase, '#12110f', 0.8) : mix(accent.value, '#ffffff', 0.85));
-    root.style.setProperty('--el-color-primary-light-8', isDark.value ? mix(brightBase, '#12110f', 0.88) : mix(accent.value, '#ffffff', 0.9));
-    root.style.setProperty('--el-color-primary-light-9', isDark.value ? mix(brightBase, '#12110f', 0.9) : mix(accent.value, '#ffffff', 0.95));
+    // light-N 阶梯：越往下越接近底色。旧系数（浅 .55/.70/.85/.90/.95、深 .30/.55/.80/.88/.90）
+    // 让 light-9 与页底对比度只有 1.00:1（浅）与 1.12:1（深）—— 选中/悬停填充几乎看不出来。
+    // 新系数把整条阶梯压进「可辨」区间，且保持单调（light-9 最淡）：实测对比度见
+    // scripts/test-derived-tokens.mjs 的【D】组（浅 1.24:1 / 深 1.38:1）。
+    root.style.setProperty('--el-color-primary-light-3', isDark.value ? mix(brightBase, '#12110f', 0.30) : mix(accent.value, '#ffffff', 0.40));
+    root.style.setProperty('--el-color-primary-light-5', isDark.value ? mix(brightBase, '#12110f', 0.50) : mix(accent.value, '#ffffff', 0.55));
+    root.style.setProperty('--el-color-primary-light-7', isDark.value ? mix(brightBase, '#12110f', 0.66) : mix(accent.value, '#ffffff', 0.66));
+    root.style.setProperty('--el-color-primary-light-8', isDark.value ? mix(brightBase, '#12110f', 0.72) : mix(accent.value, '#ffffff', 0.72));
+    root.style.setProperty('--el-color-primary-light-9', isDark.value ? mix(brightBase, '#12110f', 0.78) : mix(accent.value, '#ffffff', 0.78));
     // 移动端浏览器地址栏配色跟随主题（深色值与 --bg-dark 一致）
     const themeColor = document.querySelector('meta[name="theme-color"]');
     if (themeColor) themeColor.setAttribute('content', isDark.value ? '#12110f' : accent.value);

@@ -21,7 +21,7 @@ Vue 3 + Vite + Pinia 前端 与 Express + Knex + MySQL 8 后端组成的**个人
 | 目录 | 文件 | 行数 | 说明 |
 |---|---:|---:|---|
 | `server/src` | 61 | 14,317 | 18 个路由 + 12 个中间件 + 26 个工具 + 迁移/种子 |
-| `server/test` | 83 | 14024 | **75 个 `*.test.js`**（66 个在离线链、16 个在集成链，**其中 7 个两条链都跑**；并集 = 75，无孤儿）+ `run.js` + `helpers/` + WAF 语料 + `run-mac.sh` |
+| `server/test` | 83 | 14024 | **76 个 `*.test.js`**（67 个在离线链、16 个在集成链，**其中 7 个两条链都跑**；并集 = 75，无孤儿）+ `run.js` + `helpers/` + WAF 语料 + `run-mac.sh` |
 | `server/scripts` | 2 | 490 | `bench-read-paths.js`（SQL 基线）+ `e2e-smoke.js`（端到端冒烟） |
 | `web/src` | 102 | 33,083 | 35 个视图 + 14 个组件 + 30 个工具 + 5 store + 2 composables + 3 个图片资源（不计行） |
 | `web/public` | 15 | 467 | `theme-init.js` / `boot-guard.js` / `anti-debug.js`（不进打包）+ 图标/manifest（8 个二进制不计行） |

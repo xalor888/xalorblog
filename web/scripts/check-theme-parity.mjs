@@ -70,11 +70,13 @@ function expectVars(accentHex, dark) {
   const base = [r, g, b];
   const elPrimary = dark ? mixArr(base, WHITE, 0.1) : base;
   out['--el-color-primary'] = rgbStr(elPrimary);
-  out['--el-color-primary-dark-2'] = dark ? rgbStr(mixArr(base, WHITE, 0.12)) : rgbStr(shadeArr(base, 0.25));
-  // 深色下 light-N 是「拿提亮后的 primary 朝深底压暗」，浅色是「朝白混」
+  // 深色 dark-2 = 向页底压暗（2026-11-08 起；旧值向白混 0.12，比 primary 还亮）
+  out['--el-color-primary-dark-2'] = dark ? rgbStr(mixArr(elPrimary, PAGE, 0.25)) : rgbStr(shadeArr(base, 0.25));
+  // 深色下 light-N 是「拿提亮后的 primary 朝深底压暗」，浅色是「朝白混」。
+  // 系数与 theme.js / theme-init.js / main.css 四处同源（改一处就要改这四处）。
   const lightMix = dark
-    ? [[0.3], [0.55], [0.8], [0.88], [0.9]]
-    : [[0.55], [0.7], [0.85], [0.9], [0.95]];
+    ? [[0.30], [0.50], [0.66], [0.72], [0.78]]
+    : [[0.40], [0.55], [0.66], [0.72], [0.78]];
   const target = dark ? PAGE : WHITE;
   const from = dark ? elPrimary : base;
   [3, 5, 7, 8, 9].forEach((n, i) => {

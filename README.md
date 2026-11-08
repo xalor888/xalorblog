@@ -45,7 +45,7 @@ cd web && npm install && npm run dev
 
 ```bash
 cd server
-npm test          # 66 个离线套件 + WAF 模糊测试（零 DB、零端口；串行 50 秒左右）
+npm test          # 67 个离线套件 + WAF 模糊测试（零 DB、零端口；串行 50 秒左右）
 npm run test:all  # 16 个集成套件：需本机 MySQL 与已启动 API；⚠ 会清库
 npm run e2e       # 端到端冒烟：PoW → 票据 → X-Sig 签名 → 业务接口（只读，不碰库）
 npm run bench     # 观测：只读接口的 SQL 条数 / 耗时 / EXPLAIN（不是门禁）

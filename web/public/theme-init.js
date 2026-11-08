@@ -88,12 +88,14 @@
     // 「JS 未执行」的兜底，且同样由 theme.js 的公式算得，见 main.css 注释）。
     var baseRGB = [r, g, b];
     var elPrimary = dark ? mixArr(baseRGB, WHITE, 0.1) : baseRGB;
-    var elDark2 = dark ? mixArr(baseRGB, WHITE, 0.12) : shadeArr(baseRGB, 0.25);
-    var elLight3 = dark ? mixArr(elPrimary, PAGE, 0.3) : mixArr(baseRGB, WHITE, 0.55);
-    var elLight5 = dark ? mixArr(elPrimary, PAGE, 0.55) : mixArr(baseRGB, WHITE, 0.7);
-    var elLight7 = dark ? mixArr(elPrimary, PAGE, 0.8) : mixArr(baseRGB, WHITE, 0.85);
-    var elLight8 = dark ? mixArr(elPrimary, PAGE, 0.88) : mixArr(baseRGB, WHITE, 0.9);
-    var elLight9 = dark ? mixArr(elPrimary, PAGE, 0.9) : mixArr(baseRGB, WHITE, 0.95);
+    // 系数与 stories/theme.js 完全同一套（2026-11-08 调整：旧阶梯 light-9 与页底
+    // 只有 1.00:1（浅）/1.12:1（深），选中行与表头看不出被选中）。
+    var elDark2 = dark ? mixArr(elPrimary, PAGE, 0.25) : shadeArr(baseRGB, 0.25);
+    var elLight3 = dark ? mixArr(elPrimary, PAGE, 0.30) : mixArr(baseRGB, WHITE, 0.40);
+    var elLight5 = dark ? mixArr(elPrimary, PAGE, 0.50) : mixArr(baseRGB, WHITE, 0.55);
+    var elLight7 = dark ? mixArr(elPrimary, PAGE, 0.66) : mixArr(baseRGB, WHITE, 0.66);
+    var elLight8 = dark ? mixArr(elPrimary, PAGE, 0.72) : mixArr(baseRGB, WHITE, 0.72);
+    var elLight9 = dark ? mixArr(elPrimary, PAGE, 0.78) : mixArr(baseRGB, WHITE, 0.78);
     document.documentElement.style.setProperty('--el-color-primary', rgbStr(elPrimary));
     document.documentElement.style.setProperty('--el-color-primary-dark-2', rgbStr(elDark2));
     document.documentElement.style.setProperty('--el-color-primary-light-3', rgbStr(elLight3));

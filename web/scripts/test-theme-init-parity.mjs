@@ -110,8 +110,10 @@ function initCoef(varName, kind) {
       `var ${varName} = dark \\? mixArr\\(elPrimary, PAGE, ([\\d.]+)\\) : mixArr\\(baseRGB, WHITE, ([\\d.]+)\\);`
     ),
     // var elDark2 = dark ? mixArr(baseRGB, WHITE, 0.12) : shadeArr(baseRGB, 0.25);
+    // var elDark2 = dark ? mixArr(elPrimary, PAGE, 0.25) : shadeArr(baseRGB, 0.25);
+    // （2026-11-08：深色 dark-2 从「向白混」改成「向页底压暗」—— 它本来该比 primary 更暗）
     mixShade: new RegExp(
-      `var ${varName} = dark \\? mixArr\\(baseRGB, WHITE, ([\\d.]+)\\) : shadeArr\\(baseRGB, ([\\d.]+)\\);`
+      `var ${varName} = dark \\? mixArr\\(elPrimary, PAGE, ([\\d.]+)\\) : shadeArr\\(baseRGB, ([\\d.]+)\\);`
     ),
   };
   const m = initSrc.match(patterns[kind]);
@@ -128,8 +130,8 @@ function storeCoef(varName, kind) {
     ? (seg.match(/^'--el-color-primary',\s*brightBase\s*\)/) ? { dark: storeBrightRatio(), light: null } : null)
     : kind === 'mixShade'
       ? (() => {
-          const m = seg.match(/isDark\.value\s*\?\s*mix\(accent\.value, '#ffffff', ([\d.]+)\)\s*:\s*shade\(accent\.value, ([\d.]+)\)/);
-          return m ? { dark: num(m[1]), light: num(m[2]) } : null;
+          const m = seg.match(/isDark\.value\s*\?\s*mix\(brightBase, '(#[0-9a-f]{6})', ([\d.]+)\)\s*:\s*shade\(accent\.value, ([\d.]+)\)/i);
+          return m ? { dark: num(m[2]), light: num(m[3]), bg: m[1].toLowerCase() } : null;
         })()
       : (() => {
           const m = seg.match(/isDark\.value\s*\?\s*mix\(brightBase, '(#[0-9a-f]{6})', ([\d.]+)\)\s*:\s*mix\(accent\.value, '#ffffff', ([\d.]+)\)/i);
@@ -343,7 +345,7 @@ const RATIO_TABLE = {
   const codeOnly = initSrc
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-  ok('theme-init.js 里没有残留「深色调暗」写法（×0.72 那次缺陷）', !/0\.72/.test(codeOnly));
+  ok('theme-init.js 里没有残留「深色调暗」写法（×0.72 那次缺陷）', !/\*\s*0\.72/.test(codeOnly));
   ok(
     'theme-init.js 里没有「一个系数通吃整色」的调暗写法',
     !/var\s+f\s*=\s*dark\s*\?/.test(codeOnly)
