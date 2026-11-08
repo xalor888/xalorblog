@@ -204,7 +204,10 @@ async function llmModeration(text, ai) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
+    // redirect: 'error' —— 与 aiClient 一致：base URL 在保存时过了 SSRF 闸门，
+    // 但 fetch 默认跟随 302，一个公网地址可以把请求转到内网。审核链路同样吃这个亏。
     const res = await fetch(`${ai.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+      redirect: 'error',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

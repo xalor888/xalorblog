@@ -102,8 +102,32 @@ function isPrivateIPv6(str) {
  * @param {string} host 已去掉端口的 hostname（可带 IPv6 方括号）
  * @returns {boolean}
  */
+/**
+ * 把主机名先过一遍 WHATWG URL 规范化，再判私网。
+ *
+ * 为什么必须这一步：URL 解析器会把「数值型 IPv4」各种写法**归一化成点分十进制** ——
+ *   `2130706433` → `127.0.0.1`（十进制整数）
+ *   `127.1`      → `127.0.0.1`（缺段补零）
+ *   `0x7f.0.0.1` → `127.0.0.1`（十六进制段）
+ *   `0177.0.0.1` → `127.0.0.1`（八进制段）
+ * 而 isPrivateIPv4 只认四段十进制字面量，于是这些写法**全部被判成公网**
+ * —— 一个 SSRF 闸门就此被绕过（实测：isPrivateHost('2130706433') === false）。
+ * 规范化之后再判，四种写法都落回 127.0.0.1。
+ *
+ * 解析失败（如未加方括号的裸 IPv6）时退回原串，交给后面的 IPv6 分支处理。
+ */
+function canonicalHost(host) {
+  const raw = stripBrackets(host);
+  if (!raw) return '';
+  try {
+    return stripBrackets(new URL('http://' + raw).hostname);
+  } catch (e) {
+    return raw;
+  }
+}
+
 function isPrivateHost(host) {
-  const h = stripBrackets(host);
+  const h = canonicalHost(host);
   if (!h) return false;
   if (h.includes(':')) return isPrivateIPv6(h);
   return isPrivateIPv4(h);

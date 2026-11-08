@@ -177,6 +177,10 @@ async function* streamChat({ messages, tools = null, maxTokens = null, signal = 
       },
       body: JSON.stringify(body),
       signal: controller.signal,
+      // 不跟随重定向：base URL 在保存时已过 SSRF 闸门（isPrivateUrl），
+      // 但 fetch 默认会**跟随 302** —— 一个公网地址可以 302 到 169.254.169.254，
+      // 把「保存时合法的地址」变成运行时的内网请求。正经的 /chat/completions 不会重定向。
+      redirect: 'error',
     });
 
     if (!res.ok) {
@@ -261,6 +265,8 @@ async function chatOnce({ messages, maxTokens = 512 }) {
         max_tokens: maxTokens,
       }),
       signal: controller.signal,
+      // 同上：禁止重定向（见第一个 fetch 处的说明）
+      redirect: 'error',
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');

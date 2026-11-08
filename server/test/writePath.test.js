@@ -58,6 +58,12 @@ async function suite() {
   r = await c.req('GET', '/api/articles/slug/' + slug, { ticket, silent: true });
   assert('详情页立刻可读', r.status === 200 && !!r.body.data, `status=${r.status}`);
 
+  // 归档页有自己的 60 秒缓存（另一套失效链路）—— 发布后必须同时失效
+  r = await c.req('GET', '/api/articles/archive', { ticket, silent: true });
+  assert('归档页立刻包含新文章（归档缓存已失效）',
+    r.status === 200 && JSON.stringify(r.body.data || {}).includes(String(slug)),
+    `status=${r.status}`);
+
   console.log('\n=== B. 评论：待审 → 批准 → 前台可见（审核状态机） ===');
   // 默认 comment_moderation=false 时评论**直接通过**，所以先打开审核开关，
   // 否则这条链路根本没被走到（这正是「测试看起来绿、其实没测到目标」的典型形态）。
@@ -153,6 +159,28 @@ async function suite() {
       body: { comment_moderation: false }, ticket, headers: authHeaders, silent: true,
     });
     assert('恢复评论审核开关', r.status === 200, `status=${r.status}`);
+  }
+
+  console.log('\n=== E. 设置改动：主页摘要立刻反映 ===');
+  {
+    // `site_name` 在 /api/home/summary 里（免票、60s 缓存）。后台改完不清缓存的话，
+    // 访客看到旧站名最多一分钟 —— 而站长会以为「改了没生效」。
+    r = await c.req('GET', '/api/home/summary', { ticket, silent: true });
+    const before = r.body && r.body.data && r.body.data.site_name;
+    const probeName = `站点名-${stamp}`;
+    r = await c.req('PUT', adminBase + '/settings', {
+      body: { site_name: probeName }, ticket, headers: authHeaders, silent: true,
+    });
+    assert('改站名', r.status === 200, `status=${r.status} ${r.body && r.body.message}`);
+    r = await c.req('GET', '/api/home/summary', { ticket, silent: true });
+    const after = r.body && r.body.data && r.body.data.site_name;
+    assert('摘要里的站名立刻变了（摘要缓存被清）', after === probeName, `before=${before} after=${after}`);
+
+    // 恢复原值（别把测试站名留在库里）
+    r = await c.req('PUT', adminBase + '/settings', {
+      body: { site_name: before || 'Xalor' }, ticket, headers: authHeaders, silent: true,
+    });
+    assert('恢复原站名', r.status === 200, `status=${r.status}`);
   }
 
   console.log(`\nwritePath 套件结果: ${passed} 通过, ${failed} 失败`);

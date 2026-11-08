@@ -180,5 +180,33 @@ console.log('\n=== F. 脏输入不抛错（这些函数在保存与调用路径�
     isPrivateIPv6('::ffff:1:2:3') === false);
 }
 
+console.log('\n=== G. 数值型 IPv4 写法（URL 会归一化，旧判据会漏） ===');
+{
+  // 这五种写法在 WHATWG URL 里都等价于 127.0.0.1 / 10.0.0.1，
+  // 但旧版 isPrivateHost 只认「四段十进制」，全部判成公网 —— SSRF 闸门当场被绕。
+  const forms = [
+    ['2130706433', '十进制整数 = 127.0.0.1'],
+    ['127.1', '缺段补零 = 127.0.0.1'],
+    ['0x7f.0.0.1', '十六进制段 = 127.0.0.1'],
+    ['0177.0.0.1', '八进制段 = 127.0.0.1'],
+    ['0x0a.0.0.1', '十六进制段 = 10.0.0.1'],
+    ['169.254.169.254', '链路本地 / 云元数据（对照组）'],
+  ];
+  for (const [host, why] of forms) {
+    check(`数值型写法判为私网：${host}（${why}）`, isPrivateHost(host) === true);
+  }
+
+  // 反向：真公网地址不能被误判
+  for (const host of ['8.8.8.8', '1.1.1.1', '203.0.113.10', 'example.com']) {
+    check(`公网地址不误判：${host}`, isPrivateHost(host) === false);
+  }
+
+  check('自检：URL 规范化确实会改写这些写法', () => {
+    // 用同一个规范化路径确认「判据依赖的转换真的发生了」
+    const canonical = new URL('http://2130706433').hostname;
+    assert.strictEqual(canonical, '127.0.0.1', `规范化结果是 ${canonical}`);
+  });
+}
+
 console.log(`\nnetGuard 套件结果: ${passCount} 通过, ${failCount} 失败`);
 if (failCount) process.exit(1);
