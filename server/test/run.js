@@ -317,7 +317,7 @@ async function runTests() {
   // 传参可指定单个文件：node test/run.js security.test.js
   const suites = process.argv[2]
     ? [process.argv[2]]
-    : ['admin.test.js', '2fa.test.js', 'session.test.js', 'lockout.test.js', 'journey.test.js', 'waf.test.js', 'falsePositive.test.js', 'requestGuard.test.js', 'likeGuard.test.js', 'sanitize.test.js', 'feed.test.js', 'scrapeGuard.test.js', 'contentCrypto.test.js', 'browserCrypto.test.js', 'notes.test.js', 'security.test.js'];
+    : ['admin.test.js', '2fa.test.js', 'session.test.js', 'lockout.test.js', 'journey.test.js', 'writePath.test.js', 'waf.test.js', 'falsePositive.test.js', 'requestGuard.test.js', 'likeGuard.test.js', 'sanitize.test.js', 'feed.test.js', 'scrapeGuard.test.js', 'contentCrypto.test.js', 'browserCrypto.test.js', 'notes.test.js', 'security.test.js'];
 
   if (!process.argv[2]) warnOrphanSuites(suites);
 
