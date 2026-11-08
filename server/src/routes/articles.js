@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { ok, fail, notFound } = require('../utils/response');
+const { ok, fail, notFound, retryAfter } = require('../utils/response');
 const { encryptPayload } = require('../utils/crypto');
 const { escapeLike } = require('../utils/sanitize');
 const { report } = require('../middleware/ipGuard');
@@ -203,7 +203,8 @@ router.get('/slug/:slug', async (req, res) => {
       const scrape = noteArticleRead(req.ip, req.headers['x-fp'], row.slug);
       if (!scrape.ok) {
         report(req.ip, 'rate', `SCRAPE /articles/slug/${row.slug}`);
-        return res.status(429).json({ code: 1, message: '阅读过于频繁，请稍后再试' });
+        retryAfter(res, 60);
+    return res.status(429).json({ code: 1, message: '阅读过于频繁，请稍后再试' });
       }
     }
 
@@ -459,6 +460,7 @@ router.post('/:id/like', async (req, res) => {
     const ip = req.ip || 'unknown';
     if (!canLike(ip, id)) {
       report(ip, 'rate', `LIKE-FLOOD /articles/${id}`);
+      retryAfter(res, LIKE_WINDOW / 1000);
       return fail(res, '点赞太频繁啦，歇一会儿再点吧', 429);
     }
     const row = await db('articles').where('id', id).select('id', 'status').first();

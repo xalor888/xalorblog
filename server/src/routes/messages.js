@@ -1,7 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
-const { ok, fail } = require('../utils/response');
+const { ok, fail, retryAfter } = require('../utils/response');
 const { cleanText, cleanLine, safeEmail } = require('../utils/sanitize');
 const { honeypotCheck } = require('../middleware/antiBot');
 const { formTokenRequired } = require('../middleware/formToken');
@@ -84,7 +84,10 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForRe
       .where('content', cleanContent)
       .where('created_at', '>', localDateTimeStr(new Date(Date.now() - 30 * 60 * 1000)))
       .first('id');
-    if (dup) return fail(res, '内容重复，请勿重复提交', 429);
+    if (dup) {
+      retryAfter(res, 1800); // 同 IP 30 分钟查重窗口
+      return fail(res, '内容重复，请勿重复提交', 429);
+    }
 
     // 是否进入待审：站点开启「留言先审后发」后 AI 通过的留言仍需人工确认
     const { getAllSettings } = require('../utils/settings');

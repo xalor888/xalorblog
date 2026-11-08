@@ -36,4 +36,17 @@ function notFound(res, message = '资源不存在') {
   return res.status(404).json({ code: 1, message, data: null });
 }
 
-module.exports = { ok, fail, notFound };
+/**
+ * 429 时必须带 `Retry-After`（秒）。
+ *
+ * 为什么不放在 `fail()` 里自动加：`fail()` 拿不到「还要等多久」—— 那是各限流点自己的知识。
+ * 但每个 429 都应该有，否则客户端只能靠猜：是 3 秒还是 30 分钟？
+ * （前端读不到时间就只能立刻重试，反而加重限流；运维在 CDN 上也看不到可用的退避依据。）
+ */
+function retryAfter(res, seconds) {
+  const n = Math.max(1, Math.ceil(Number(seconds) || 1));
+  res.set('Retry-After', String(n));
+  return n;
+}
+
+module.exports = { ok, fail, notFound, retryAfter };

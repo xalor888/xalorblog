@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { ipKeyGenerator } = require('express-rate-limit');
 const db = require('../db');
-const { ok, fail } = require('../utils/response');
+const { ok, fail, retryAfter } = require('../utils/response');
 const { signToken, authRequired, revokeSession, revokeUserSessions, listSessions } = require('../middleware/auth');
 const { cleanLine } = require('../utils/sanitize');
 const { report } = require('../middleware/ipGuard');
@@ -196,6 +196,7 @@ router.post('/login', async (req, res) => {
       // 真正无休止的爆破会在每个锁定周期（5 次失败）各记一次分，最终仍会被 ipGuard 封禁。
       // 若在这里也记分，第 4 次被 429 打回的请求就会升级成 403 封禁，
       // 把「等 5 分钟可自愈」变成「等 15 分钟且翻倍」，与分级的初衷相反。
+      retryAfter(res, reservation.remain);
       return res.status(429).json({ code: 1, message: `登录失败过多，请 ${reservation.remain} 秒后再试` });
     }
     if (!reservation.ok) {

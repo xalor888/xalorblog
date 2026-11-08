@@ -15,7 +15,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
-const { ok, fail } = require('../utils/response');
+const { ok, fail, retryAfter } = require('../utils/response');
 const { getAllSettings } = require('../utils/settings');
 const { plainText } = require('../utils/markdownText');
 const { antiBot } = require('../middleware/antiBot');
@@ -31,6 +31,7 @@ const summaryLimiter = rateLimit({
   legacyHeaders: false,
   handler: (req, res) => {
     report(req.ip, 'rate', 'HOME-SUMMARY 高频读取');
+    retryAfter(res, 60);
     res.status(429).json({ code: 1, message: '读取过于频繁，请稍后再试' });
   },
 });

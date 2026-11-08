@@ -11,7 +11,7 @@
 
 const express = require('express');
 const db = require('../db');
-const { ok, fail, notFound } = require('../utils/response');
+const { ok, fail, notFound, retryAfter } = require('../utils/response');
 const { encryptPayload } = require('../utils/crypto');
 const { report } = require('../middleware/ipGuard');
 const { noteArticleRead } = require('../middleware/scrapeGuard');
@@ -109,6 +109,7 @@ router.get('/:id', async (req, res) => {
       const scrape = noteArticleRead(req.ip, req.headers['x-fp'], noteContentKey(id));
       if (!scrape.ok) {
         report(req.ip, 'rate', `SCRAPE /notes/${id}`);
+        retryAfter(res, 60);
         return res.status(429).json({ code: 1, message: '阅读过于频繁，请稍后再试' });
       }
     }
@@ -140,6 +141,7 @@ router.post('/:id/like', async (req, res) => {
     // 防刷键含 note: 前缀：与文章 id 空间隔离，同一 IP 对同一条手记 10 秒内只能赞一次
     if (!canLike(ip, noteContentKey(id))) {
       report(ip, 'rate', `LIKE-FLOOD /notes/${id}`);
+      retryAfter(res, 10);
       return fail(res, '点赞太频繁啦，歇一会儿再点吧', 429);
     }
     const row = await db('notes').where('id', id).select('id', 'status').first();

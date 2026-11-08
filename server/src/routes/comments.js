@@ -1,7 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
-const { ok, fail, notFound } = require('../utils/response');
+const { ok, fail, notFound, retryAfter } = require('../utils/response');
 const { cleanText, cleanLine, safeUrl, safeEmail } = require('../utils/sanitize');
 const { honeypotCheck } = require('../middleware/antiBot');
 const { formTokenRequired } = require('../middleware/formToken');
@@ -198,7 +198,10 @@ router.post('/', postLimiter, honeypotCheck, formTokenRequired, requireAuthForRe
       .where('content', cleanContent)
       .where('created_at', '>', localDateTimeStr(new Date(Date.now() - 30 * 60 * 1000)))
       .first('id');
-    if (dup) return fail(res, '内容重复，请勿重复提交', 429);
+    if (dup) {
+      retryAfter(res, 1800); // 同 IP 30 分钟查重窗口
+      return fail(res, '内容重复，请勿重复提交', 429);
+    }
 
     // 博主昵称保留：匿名访客不能冒充管理员昵称领取“博主”标识
     const admins = await getAdminNicknames();
@@ -314,6 +317,7 @@ router.post('/:id/like', async (req, res) => {
     const ip = req.ip || 'unknown';
     if (!canCommentLike(ip, id)) {
       report(ip, 'rate', `LIKE-FLOOD /comments/${id}`);
+      retryAfter(res, 10);
       return res.status(429).json({ code: 1, message: '点赞太频繁了，请稍后再试' });
     }
     const row = await db('comments as cm')

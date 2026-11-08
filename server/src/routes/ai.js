@@ -17,7 +17,7 @@ const asyncGuard = require('../utils/asyncGuard');
 const db = require('../db');
 const { streamChat } = require('../utils/aiClient');
 const { escapeLike } = require('../utils/sanitize');
-const { ok } = require('../utils/response');
+const { ok, retryAfter } = require('../utils/response');
 
 const router = express.Router();
 
@@ -145,6 +145,7 @@ router.post('/ask', askLimiter, async (req, res) => {
   const ip = req.ip || 'unknown';
   const running = inflight.get(ip) || 0;
   if (running >= MAX_INFLIGHT_PER_IP) {
+    retryAfter(res, 5);
     return res.status(429).json({ code: 1, message: '上一个问题还没答完，稍等一下' });
   }
   inflight.set(ip, running + 1);
