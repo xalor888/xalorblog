@@ -21,7 +21,7 @@ Vue 3 + Vite + Pinia 前端 与 Express + Knex + MySQL 8 后端组成的**个人
 | 目录 | 文件 | 行数 | 说明 |
 |---|---:|---:|---|
 | `server/src` | 61 | 14,317 | 18 个路由 + 12 个中间件 + 26 个工具 + 迁移/种子 |
-| `server/test` | 83 | 14024 | **87 个 `*.test.js`**（76 个在离线链、18 个在集成链，**其中 7 个两条链都跑**；并集 = 86，无孤儿）+ `run.js` + `helpers/` + WAF 语料 + `run-mac.sh` |
+| `server/test` | 83 | 14024 | **88 个 `*.test.js`**（77 个在离线链、18 个在集成链，**其中 7 个两条链都跑**；并集 = 87，无孤儿）+ `run.js` + `helpers/` + WAF 语料 + `run-mac.sh` |
 | `server/scripts` | 2 | 490 | `bench-read-paths.js`（SQL 基线）+ `e2e-smoke.js`（端到端冒烟） |
 | `web/src` | 102 | 33,083 | 35 个视图 + 14 个组件 + 30 个工具 + 5 store + 2 composables + 3 个图片资源（不计行） |
 | `web/public` | 15 | 467 | `theme-init.js` / `boot-guard.js` / `anti-debug.js`（不进打包）+ 图标/manifest（8 个二进制不计行） |
@@ -691,7 +691,7 @@ test-gate-integrity      **元门禁**：每道门禁能让 build 变红、在�
 
 ### 15.5 计数现状
 
-离线套件 **76**、集成套件 **18**、构建门禁 **37**、`*.test.js` **87**。
+离线套件 **77**、集成套件 **18**、构建门禁 **37**、`*.test.js` **88**。
 
 ### 15.6 2026-11-08 第二轮（继续深挖）
 
@@ -706,5 +706,8 @@ test-gate-integrity      **元门禁**：每道门禁能让 build 变红、在�
 | `seed.js` 零测试 | 弱口令拒跑、口令哈希、二次运行幂等、不动既有内容 | `seedSafety.test.js`（18 条，探针 MySQL，无探针显式跳过） |
 | 备份脚本 | 保留 14 份的策略此前没验 | `backupFailure.test.js` 增至 23 条（造 17 份旧备份，断言删最旧 4 份） |
 | `asyncGuard` 扫描器 | 500 字符窗口会误报；更糟：注释里出现 `try {` 会被当成有保护 | 窗口 1200 + 剥注释 + 注释欺骗自检 |
+| 429 无退避信息 | 10 处 429 都没给 `Retry-After`，客户端只能立刻重试（越重试越限流） | `retryAfter()` + 10 处接线；`retryAfter.test.js` |
+| 上传总量无上限 | 单文件 5MB 管不住「一直传」；磁盘满后备份报「凭据错误」、整站 500 | `checkUploadQuota` / `dirSizeBytes` + 507 拒绝并删文件；`uploadQuota.test.js` |
+| `audit_logs` 无保留策略 | 两周 26,220 行，只随运行时长增长（后台分页/备份/导出越来越慢） | `scripts/prune-old-data.js`（默认 dry-run、`--apply` 需显式放行）；`dataLifecycle.test.js` |
 
-计数：离线套件 **76**、集成套件 **18**、构建门禁 **37**、`*.test.js` **87**。
+计数：离线套件 **77**、集成套件 **18**、构建门禁 **37**、`*.test.js` **88**。

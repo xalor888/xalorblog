@@ -50,6 +50,19 @@ async function suite() {
   // 不同 IP 不受同 IP 键影响（家庭 NAT 多设备场景）
   assert('不同 IP 互不影响', canLike('198.51.100.9', aid) === true);
 
+  // ---- 并发：10 次同步连调只能放行 1 次 ----
+  // canLike 是「读过期时间 → 写新过期时间」两步。Node 单线程 + 同步执行，
+  // 所以这 10 次调用是真正的「同一时刻」序列 —— 若判据写错（例如先判断后无条件放行），
+  // 这里会看到 1 次以上放行。HTTP 层的并发会因为限流/闸门互相干扰，
+  // 反而测不清这条语义，所以放在这里做。
+  {
+    const ipC = '203.0.113.99';
+    const aidC = 4242;
+    const allowed = Array.from({ length: 10 }, () => canLike(ipC, aidC)).filter(Boolean).length;
+    assert('并发 10 次只放行 1 次', allowed === 1, `allowed=${allowed}`);
+    assert('其余 9 次全部受限（没有「窗口内被跳过」的漏网）', allowed === 1 && canLike(ipC, aidC) === false);
+  }
+
   // ---- 窗口过期后恢复：注入时钟，推进到窗口边界前后各测一次 ----
   console.log('--- 窗口过期（注入 Date.now，仅本段） ---');
   assert(
