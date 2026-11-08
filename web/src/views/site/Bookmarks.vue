@@ -33,6 +33,9 @@
 </template>
 
 <script setup>
+// ElMessageBox 的样式（含 el-button / el-input / el-overlay / el-dialog 依赖链）。
+// 放在这里而不是 main.js：放进入口会让这 35,933 字节进首屏，而首屏并不需要它们。
+import 'element-plus/es/components/message-box/style/css';
 import { ref, watchEffect, onMounted, onUnmounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';

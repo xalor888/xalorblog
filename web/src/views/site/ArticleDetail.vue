@@ -105,16 +105,24 @@
           <h1 class="detail-title">{{ article.title }}</h1>
 
           <div class="detail-meta">
-            <span class="dm-item"><XIcon name="Calendar" :size="14" /> {{ formatDate(article.published_at) }}</span>
+            <span class="dm-item"><XIcon name="Calendar" :size="14" /> {{ formatDate(article.published_at) || '未标注日期' }}</span>
             <span class="dm-item"><XIcon name="Clock" :size="14" /> {{ readingTime(article.content) }} 分钟</span>
             <span class="dm-sep"></span>
             <span class="dm-item"><XIcon name="FileText" :size="14" /> {{ wordCount }} 字</span>
             <span class="dm-sep"></span>
             <span class="dm-item"><XIcon name="Eye" :size="14" /> {{ formatNumber(article.views) }} 阅读</span>
             <span class="dm-sep"></span>
-            <span class="dm-item dm-link" title="跳到评论区" aria-label="跳到评论区" @click="scrollToComments">
+            <!-- 原来是 span + @click：鼠标能点，键盘与读屏完全到不了。
+                 用原生 button 而不是 role+tabindex，省掉自己维护 Enter/Space 分支。 -->
+            <button
+              type="button"
+              class="dm-item dm-link"
+              title="跳到评论区"
+              aria-label="跳到评论区"
+              @click="scrollToComments"
+            >
               <XIcon name="MessageSquare" :size="14" /> {{ article.comment_count }} 评论
-            </span>
+            </button>
           </div>
 
           <div v-if="article.tags && article.tags.length" class="detail-tags">
@@ -214,7 +222,7 @@
         <div class="like-zone">
           <button class="like-btn" :class="{ liked }" @click="doLike" :disabled="liked">
             <span class="heart">
-              <XIcon :name="liked ? 'Heart' : 'Heart'" :size="20" :fill="liked" :stroke-width="liked ? 0 : 1.8" />
+              <XIcon name="Heart" :size="20" :fill="liked" :stroke-width="liked ? 0 : 1.8" />
             </span>
             <span>{{ article.likes }}</span>
           </button>
@@ -257,7 +265,10 @@
 
         <!-- 相关文章 -->
         <div v-if="related.length" class="related-block">
-          <h3 class="related-title">相关阅读</h3>
+          <!-- h2 而不是 h3：正文标题是 h1（markdown 里的层级由 v-html 内部自管），
+                 从 h1 直接跳到 h3 属于层级跳级 —— 读屏用户按标题导航时会以为中间漏了一级。
+                 这里样式由 .related-title 控制，与标签名无关，改标签不影响外观。 -->
+            <h2 class="related-title">相关阅读</h2>
           <div class="related-grid">
             <router-link v-for="r in related" :key="r.id" :to="`/article/${r.slug}`" class="related-card card">
               <span v-if="r.cover" class="rc-cover" :style="{ backgroundImage: `url(${r.cover})` }"></span>
@@ -392,6 +403,7 @@ import { useSiteStore } from '@/stores/site';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
 import { setArticleCopyAllowed, clearArticleCopyScope } from '@/utils/copyGuard';
 import { downloadBlob } from '@/utils/download';
+import { applyPageMeta, siteOrigin, clearPageJsonLd } from '@/utils/pageMeta';
 import {
   FONT_SIZE,
   LINE_HEIGHT,
@@ -531,10 +543,6 @@ watch(focusMode, (on) => {
   document.documentElement.dataset.focus = on ? 'on' : '';
 }, { immediate: true });
 
-function scrollTop() {
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
 /** 评论数统计点击：平滑滚动到评论区（含偏移补偿 sticky 导航） */
 function scrollToComments() {
   const el = document.querySelector('.comments, .comments-disabled');
@@ -564,27 +572,21 @@ const wordCount = computed(() => {
   return cn + en;
 });
 
+// 下面两个地址都走 pageMeta 的 siteOrigin（不是手写字符串拼接）：
+// 后台把 site_url 填成裸域名（`xalor.cn`）时，手拼会漏掉协议 ——
+// `xalor.cn/api/share/x` 在社交平台与「复制链接」里都是废地址。
+
+/** 版权区 / 复制链接展示的 SPA 文章地址（也是 og:url 的来源） */
 const pageUrl = computed(() => {
   if (!article.value) return '';
-  const base = String(site.settings.site_url || window.location.origin).replace(/\/+$/, '');
+  const base = siteOrigin(site);
   return `${base}/#/article/${article.value.slug}`;
 });
 
-/** 给爬虫抓 OG 的分享页；版权区与复制链接展示 SPA 文章地址 */
+/** 给爬虫抓 OG 的分享页（= canonical 指向的收录目标）；分享按钮也用它 */
 const shareUrl = computed(() => {
   if (!article.value) return '';
-  const base = String(site.settings.site_url || window.location.origin).replace(/\/+$/, '');
-  return `${base}/api/share/${article.value.slug}`;
-});
-
-/**
- * canonical：与分享页（服务端 HTML）的 canonical 完全一致的收录目标 URL。
- * 域名优先站点设置的 site_url（规范域名），与 RSS/Sitemap/分享页同源，
- * 避免访问域名与规范域名不一致时出现双 canonical。
- */
-const canonicalUrl = computed(() => {
-  if (!article.value) return '';
-  const base = String(site.settings.site_url || window.location.origin).replace(/\/+$/, '');
+  const base = siteOrigin(site);
   return `${base}/api/share/${article.value.slug}`;
 });
 
@@ -731,7 +733,7 @@ async function load() {
     article.value = a;
     // 本篇的复制开关（后台文章编辑页可改）；全站开关由 Layout 统一控制
     setArticleCopyAllowed(a.allow_copy);
-    applyPageMeta();
+    applyArticleMeta();
     toc.value = extractToc(a.content);
     // 深链直达某个小标题：别人分享 `#/article/slug#heading-2` 这类链接时，
     // hash 路由的二级 hash **不会被浏览器自动处理**（浏览器只认第一个 #）。
@@ -821,108 +823,64 @@ function retryLoad() {
 }
 
 /** 动态更新页面标题与分享元信息（SEO / 社交分享）
- * canonical 指向分享页（/api/share/:slug，真实 HTML，搜索引擎收录目标） */
-function applyPageMeta() {
+ *
+ * 除了 document.title（pageMeta 明确不越权改 <title>），整组 head 写入都交给
+ * utils/pageMeta.js —— 原来这里自建了 setMeta / setByName / applyJsonLd / canonical
+ * 那一套，与列表页等页面共用的实现并存，于是两边各自漂移：
+ *   缺 og:site_name；cover 没补协议（site_url 填裸域名时 og:image 成了相对路径，
+ *   社交平台直接忽略 → 分享卡片没图）；canonicalUrl 与 shareUrl 还是两个逐字相同的
+ *   computed（同一个值算两遍）。
+ *
+ * canonical 指向分享页（/api/share/:slug，真实 HTML，搜索引擎收录目标）；
+ * og:url 仍是 SPA 文章页地址（人类的分享落点）—— 两者本来就该不同，所以分开传。
+ */
+function applyArticleMeta() {
   const a = article.value;
   if (!a) return;
   const name = site.settings.site_name || 'Xalor的小站';
+  // pageMeta 只写 meta 标签，浏览器标签页标题在这里写
   document.title = `${a.title} · ${name}`;
-  setMeta('description', a.summary || a.title);
-  setMeta('og:title', `${a.title} · ${name}`);
-  setMeta('og:description', a.summary || a.title);
-  setMeta('og:type', 'article');
-  // og:url 指向 SPA 文章页（社交平台分享跳转目标）
-  setMeta('og:url', pageUrl.value);
-  // og:image：文章封面绝对化（站内相对路径 → 站点设置域名），无封面时不设置
-  const cover = a.cover
-    ? (/^https?:\/\//i.test(a.cover)
-        ? a.cover
-        : `${String(site.settings.site_url || window.location.origin).replace(/\/+$/, '')}${a.cover.startsWith('/') ? '' : '/'}${a.cover}`)
-    : '';
-  // 无封面时回退站点默认图 —— 否则分享卡片完全没有配图。
-  // （HTML 里原先硬编码的 /og-image.webp 已移除：相对路径会被社交平台忽略。）
-  const ogImage = cover || site.settings.og_image || '/og-image.webp';
-  if (ogImage) {
-    const abs = /^https?:\/\//i.test(ogImage)
-      ? ogImage
-      : `${(site.settings.site_url || '').replace(/\/$/, '') || location.origin}${ogImage.startsWith('/') ? '' : '/'}${ogImage}`;
-    setMeta('og:image', abs);
-    setMeta('twitter:image', abs);
-  }
-  // Twitter 卡片：有封面用大图卡，否则摘要卡
-  // twitter:* 用 name 属性，而 setMeta 按 ':' 会写成 property —— Twitter 读不到。
-  // 这里显式按 name 写。
-  (function setByName(name, content) {
-    let el = document.querySelector(`meta[name="${name}"]`);
-    if (!el) {
-      el = document.createElement('meta');
-      el.setAttribute('name', name);
-      document.head.appendChild(el);
-    }
-    el.setAttribute('content', content);
-  })('twitter:card', ogImage ? 'summary_large_image' : 'summary');
-  setMeta('twitter:title', `${a.title} · ${name}`);
-  setMeta('twitter:description', (a.summary || a.title).slice(0, 200));
-  if (cover) setMeta('twitter:image', cover);
-  // canonical 与分享页（服务端 HTML）完全一致，指向收录目标自身 URL：
-  // SPA hash 页不可被搜索引擎收录，收录权统一归 /api/share/:slug
-  let canonical = document.querySelector('link[rel="canonical"]');
-  if (!canonical) {
-    canonical = document.createElement('link');
-    canonical.setAttribute('rel', 'canonical');
-    document.head.appendChild(canonical);
-  }
-  canonical.setAttribute('href', canonicalUrl.value);
-  applyJsonLd();
+  applyPageMeta({
+    title: a.title,
+    description: a.summary || a.title,
+    // og:url：SPA 文章页；'#' 之后的部分由 absoluteUrl 原样保留
+    path: `/#/article/${a.slug}`,
+    // canonical：服务端分享页，与 /api/share/:slug 自己输出的那一份完全一致
+    canonical: shareUrl.value,
+    // 有封面用封面，没有则由 pageMeta 退回站点默认图 /og-image.png；
+    // 两者都由它绝对化并补齐协议（cover 是相对路径时也能用）
+    image: a.cover || '',
+    site,
+    type: 'article',
+    jsonLd: buildJsonLd(a),
+  });
 }
 
-/** 注入 JSON-LD 结构化数据（BlogPosting：富摘要/知识图谱收录） */
-function applyJsonLd() {
-  const a = article.value;
-  if (!a) return;
-  const name = site.settings.site_name || 'Xalor的小站';
-  const author = site.settings.author || site.settings.nickname || name;
+/** BlogPosting 结构化数据（富摘要/知识图谱收录）；真正写进 <head> 的是 pageMeta */
+function buildJsonLd(a) {
+  const s = site.settings;
+  const name = s.site_name || 'Xalor的小站';
+  const author = s.author || s.nickname || name;
   const ld = {
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
     headline: a.title,
     description: (a.summary || a.title).slice(0, 200),
-    datePublished: a.published_at,
-    dateModified: a.updated_at || a.published_at,
     mainEntityOfPage: { '@type': 'WebPage', '@id': shareUrl.value },
     author: { '@type': 'Person', name: author },
-    publisher: { '@type': 'Organization', name, logo: site.settings.avatar ? { '@type': 'ImageObject', url: site.settings.avatar } : undefined },
-    image: a.cover || site.settings.avatar || undefined,
+    publisher: { '@type': 'Organization', name, logo: s.avatar ? { '@type': 'ImageObject', url: s.avatar } : undefined },
+    image: a.cover || s.avatar || undefined,
   };
+  /**
+   * 日期字段单独条件赋值：清空发布时间后 a.published_at 是 null，
+   * 而 `null` 会被 JSON.stringify 保留（只有 undefined 才会被丢弃）——
+   * 结构化数据里出现 "datePublished": null 是**无效声明**，Google 会判整条不合法，
+   * 而不是忽略这一个字段。所以「没有值」时宁可不写这个键。
+   */
+  if (a.published_at) ld.datePublished = a.published_at;
+  if (a.updated_at || a.published_at) ld.dateModified = a.updated_at || a.published_at;
   if (Array.isArray(a.tags) && a.tags.length) ld.keywords = a.tags.map((t) => t.name).join(', ');
-  setJsonLd('jsonld-blogposting', ld);
-}
-
-function setJsonLd(id, obj) {
-  let el = document.getElementById(id);
-  if (!el) {
-    el = document.createElement('script');
-    el.type = 'application/ld+json';
-    el.id = id;
-    document.head.appendChild(el);
-  }
-  el.textContent = JSON.stringify(obj).replace(/</g, '\\u003c');
-}
-
-/** 离开文章页时移除本文的 JSON-LD，避免与其他页面结构化数据叠加 */
-function removeJsonLd() {
-  document.getElementById('jsonld-blogposting')?.remove();
-}
-
-function setMeta(prop, content) {
-  let el = document.querySelector(`meta[property="${prop}"]`);
-  if (!el) el = document.querySelector(`meta[name="${prop}"]`);
-  if (!el) {
-    el = document.createElement('meta');
-    el.setAttribute(prop.includes(':') ? 'property' : 'name', prop);
-    document.head.appendChild(el);
-  }
-  el.setAttribute('content', String(content).slice(0, 300));
+  return ld;
 }
 
 async function doLike() {
@@ -1223,7 +1181,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown);
   document.removeEventListener('click', onShareDocClick);
   tocObserver?.disconnect();
-  removeJsonLd(); // 移除本文 JSON-LD，防与后续页面结构化数据叠加
+  clearPageJsonLd(); // 移除本文 JSON-LD，防与后续页面结构化数据叠加（节点由 pageMeta 管）
   if (mobileTocOpen.value) unlockBodyScroll();
   clearArticleCopyScope(); // 离开文章页：复制限制回到只受全站开关控制
   // 沉浸状态挂在 <html> 上，不收尾会把「导航没了」带到首页
@@ -1543,6 +1501,10 @@ onUnmounted(() => {
 }
 
 .detail-title {
+  /* 标题是作者可控的：超长英文单词或长 URL 会横向撑破容器（字号 clamp 到 2.6rem，溢出更明显）。
+     `overflow-wrap: anywhere` 只在「整串放不下」时才断，中文正常换行不受影响。 */
+  overflow-wrap: anywhere;
+
   font-size: clamp(1.85rem, 4vw, 2.6rem);
   font-weight: 800;
   line-height: 1.28;
@@ -1577,6 +1539,14 @@ onUnmounted(() => {
 }
 
 .dm-item {
+  /* 其中「N 评论」已从 span 改成 button：必须清掉 UA 默认样式，
+     否则会多出内边距、灰底和居中文字，把整行元信息排版撑歪。 */
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
   display: inline-flex;
   align-items: center;
   gap: 6px;

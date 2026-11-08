@@ -270,7 +270,9 @@ async function exportCsv() {
       return;
     }
     const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
+    // ⚠ 不要在这里 URL.createObjectURL：downloadBlob 内部自己创建并在 10s 后 revoke。
+    // 这里再建一个等于凭空多出一个**永不释放**的 blob URL（引流了整份 CSV 的内存），
+    // 而且变量 url 从未被使用 —— 先前从手写下载代码迁移到 downloadBlob 时的残留。
     const cd = resp.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="([^"]+)"/);
     downloadBlob(blob, m ? m[1] : 'comments.csv');

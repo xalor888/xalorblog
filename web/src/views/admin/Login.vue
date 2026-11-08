@@ -19,14 +19,24 @@
             <XIcon name="User" :size="16" class="input-icon" />
             <input
               id="login-username"
+              ref="usernameRef"
               v-model="form.username"
               name="username"
               class="input"
               placeholder="请输入用户名"
               autocomplete="username"
+              :aria-invalid="fieldErrors.username ? 'true' : undefined"
+              :aria-describedby="fieldErrors.username ? 'login-err-username' : undefined"
               autofocus
             />
           </div>
+          <!-- 字段级错误：与 input 用 aria-describedby 关联。
+               原来只用 ElMessage.warning 弹一个全局 toast —— 焦点还留在按钮上，
+               读屏用户听到「请输入用户名，按钮」但不知道是哪个框要填；
+               而视觉用户能看到红字/知道哪一栏空着。 -->
+          <p v-if="fieldErrors.username" id="login-err-username" class="field-error" role="alert">
+            {{ fieldErrors.username }}
+          </p>
         </div>
         <div class="field">
           <label class="field-label" for="login-password">密码</label>
@@ -34,12 +44,15 @@
             <XIcon name="Lock" :size="16" class="input-icon" />
             <input
               id="login-password"
+              ref="passwordRef"
               v-model="form.password"
               name="password"
               :type="showPass ? 'text' : 'password'"
               class="input"
               placeholder="请输入密码"
               autocomplete="current-password"
+              :aria-invalid="fieldErrors.password ? 'true' : undefined"
+              :aria-describedby="fieldErrors.password ? 'login-err-password' : undefined"
             />
             <button
               type="button"
@@ -51,6 +64,9 @@
               <XIcon :name="showPass ? 'EyeOff' : 'Eye'" :size="16" />
             </button>
           </div>
+          <p v-if="fieldErrors.password" id="login-err-password" class="field-error" role="alert">
+            {{ fieldErrors.password }}
+          </p>
         </div>
         <!-- 两步验证：登录接口返回验证码错误时出现 -->
         <transition name="fade-slide">
@@ -60,6 +76,7 @@
               <XIcon name="KeyRound" :size="16" class="input-icon" />
               <input
                 id="login-totp"
+                ref="totpRef"
                 v-model="form.totp_code"
                 name="totp_code"
                 inputmode="numeric"
@@ -67,9 +84,14 @@
                 class="input"
                 placeholder="请输入验证器应用中的 6 位动态码"
                 autocomplete="one-time-code"
+                :aria-invalid="fieldErrors.totp ? 'true' : undefined"
+                :aria-describedby="fieldErrors.totp ? 'login-err-totp' : undefined"
                 @input="autoSubmitTotp"
               />
             </div>
+            <p v-if="fieldErrors.totp" id="login-err-totp" class="field-error" role="alert">
+              {{ fieldErrors.totp }}
+            </p>
           </div>
         </transition>
         <button type="submit" class="login-btn" :disabled="loading">
@@ -136,11 +158,45 @@ function autoSubmitTotp() {
   }
 }
 
-async function submit() {
-  if (!form.value.username.trim()) return ElMessage.warning('请输入用户名');
-  if (!form.value.password) return ElMessage.warning('请输入密码');
+/**
+ * 字段级错误（与 Messages / CommentSection 同一套做法）。
+ *
+ * 原来三个空值检查都只弹一个全局 ElMessage.warning —— 焦点还留在提交按钮上，
+ * 读屏用户听到「请输入用户名，按钮」，不知道是哪个输入框要填；
+ * 视觉用户至少能看出哪一栏空着，读屏用户不能。
+ * 现在：错误文字就近显示 + aria-invalid + aria-describedby 关联 + 聚焦第一个出错字段。
+ */
+const fieldErrors = ref({ username: '', password: '', totp: '' });
+const usernameRef = ref(null);
+const passwordRef = ref(null);
+const totpRef = ref(null);
+
+/** 清掉指定字段的错误（用户一开始改就把红字撤掉，避免边改边被念） */
+function clearFieldError(name) {
+  if (fieldErrors.value[name]) fieldErrors.value = { ...fieldErrors.value, [name]: '' };
+}
+
+/** 校验三个必填项；返回第一个出错字段的 ref（null 表示全部通过） */
+function validate() {
+  const next = { username: '', password: '', totp: '' };
+  if (!form.value.username.trim()) next.username = '请输入用户名';
+  if (!form.value.password) next.password = '请输入密码';
   if (needTotp.value && !/^\d{6}$/.test(form.value.totp_code || '')) {
-    return ElMessage.warning('请输入 6 位两步验证码');
+    next.totp = '请输入 6 位动态验证码';
+  }
+  fieldErrors.value = next;
+  if (next.username) return usernameRef.value;
+  if (next.password) return passwordRef.value;
+  if (next.totp) return totpRef.value;
+  return null;
+}
+
+async function submit() {
+  const firstBad = validate();
+  if (firstBad) {
+    // 把焦点送到第一个出错的框：读屏会念出 aria-describedby 指向的错误文字
+    firstBad.focus?.();
+    return undefined;
   }
   loading.value = true;
   try {
@@ -168,6 +224,8 @@ async function submit() {
     if (/两步验证|验证码/.test(e.message || '')) {
       needTotp.value = true;
       form.value.totp_code = '';
+      // 让字段级错误说清楚要做什么，而不是只留一个 toast
+      fieldErrors.value = { username: '', password: '', totp: e.message || '两步验证码不正确' };
     }
   } finally {
     loading.value = false;

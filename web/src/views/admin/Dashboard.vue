@@ -8,6 +8,15 @@
       </button>
     </div>
 
+    <!-- 整页取数失败：必须说出来并提供重试。
+         这张卡片的初值全是 0 / 空数组，静默失败时整页看起来就是「没有任何待办、
+         没有任何访问」——把取数失败演成了健康态。 -->
+    <div v-if="loadError" class="card load-error" role="alert">
+      <XIcon name="ShieldAlert" :size="22" />
+      <p>数据加载失败，可能是网络波动或服务暂时不可用</p>
+      <button class="dash-retry" type="button" :disabled="refreshing" @click="loadAll">重试</button>
+    </div>
+
     <!-- 统计卡片（带 link 的可点击直达对应管理页） -->
     <div class="stat-grid">
       <component
@@ -21,7 +30,7 @@
       >
         <div class="stat-icon"><XIcon :name="s.icon" :size="21" /></div>
         <div class="stat-info">
-          <span class="stat-value">{{ s.value }}</span>
+          <span class="stat-value" :class="{ unavailable: loadError }">{{ loadError ? '数据不可用' : s.value }}</span>
           <span class="stat-label">{{ s.label }}</span>
         </div>
       </component>
@@ -29,35 +38,43 @@
 
     <!-- 待审事项 -->
     <div class="pending-row">
+      <!-- 取数失败时计数显示「—」而不是 0：0 的意思是「没有待审的」，与「没取到」相反 -->
       <router-link :to="adminHref('comments')" class="pending-card card">
         <div class="pending-left">
-          <span class="pending-dot" :class="{ done: pending.comments === 0 }"></span>
+          <span class="pending-dot" :class="{ done: !loadError && pending.comments === 0 }"></span>
           <span class="pending-label">待审核评论</span>
         </div>
-        <span class="pending-count" :class="{ zero: pending.comments === 0 }">{{ pending.comments }}</span>
+        <span class="pending-count" :class="{ zero: !loadError && pending.comments === 0 }">{{ loadError ? '—' : pending.comments }}</span>
       </router-link>
       <router-link :to="adminHref('links')" class="pending-card card">
         <div class="pending-left">
-          <span class="pending-dot" :class="{ done: pending.links === 0 }"></span>
+          <span class="pending-dot" :class="{ done: !loadError && pending.links === 0 }"></span>
           <span class="pending-label">待审核友链</span>
         </div>
-        <span class="pending-count" :class="{ zero: pending.links === 0 }">{{ pending.links }}</span>
+        <span class="pending-count" :class="{ zero: !loadError && pending.links === 0 }">{{ loadError ? '—' : pending.links }}</span>
       </router-link>
       <router-link :to="adminHref('messages')" class="pending-card card">
         <div class="pending-left">
-          <span class="pending-dot" :class="{ done: pending.messages === 0 }"></span>
+          <span class="pending-dot" :class="{ done: !loadError && pending.messages === 0 }"></span>
           <span class="pending-label">待审核留言</span>
         </div>
-        <span class="pending-count" :class="{ zero: pending.messages === 0 }">{{ pending.messages }}</span>
+        <span class="pending-count" :class="{ zero: !loadError && pending.messages === 0 }">{{ loadError ? '—' : pending.messages }}</span>
       </router-link>
     </div>
 
-    <!-- 安全概览 -->
+    <!-- 安全概览：单独失败时只降级这一块，其它数据照常渲染。
+         重试按钮必须放在卡片外面 —— 卡片本身是 router-link，按钮嵌进去是
+         「链接里套按钮」的非法交互嵌套，键盘与读屏都会乱。 -->
+    <div v-if="securityError" class="card load-error" role="alert">
+      <XIcon name="ShieldAlert" :size="22" />
+      <p>安全数据加载失败，已拦截与封禁数据不可用</p>
+      <button class="dash-retry" type="button" :disabled="refreshing" @click="loadAll">重试</button>
+    </div>
     <div class="sec-overview">
       <router-link :to="adminHref('security')" class="sec-overview-card card">
         <div class="so-icon"><XIcon name="ShieldCheck" :size="19" /></div>
         <div class="so-body">
-          <span class="so-value">{{ security.event_total || 0 }}</span>
+          <span class="so-value" :class="{ unavailable: securityError }">{{ securityError ? '数据不可用' : security.event_total || 0 }}</span>
           <span class="so-label">已拦截攻击</span>
         </div>
         <span class="so-arrow"><XIcon name="ArrowRight" :size="15" /></span>
@@ -65,7 +82,7 @@
       <router-link :to="adminHref('security')" class="sec-overview-card card">
         <div class="so-icon ban"><XIcon name="Ban" :size="19" /></div>
         <div class="so-body">
-          <span class="so-value">{{ security.banned?.length || 0 }}</span>
+          <span class="so-value" :class="{ unavailable: securityError }">{{ securityError ? '数据不可用' : security.banned?.length || 0 }}</span>
           <span class="so-label">封禁中的 IP</span>
         </div>
         <span class="so-arrow"><XIcon name="ArrowRight" :size="15" /></span>
@@ -73,7 +90,8 @@
       <router-link :to="adminHref('security')" class="sec-overview-card card">
         <div class="so-icon warn"><XIcon name="Activity" :size="19" /></div>
         <div class="so-body">
-          <span class="so-value">{{ security.event_total ? '实时' : '稳定' }}</span>
+          <!-- 三态：未知 / 有事件 / 无事件。口径见 script 里的 securityStatus -->
+          <span class="so-value" :class="{ unavailable: securityError }">{{ securityStatus }}</span>
           <span class="so-label">防护状态</span>
         </div>
         <span class="so-arrow"><XIcon name="ArrowRight" :size="15" /></span>
@@ -91,7 +109,12 @@
             </button>
           </div>
         </div>
-        <div v-if="trendEmpty" class="chart-empty">暂无访问数据</div>
+        <!-- 局部降级：趋势取数失败只影响这张卡，其余卡片照常渲染 -->
+        <div v-if="loadError" class="load-inline">
+          <p>访问趋势加载失败</p>
+          <button class="dash-retry" type="button" :disabled="refreshing" @click="loadAll">重试</button>
+        </div>
+        <div v-else-if="trendEmpty" class="chart-empty">暂无访问数据</div>
         <div v-else class="trend-chart">
           <svg class="trend-svg" :viewBox="`0 0 ${TW} ${TH}`" role="img" aria-label="访问趋势">
             <polyline class="trend-line pv" fill="none" :points="pvLine" />
@@ -117,7 +140,11 @@
 
       <div class="chart-card card">
         <h3 class="chart-title">分类分布</h3>
-        <div v-if="byCategory.length" class="cat-chart">
+        <div v-if="loadError" class="load-inline">
+          <p>分类分布加载失败</p>
+          <button class="dash-retry" type="button" :disabled="refreshing" @click="loadAll">重试</button>
+        </div>
+        <div v-else-if="byCategory.length" class="cat-chart">
           <div v-for="c in byCategory" :key="c.name" class="cat-row">
             <span class="cat-name">{{ c.name }}</span>
             <div class="cat-track">
@@ -132,7 +159,11 @@
       <!-- 互动趋势：近 14 天评论/留言 -->
       <div class="chart-card card">
         <h3 class="chart-title">互动趋势</h3>
-        <div v-if="!interactEmpty" class="int-bars">
+        <div v-if="loadError" class="load-inline">
+          <p>互动趋势加载失败</p>
+          <button class="dash-retry" type="button" :disabled="refreshing" @click="loadAll">重试</button>
+        </div>
+        <div v-else-if="!interactEmpty" class="int-bars">
           <div v-for="d in interactTrend" :key="d.day" class="int-col" :title="`${d.day} · 评论 ${d.comments} / 留言 ${d.messages}`">
             <div class="int-stack">
               <div class="int-bar cm" :style="{ height: intBarHeight(d.comments, 'cm') }"></div>
@@ -149,38 +180,50 @@
       </div>
     </div>
 
-    <!-- 热门文章 TOP -->
-    <div v-if="topArticles.length" class="chart-card card top-card">
-      <h3 class="chart-title">热门文章 TOP {{ topArticles.length }}</h3>
-      <div class="top-list">
-        <router-link v-for="(a, i) in topArticles" :key="a.id" :to="`/article/${a.slug}`" class="top-item" target="_blank">
-          <span class="top-rank" :class="{ hot: i < 3 }">{{ i + 1 }}</span>
-          <span class="top-title">{{ a.title }}</span>
-          <span class="top-views"><XIcon name="Eye" :size="13" /> {{ a.views }}</span>
-          <span class="top-likes"><XIcon name="Heart" :size="13" /> {{ a.likes }}</span>
-        </router-link>
+    <!-- 热门文章 + 最新动态：取数失败时给占位，而不是让这两块整片消失
+         （消失会被读成「最近什么都没发生」）。成功时按原条件渲染。 -->
+    <div v-if="loadError" class="chart-card card top-card">
+      <h3 class="chart-title">热门文章 / 最新动态</h3>
+      <div class="load-inline">
+        <p>列表数据加载失败</p>
+        <button class="dash-retry" type="button" :disabled="refreshing" @click="loadAll">重试</button>
       </div>
     </div>
-
-    <!-- 最新动态（评论 / 留言 / 文章，按时间合并排序） -->
-    <div v-if="recentItems.length" class="chart-card card top-card">
-      <h3 class="chart-title">最新动态</h3>
-      <div class="feed-list">
-        <div v-for="(it, i) in recentItems" :key="i" class="feed-item">
-          <span class="feed-tag" :class="it.kind">{{ it.tag }}</span>
-          <span class="feed-text">
-            <router-link v-if="it.link" :to="it.link" class="feed-link" :target="it.kind === 'article' ? '_blank' : undefined">{{ it.title }}</router-link>
-            <span v-else class="feed-title">{{ it.title }}</span>
-            <span class="feed-meta">{{ it.nickname }} · {{ timeAgo(it.created_at) }}</span>
-          </span>
+    <template v-else>
+      <!-- 热门文章 TOP -->
+      <div v-if="topArticles.length" class="chart-card card top-card">
+        <h3 class="chart-title">热门文章 TOP {{ topArticles.length }}</h3>
+        <div class="top-list">
+          <router-link v-for="(a, i) in topArticles" :key="a.id" :to="`/article/${a.slug}`" class="top-item" target="_blank">
+            <span class="top-rank" :class="{ hot: i < 3 }">{{ i + 1 }}</span>
+            <span class="top-title">{{ a.title }}</span>
+            <span class="top-views"><XIcon name="Eye" :size="13" /> {{ a.views }}</span>
+            <span class="top-likes"><XIcon name="Heart" :size="13" /> {{ a.likes }}</span>
+          </router-link>
         </div>
       </div>
-    </div>
+
+      <!-- 最新动态（评论 / 留言 / 文章，按时间合并排序） -->
+      <div v-if="recentItems.length" class="chart-card card top-card">
+        <h3 class="chart-title">最新动态</h3>
+        <div class="feed-list">
+          <div v-for="(it, i) in recentItems" :key="i" class="feed-item">
+            <span class="feed-tag" :class="it.kind">{{ it.tag }}</span>
+            <span class="feed-text">
+              <router-link v-if="it.link" :to="it.link" class="feed-link" :target="it.kind === 'article' ? '_blank' : undefined">{{ it.title }}</router-link>
+              <span v-else class="feed-title">{{ it.title }}</span>
+              <span class="feed-meta">{{ it.nickname }} · {{ timeAgo(it.created_at) }}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useAdminStore } from '@/stores/admin';
 import XIcon from '@/components/ui/XIcon.vue';
 import { statsApi, securityApi } from '@/api';
 import { adminHref, getAdminPath } from '@/utils/adminPath';
@@ -199,6 +242,30 @@ const dashboard = ref({
   recent_articles: [],
 });
 const security = ref({ event_total: 0, banned: [] });
+
+/**
+ * 两层失败标志，粒度不同：
+ *  - loadError：仪表盘主体（统计卡 / 图表 / 列表）没取到 —— 这些卡片的初值都是
+ *    0 与空数组，静默失败会被读成「没有访问、没有事件」；
+ *  - securityError：只有安全概览这一块失败，其余照常渲染（局部降级）。
+ * 取数失败必须与「真的为 0」在界面上可区分，否则运维会以为一切正常。
+ */
+const loadError = ref(false);
+const securityError = ref(false);
+
+/**
+ * 防护状态三态。
+ *
+ * 为什么不能拿 event_total 的真假当「防护状态」：这个数是**近 7 天累计**的
+ * 拦截事件总数（DB 已落库 + 内存里尚未落库的部分），不是当前现场。
+ * 它为 0 只说明这一周没出过事，说成「稳定」等于把历史数据冒充实时判断；
+ * 不为 0 说成「实时」也一样错 —— 昨天的事件今天还在数里。所以只能说
+ * 「近 7 天有/无事件」；取数失败时更只能给「未知」，不能落到「稳定」。
+ */
+const securityStatus = computed(() => {
+  if (securityError.value) return '未知';
+  return Number(security.value?.event_total) > 0 ? '近 7 天有事件' : '近 7 天无事件';
+});
 
 const pending = computed(() => dashboard.value.pending || { comments: 0, links: 0, messages: 0 });
 const trend = computed(() => dashboard.value.trend || []);
@@ -300,16 +367,42 @@ const refreshing = ref(false);
 async function loadAll() {
   if (refreshing.value) return;
   refreshing.value = true;
+  loadError.value = false;
+  securityError.value = false;
   try {
     await getAdminPath();
-    dashboard.value = await statsApi.dashboard(rangeDays.value);
-    security.value = await securityApi.overview();
-    try {
-      const { useAdminStore } = await import('@/stores/admin');
-      useAdminStore().fetchPending();
-    } catch (e) {}
+    // 两块取数互不阻塞：趋势图拿到了就照常画，安全概览失败只在它自己那块提示。
+    // 用 allSettled 而不是 all —— all 会让一块失败把整页拖进同一个 catch，
+    // 于是「安全概览 500」也能把访问趋势清空。
+    const [statsRes, secRes] = await Promise.allSettled([
+      statsApi.dashboard(rangeDays.value),
+      securityApi.overview(),
+    ]);
+    if (statsRes.status === 'fulfilled') {
+      dashboard.value = statsRes.value;
+    } else {
+      loadError.value = true;
+    }
+    if (secRes.status === 'fulfilled') {
+      security.value = secRes.value || { event_total: 0, banned: [] };
+    } else {
+      securityError.value = true;
+    }
+    // 侧边栏待审角标：失败只影响角标本身，不该把整页标成失败。
+    //
+    // 这里原本是 `await import('@/stores/admin')` 包在 try 里 —— 两个问题：
+    //   1. `CommentManage` / `MessageManage` 都是**静态** import 这个 store，
+    //      它本来就在主 chunk 里，动态导入不省任何体积，只多一次异步跳跃；
+    //   2. 那个 try 只捕获 import 失败，而 `fetchPending()` 是 async 且没被 await，
+    //      它自己的失败根本进不来 —— 于是这个 catch 唯一的作用是**吞掉 chunk 加载失败**，
+    //      角标不动、没有任何提示。
+    // 现在改成静态 import：store 内部的 `failed` 状态负责表达「拉取失败」，
+    // 不再需要这一层静默。
+    useAdminStore().fetchPending();
   } catch (e) {
-    /* 拦截器已提示 */
+    // 后台秘钥路径都拿不到：两块数据无从取起，只能整页降级
+    loadError.value = true;
+    securityError.value = true;
   } finally {
     refreshing.value = false;
   }
@@ -897,6 +990,60 @@ onMounted(loadAll);
   text-align: center;
   padding: 40px 0;
   font-size: 0.9rem;
+}
+
+/* ============ 取数失败态 ============
+   失败必须与「0」「空态」看得出区别：明确一句原因 + 一个重试出口。
+   文字一律用实色 token（var(--text-2)），不用 opacity 淡化 ——
+   暗色主题下淡化后的正文对比度不够，读起来像被禁用的装饰。 */
+.load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 20px;
+  color: var(--text-2);
+  text-align: center;
+}
+
+/* 卡片内部的失败占位（图表 / 列表），高度按原区域留白，避免整页跳动 */
+.load-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 34px 0;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+
+.dash-retry {
+  padding: 4px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: var(--card);
+  color: var(--accent-text);
+  font-size: 0.8rem;
+  font-weight: 650;
+  transition: all var(--dur) var(--ease);
+}
+
+.dash-retry:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.dash-retry:disabled {
+  border-color: var(--line);
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+
+/* 「数据不可用」比数字长得多：缩字号，别把卡片撑变形 */
+.stat-value.unavailable,
+.so-value.unavailable {
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0;
 }
 
 @media (max-width: 980px) {

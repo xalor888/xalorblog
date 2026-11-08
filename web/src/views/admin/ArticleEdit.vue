@@ -34,7 +34,7 @@
             class="ed-slug-input"
             type="text"
             maxlength="220"
-            placeholder="留空自动生成"
+            placeholder="留空自动生成（清空后保存 = 按标题重新生成）"
           />
         </div>
 
@@ -87,12 +87,13 @@
           <h4 class="ed-panel-title">发布</h4>
           <div class="ed-field">
             <label class="ed-label">发布时间</label>
+            <!-- 不再按「已发布」条件渲染：后端一直支持给草稿排期（admin.js 的 published_at 分支），
+                 而原来草稿看不到这个输入，想定时发布只能先点发布再改时间 —— 一次误发布就提前公开了。 -->
             <el-date-picker
-              v-if="articleStatus === 'published' || form.published_at"
               v-model="form.published_at"
               type="datetime"
               value-format="YYYY-MM-DD HH:mm:ss"
-              placeholder="默认当前时间"
+              placeholder="留空/清空 = 未排期（发布时取当前时间）"
               style="width: 100%"
             />
           </div>
@@ -180,7 +181,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, watchEffect, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
@@ -291,6 +292,10 @@ const allTags = ref([]); // 已有标签（下拉选择数据源）
 const uploading = ref(false);
 const savingDraft = ref(false);
 const publishing = ref(false);
+// 当前编辑文章的**库里** slug。用来判断用户有没有动过地址栏：
+// 没动 → 请求体里不出现 slug（后端保持原值）；清空 → 发 ''（后端按标题重生成）。
+// 保存成功后要用后端回传的新 slug 同步它，否则下一次保存会误判成「用户又清空了一次」。
+const originalSlug = ref('');
 // 当前编辑文章的服务端状态（用于发布二次确认：已发布文章直接保存不打扰）
 const articleStatus = ref('');
 const dirty = ref(false);
@@ -436,14 +441,13 @@ function autoSummary() {
 }
 
 // 实时字数统计（中英文混合）。
-// 统一走 utils/wordStats，与详情页「N 分钟」、站点阅读统计用同一套口径；
-// raw: true —— 编辑时要看到「我写了多少字」，写个代码块不该把字数砍掉。
-const wordCount = computed(() => countWords(form.value.content || '', { raw: true }).total);
+// 与详情页、站点阅读统计共用同一口径：默认走 stripMarkdown（剔除 Markdown 语法噪音与代码块）。
+// 这里曾经传 raw:true（把代码块也算进字数），于是同一篇文章编辑器报 10 分钟、详情页报 9 分钟 ——
+// 两个数字同时出现在用户眼前，不一致就是 bug。代码块按「查阅式内容」不计入散文阅读量。
+const wordCount = computed(() => countWords(form.value.content || '').total);
 
-// 编辑器里这一处刻意用「按当前速度估算」的展示值：minOne 避免 0 分钟，
-// 且（与聚合统计不同）这里可以接受 300 这类更保守的经验值吗？不能——
-// 同一个页面上的数字必须自洽，详情页说 9 分钟、编辑器说 10 分钟是 bug。
-const readingMinutes = computed(() => readingMinutesOf(form.value.content || '', { raw: true, minOne: true }));
+// 单篇阅读时长：同样不带 raw，且 minOne 避免「0 分钟」这种没有意义的展示。
+const readingMinutes = computed(() => readingMinutesOf(form.value.content || '', { minOne: true }));
 
 async function doUpload({ file }) {
   uploading.value = true;
@@ -464,6 +468,79 @@ function removeCover() {
   coverBroken.value = false;
 }
 
+/* ---------- 「清空」语义（与后端 admin.js 的 resolveArticlePatch 契约严格对齐）----------
+ *
+ * 后端的判定方式是「字段**出现**才处理」，而 JSON.stringify 会把 undefined 的键**整条丢掉** ——
+ * 这就是原来两个 bug 的共同根因：
+ *   - `published_at: form.published_at || undefined` → 清空日期 ⇒ 键消失 ⇒ 后端「保持原值」⇒ 旧时间纹丝不动；
+ *   - `slug: form.slug || undefined` → 清空地址 ⇒ 键消失 ⇒ 后端「保持原值」⇒ 占位文案「留空自动生成」形同虚设。
+ * 所以这里必须用「显式哨兵值」表达清空，而不是放任它变成 undefined。
+ */
+
+/** slug 提交值：
+ *  没动过 → undefined（不出现 = 保持原值）
+ *  清空   → ''（后端按标题重新生成并保证唯一）
+ *  有内容 → 原样发送（后端 slugify 归一化 + 去重） */
+function slugFieldForSubmit() {
+  const current = String(form.value.slug || '').trim();
+  const original = String(originalSlug.value || '').trim();
+  if (current !== original) return current;
+  // 库里 slug 本来就是空（异常行 / 早期导入）：顺手让后端补一个，下一次就有了
+  if (!current && editingId.value) return '';
+  return undefined;
+}
+
+/** 发布时间提交值：
+ *  有值   → 原字符串
+ *  清空   → **null**（后端置 NULL = 未排期；不能是 undefined，否则同样被 JSON 丢掉）
+ *  null / '' / undefined 都是「日期框被清空」的表现形式，统一送 null。 */
+function publishedAtFieldForSubmit() {
+  const v = form.value.published_at;
+  if (!v) return null;
+  return String(v);
+}
+
+/** 保存成功后，把后端回传的**结果值**回灌到表单与状态。
+ *
+ *  为什么必须回灌：slug 被清空时是由后端按标题重新生成的，前端不知道新值 ——
+ *  不回灌就会出现「输入框空着、真实地址却是 hello-world-1」，用户下一次保存
+ *  又会在当前（空）值上再触发一次重生成，地址一路漂移。
+ *  同时，已发布文章的地址一变，所有已有外链/收藏/分享卡片立刻失效，必须当场提醒。 */
+function applySavedResult(saved, { wasPublished, prevSlug, prevPublishedAt }) {
+  if (!saved || typeof saved !== 'object') return;
+  if (typeof saved.slug === 'string' && saved.slug) {
+    form.value.slug = saved.slug;
+    originalSlug.value = saved.slug;
+    if (wasPublished && prevSlug && saved.slug !== prevSlug) {
+      ElMessage({
+        type: 'warning',
+        message: `文章地址已变更：/#/article/${saved.slug}，旧的外链与分享卡片会失效`,
+        duration: 6000,
+        showClose: true,
+      });
+    }
+  }
+  // 用 hasOwnProperty：回传 null（清空）与「根本没回传这个键」是两件不同的事
+  if (Object.prototype.hasOwnProperty.call(saved, 'published_at')) {
+    form.value.published_at = saved.published_at ? String(saved.published_at) : '';
+    // 已发布文章被清掉发布时间 = 前台详情页不再显示日期、列表按建库时间兜底排序。
+    // 这是允许的状态（导入备份的文章本来就可能没有 published_at），但必须让人知道。
+    if (wasPublished && prevPublishedAt && !saved.published_at) {
+      ElMessage({
+        type: 'warning',
+        message: '已清空发布时间：文章页将不再显示日期，排序会兜底到建库时间',
+        duration: 6000,
+        showClose: true,
+      });
+    }
+  }
+  if (saved.status && saved.status !== articleStatus.value) {
+    articleStatus.value = saved.status;
+    // form.status 与 articleStatus 必须同步：AI 助手的上下文读的是 form.status
+    form.value.status = saved.status;
+  }
+}
+
 async function save(data) {
   if (!form.value.title.trim()) {
     ElMessage.warning('请填写标题');
@@ -473,10 +550,15 @@ async function save(data) {
     ElMessage.warning('请填写正文');
     return false;
   }
+  // 提示用：保存**之前**的已发布状态与地址（保存后 articleStatus/slug 就变了）
+  const wasPublished = articleStatus.value === 'published';
+  const prevSlug = String(originalSlug.value || '');
+  // 同上：保存前是否本来有发布时间（用来区分「这次清掉了」与「本来就是空的」）
+  const prevPublishedAt = form.value.published_at ? String(form.value.published_at) : '';
   const payload = {
     ...data,
     title: form.value.title.trim(),
-    slug: form.value.slug || undefined,
+    slug: slugFieldForSubmit(),
     category_id: form.value.category_id || null,
     tags: form.value.tags,
     cover: form.value.cover,
@@ -485,11 +567,14 @@ async function save(data) {
     is_top: form.value.is_top,
     allow_comment: form.value.allow_comment,
     allow_copy: form.value.allow_copy,
-    published_at: form.value.published_at || undefined,
+    published_at: publishedAtFieldForSubmit(),
   };
   try {
     if (editingId.value) {
-      await articleApi.update(editingId.value, payload);
+      // articleApi.update 返回的是后端 data 字段（ok(res, {...}) 里的那个对象），
+      // 不是 axios 的完整响应 —— 直接取 .slug / .published_at。
+      const saved = await articleApi.update(editingId.value, payload);
+      applySavedResult(saved, { wasPublished, prevSlug, prevPublishedAt });
     } else {
       await articleApi.create(payload);
     }
@@ -556,6 +641,10 @@ onMounted(async () => {
       return;
     }
     articleStatus.value = article.status || '';
+    // form.status 与 articleStatus 必须同步：前者是 AI 助手上下文里唯一的状态来源
+    // （buildContext 读 form.status）。只写 articleStatus 时，编辑一篇**已发布**文章
+    // 上报给模型的永远是 'draft'，模型会以为在改草稿而给出「发布前再检查一遍」之类错位建议。
+    form.value.status = article.status || 'draft';
     await assignForm({
       title: article.title || '',
       slug: article.slug || '',
@@ -569,6 +658,9 @@ onMounted(async () => {
       allow_copy: article.allow_copy !== false,
       published_at: article.published_at || '',
     });
+    // 记下库里的 slug 作为「原始值」：之后用户没动过地址栏时，保存请求里就不该出现 slug
+    // （出现 = 后端会重新 slugify 一遍，白跑一次去重；清空时才需要发 ''）。
+    originalSlug.value = article.slug || '';
     clearDraft();
   } else {
     restoreDraft();
@@ -852,7 +944,7 @@ watch(form, scheduleAutosave, { deep: true });
   color: var(--text-2);
 }
 
-.ed-kbd,
+/* .ed-kbd 已无任何模板引用（快捷键提示条改过结构），只保留仍在用的 .ed-autosave */
 .ed-autosave {
   display: inline-flex;
   align-items: center;
@@ -1198,10 +1290,6 @@ watch(form, scheduleAutosave, { deep: true });
 }
 
 @media (max-width: 720px) {
-  .ed-kbd {
-    display: none;
-  }
-
   .ed-topbar-right {
     width: 100%;
     justify-content: flex-end;

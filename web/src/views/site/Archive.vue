@@ -19,7 +19,28 @@
         </button>
       </nav>
 
-      <div class="timeline">
+      <!-- 空态：`yearGroups` 为空时原来整页只剩一个 h1「归档」，正文一片空白。
+           其他 6 个列表页（文章/标签/收藏/历史/友链/留言）都有空态，只有这里漏了。
+           文案要给出**事实**而不是「暂无数据」：读者需要知道是"还没有文章"还是"加载失败"，
+           以及下一步能去哪。加载失败另有分支（见下面的 error 块）。 -->
+      <div v-if="!loading && !failed && !yearGroups.length" class="empty-state">
+        <div class="icon-wrap"><XIcon name="Calendar" :size="30" /></div>
+        <p>还没有已发布的文章</p>
+        <p class="empty-hint">文章发布后会按年份自动出现在这里</p>
+        <div class="empty-actions">
+          <router-link to="/articles" class="search-btn retry-btn">去看看全部文章</router-link>
+        </div>
+      </div>
+
+      <!-- 加载失败：不能和"没有文章"混为一谈 —— 前者网络恢复后重试就好，
+           后者需要作者去发文章。混在一起会让读者以为站点空了。 -->
+      <div v-else-if="failed" class="empty-state state-error" role="alert">
+        <div class="icon-wrap"><XIcon name="ShieldAlert" :size="30" /></div>
+        <p>归档加载失败，可能是网络波动或服务暂时不可用</p>
+        <button class="search-btn retry-btn" @click="load()">重试</button>
+      </div>
+
+      <div v-else class="timeline">
         <div v-for="yg in yearGroups" :key="yg.year" class="tl-year-group" :data-year="yg.year" v-reveal>
           <!-- 年份用 h2，给它一个真正的标题层级。
                原来整页只有 h1「归档」，年份和月份都是 <span> ——
@@ -115,11 +136,26 @@ function barWidth(count) {
   return Math.max(8, Math.round((count / max) * 100));
 }
 
-onMounted(async () => {
+// 加载中 / 加载失败两个状态都要显式建模：
+// 原来只有一个 `catch (e) { /* 拦截器已提示 */ }`，失败后 groups 仍是 []，
+// 于是「还没加载完」「加载失败」「确实没有文章」三种情况长得一模一样 —— 都是空白页。
+// 空态文案里说的是「还没有已发布的文章」，如果实际上是网络失败，那就是**说假话**。
+const loading = ref(true);
+const failed = ref(false);
+
+async function load() {
+  loading.value = true;
+  failed.value = false;
   try {
     groups.value = await articleApi.archive();
-  } catch (e) { /* 拦截器已提示 */ }
-});
+  } catch (e) {
+    failed.value = true;
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(load);
 </script>
 
 <style scoped>
@@ -325,6 +361,9 @@ onMounted(async () => {
 }
 
 .tl-title {
+  /* 归档条目标题同样来自文章标题，超长串会撑出时间线 */
+  overflow-wrap: anywhere;
+
   flex: 1;
   font-size: 0.95rem;
   overflow: hidden;

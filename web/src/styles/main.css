@@ -27,24 +27,28 @@
   /* 主色：珊瑚 */
   --accent: #e4573d;
   --accent-soft: #fbeae4;
-  --accent-deep: #bf3f28;
+  --accent-deep: #a43f2c;
   --accent-contrast: #ffffff;
   /* 「主色作为**文字**」专用。--accent (#e4573d) 对浅底 (#f6f4f1) 只有
      3.34:1，达不到 WCAG AA 小字的 4.5:1 —— 而它被 114 处 `color:` 复用
      （阅读全文、置顶、公告标签、章节计数、eyebrow…）。
-     一次性把「作文字」的那一类切到 #b03823（对页底 5.57:1、对 accent-soft
-     淡底 4.66:1 —— 公告标签正是压在后者上，4.05:1 的 #bf3f28 还不够），
-     装饰用途（圆点、下划线、进度条、边框）继续用 --accent 保持鲜艳。 */
-  --accent-text: #b03823;
+     一次性把「作文字」的那一类切到压深 28% 的值（对页底 5.75:1、
+     对 accent-soft 淡底 5.59:1 —— 公告标签正是压在后者上），
+     装饰用途（圆点、下划线、进度条、边框）继续用 --accent 保持鲜艳。
+     ⚠ 压深比例必须是 28% 而不是 18%：18% 只对默认的珊瑚刚好过线（4.71），
+     色板里最亮的琥珀只有 3.68。theme.js 的 apply() 与 theme-init.js 用同一组公式，
+     三处（CSS 字面量 / store / 首屏脚本）必须同步，否则切换主题时内联值会残留。 */
+  --accent-text: #a43f2c;
   /* 「主色作底色 + 白字」的实心填充色。
      为什么单独一个 token：--accent 在深色主题下会被提亮（为了当**文字**时
      对深底有 4.5:1 的对比度），但同一抹提亮过的颜色拿去当**按钮底色**配白字，
      对比度只有 2.55:1（实测：发布留言 / skip-link / 各种 primary 按钮）。
      底色与文字对亮度的要求是相反的，必须分开。
-     --accent-fill 固定取压深 18% 的值：白字对它 5.17:1（对 #e4573d 只有 3.67:1）。
-     theme.js 在运行时用 shade() 算同一个值，这里的字面量是首屏/无 JS 时的兜底，
-     两者必须一致（test-contrast-tokens.mjs 断言这个字面量达标）。 */
-  --accent-fill: #bb4732;
+     --accent-fill 固定取压深 24% 的值：白字对它 5.84:1（对 #e4573d 只有 3.67:1）。
+     为什么是 24% 而不是 18%：18% 时珊瑚 5.17 达标，但**琥珀只有 4.04**，
+     差 0.46 没过 AA；24% 时八色全部 ≥4.5（琥珀 4.62 是最难的那个）。
+     theme.js 运行时、theme-init.js 首屏都用同一个 0.24，三处必须一致。 */
+  --accent-fill: #ad422e;
 
   /* 点缀色（低饱和，克制使用） */
   /* 琥珀作为「文字」时对浅底只有 2.65:1（四色里唯一不达标的），
@@ -216,8 +220,12 @@
   /* 深色下 --accent 已经提亮过（对深底够用），文字色直接复用 */
   --accent-text: var(--accent-deep-dark);
   /* 深色下实心按钮的底色：不能跟着 --accent 提亮（白字会糊），
-     保持在浅色主色的饱和度上即可 */
-  --accent-fill: var(--accent-dark);
+     保持在浅色主色的饱和度上即可。
+     ⚠ 这里必须**继续压深**，不能直接复用 --accent-dark (#f06a4e)：
+     白字压上去只有 3.05:1，比浅色主题还差。theme.js 在深色下写的也是
+     shade(accent, 0.24)，与浅色同一份值 —— 所以这里用与浅色相同的字面量，
+     首屏与挂载后一致，不会闪。 */
+  --accent-fill: #ad422e;
 
   /* ---------- 液态玻璃：暗色材质 ----------
      暗色下玻璃的"折射"靠极淡的白光边缘 + 更深的底，而不是继续堆白。 */
@@ -708,15 +716,28 @@ input:-webkit-autofill:focus {
   color: #f4878b;
 }
 
-/* 出错字段：边框变红 + 极淡红底，与 ::focus-visible 的焦点环叠加也不冲突 */
+/* 出错字段：边框变红 + 极淡红底，与 ::focus-visible 的焦点环叠加也不冲突。
+ *
+ * 用**属性选择器**而不是只认同 class：`aria-invalid="true"` 是无障碍的硬要求
+ * （读屏靠它播报「无效」），而 `.is-invalid` 只是额外的视觉 class。
+ * 只认后者的话，新写的表单会出现「语义上标记了无效、视觉上却没有红框」的不一致 ——
+ * 实测 Login.vue 的字段就是这样：补了 aria-invalid 之后仍然没有红框，
+ * 因为它用的是 `.input` 而不是 `.form-input`。
+ */
 .form-input.is-invalid,
-.form-textarea.is-invalid {
+.form-textarea.is-invalid,
+input[aria-invalid='true'],
+textarea[aria-invalid='true'],
+select[aria-invalid='true'] {
   border-color: #a8323a;
   background: color-mix(in srgb, #a8323a 4%, transparent);
 }
 
 [data-theme='dark'] .form-input.is-invalid,
-[data-theme='dark'] .form-textarea.is-invalid {
+[data-theme='dark'] .form-textarea.is-invalid,
+[data-theme='dark'] input[aria-invalid='true'],
+[data-theme='dark'] textarea[aria-invalid='true'],
+[data-theme='dark'] select[aria-invalid='true'] {
   border-color: #f4878b;
 }
 
@@ -1040,14 +1061,25 @@ select:focus-visible,
 /* ============================================================
    Element Plus 主题适配（前后台统一语言）
    ============================================================ */
+/* ⚠ --el-color-primary* 的口径只有一条：src/stores/theme.js 的 apply() 公式。
+   运行时由 theme-init.js（首帧，无条件写）与 apply()（挂载后）写出内联值，
+   下面这七行是「JS 完全没执行」时的静态兜底 —— 所以它们**必须**等于
+   默认强调色 #e4573d 在对应主题下按同一套系数算出来的值：
+     浅色  primary=accent                  light-3/5/7/8/9 = mix(accent,#fff, .55/.7/.85/.9/.95)
+           dark-2 = shade(accent,.25)
+     深色  primary=mix(accent,#fff,.1)      light-N = mix(primary,#12110f, .3/.55/.8/.88/.9)
+           dark-2 = mix(accent,#fff,.12)
+   旧字面量是第三套系数（≈.21/.4/.6/.7/.88，且深色 primary 与 light-9 又各自不同），
+   于是没设置过强调色的用户首帧吃这些值、挂载后被 apply() 覆盖 → 明显跳色。
+   改这几个数就必须同步跑 scripts/test-theme-init-parity.mjs（逐值比对，容差 0）。 */
 :root {
   --el-color-primary: #e4573d;
-  --el-color-primary-light-3: #ea7a64;
-  --el-color-primary-light-5: #f09b8a;
-  --el-color-primary-light-7: #f6bcb1;
-  --el-color-primary-light-8: #f9cdc4;
-  --el-color-primary-light-9: #fcebe6;
-  --el-color-primary-dark-2: #bf3f28;
+  --el-color-primary-light-3: #f3b3a8;
+  --el-color-primary-light-5: #f7cdc5;
+  --el-color-primary-light-7: #fbe6e2;
+  --el-color-primary-light-8: #fceeec;
+  --el-color-primary-light-9: #fef7f5;
+  --el-color-primary-dark-2: #ab412e;
 
   --el-bg-color: #ffffff;
   --el-bg-color-overlay: #ffffff;
@@ -1069,13 +1101,15 @@ select:focus-visible,
 }
 
 [data-theme='dark'] {
-  --el-color-primary: #f06a4e;
-  --el-color-primary-light-3: #c2553e;
-  --el-color-primary-light-5: #8f3e2e;
-  --el-color-primary-light-7: #5c2820;
-  --el-color-primary-light-8: #46201a;
-  --el-color-primary-light-9: #3a241e;
-  --el-color-primary-dark-2: #ff8a6e;
+  /* 深色块同理：默认强调色 #e4573d 按 theme.js 的深色公式算出的静态快照。
+     注意深色 primary 是**提亮**后的 mix(#e4573d,#fff,.1)=#e76850，不是旧手调的 #f06a4e。 */
+  --el-color-primary: #e76850;
+  --el-color-primary-light-3: #a74e3d;
+  --el-color-primary-light-5: #72382c;
+  --el-color-primary-light-7: #3d221c;
+  --el-color-primary-light-8: #2c1b17;
+  --el-color-primary-light-9: #271a16;
+  --el-color-primary-dark-2: #e76b54;
 
   --el-bg-color: #221f1a;
   --el-bg-color-overlay: #2a2620;

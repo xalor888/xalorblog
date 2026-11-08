@@ -3,10 +3,11 @@
   <teleport to="body">
     <transition name="lightbox">
       <!-- role=dialog + aria-modal：灯箱打开时背景内容对读屏不可达。
-           配合下方 onTabTrap 把键盘焦点也锁在图内 —— 只写 aria-modal
-           而不管焦点，是「宣称模态却做不到」，比不写更误导。 -->
+           配合 useFocusTrap（document 级，见 <script>）把键盘焦点也锁在图内 ——
+           只写 aria-modal 而不管焦点，是「宣称模态却做不到」，比不写更误导。 -->
       <div
         v-if="visible"
+        ref="panelRef"
         class="lightbox"
         role="dialog"
         aria-modal="true"
@@ -55,9 +56,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 
 const visible = ref(false);
 const src = ref('');
@@ -65,6 +67,8 @@ const alt = ref('');
 const zoom = ref(1);
 const dragging = ref(false);
 const stageRef = ref(null);
+/** 灯箱根元素（焦点陷阱的作用域边界） */
+const panelRef = ref(null);
 let dragStart = null;
 
 const imgStyle = computed(() => ({
@@ -73,9 +77,10 @@ const imgStyle = computed(() => ({
 
 // 记住「是谁打开的灯箱」，关闭后把焦点还回去 —— 否则焦点落在 body，
 // 键盘用户会从页面顶部重新 Tab 一遍。
-let lastFocused = null;
-// 打开灯箱的那张 <img> 本身不可聚焦，关闭时把焦点还给它的父级可聚焦容器
-// （正文图片被包在可聚焦的 <a>/<figure> 里时就能自然恢复）。
+//
+// 「打开前的 activeElement」由 useFocusTrap 记录；灯箱的差别在于触发元素是
+// 一张 <img>，而 <img> 默认不可聚焦 —— 点图片时 activeElement 是 body，
+// 所以必须把图片显式传进来（见下面的 returnFocusTo）。
 let lastFocusedImg = null;
 
 /**
@@ -90,17 +95,10 @@ function open(s, a, opener) {
   zoom.value = 1;
   dragging.value = false;
   dragStart = null;
-  // 只记录**真正可聚焦**的元素。点图片打开灯箱时 document.activeElement 是
-  // body（<img> 默认不可聚焦），记下来等于「关闭后恢复到 body」——
-  // 实测 Esc 后焦点确实落在 body，键盘用户得从页首重新 Tab。
-  // body 不是有效返回点，记 null，关闭时退回「当前打开的那张图」。
-  const active = document.activeElement;
-  lastFocused = active && active !== document.body ? active : null;
+  // 打开它的那张 <img>：关闭时优先还焦到它，其次到它最近的可聚焦祖先。
   lastFocusedImg = opener || null;
   if (!visible.value) lockScroll();
   visible.value = true;
-  // 聚焦关闭按钮：读屏会念出「关闭」，键盘用户立刻知道自己在弹层里
-  nextTick(() => document.querySelector('.lightbox .lb-close')?.focus?.());
 }
 
 function close() {
@@ -108,26 +106,41 @@ function close() {
   visible.value = false;
   dragging.value = false;
   dragStart = null;
-  if (lastFocused && typeof lastFocused.focus === 'function') {
-    lastFocused.focus();
-  } else if (lastFocusedImg) {
-    // 图片本身不可聚焦，要给它找一个「最近的」能接焦点的容器。
-    //
-    // ⚠ 不能直接写 closest('[tabindex]') —— 布局层的 <main> 带 tabindex="-1"
-    // （skip-link 的落地目标），一路向上会匹配到它，实测焦点被送到 <main>，
-    // 离用户刚才看的图很远。先试真正的可交互祖先，都没有才退化到图片本身。
-    const holder =
-      lastFocusedImg.closest('a[href], button, [role="button"]') || lastFocusedImg;
-    if (holder && typeof holder.focus === 'function') {
-      if (holder === lastFocusedImg && !holder.hasAttribute('tabindex')) {
-        holder.setAttribute('tabindex', '-1');
-      }
-      holder.focus({ preventScroll: true });
-    }
-  }
-  lastFocused = null;
-  lastFocusedImg = null;
+  // 焦点还给「打开灯箱的那张图」由 useFocusTrap 的 returnFocusTo 完成 ——
+  // 它必须在面板已经从 DOM 上消失之后才动焦点，所以不能写在这里（同步执行时
+  // 灯箱还在文档里，focus 出去会被随后的摘除抹掉）。
 }
+
+/**
+ * returnFocusTo 的实现：把「打开它的那张图」翻译成一个真正能接焦点的元素。
+ *
+ * <img> 默认不可聚焦，直接 focus(img) 是空操作。先找最近的交互祖先；
+ * ⚠ 不能写 closest('[tabindex]') —— 布局层的 <main tabindex="-1"> 是
+ * skip-link 的落地目标，一路向上会先匹配到它，焦点被送到离图很远的地方。
+ * 都没有时才退化成图片本身（临时补 tabindex="-1" 让它可聚焦）。
+ */
+function focusReturnTarget() {
+  const img = lastFocusedImg;
+  lastFocusedImg = null; // 用完即弃：不持有可能已经被换掉/移除的节点
+  if (!img || typeof img.closest !== 'function') return null;
+  const holder = img.closest('a[href], button, [role="button"]') || img;
+  if (holder === img && !img.hasAttribute('tabindex')) {
+    img.setAttribute('tabindex', '-1');
+  }
+  return holder;
+}
+
+/**
+ * 焦点管理（打开移入 / Tab 首尾循环 / Esc 关闭 / 关闭还焦）统一交给 useFocusTrap。
+ * 本组件的差异：焦点落在关闭按钮上（读屏会念出「关闭」，键盘用户立刻知道
+ * 自己在弹层里），还焦目标是那张图，preventScroll 避免页面为了露出图片跳一下。
+ */
+useFocusTrap(panelRef, visible, {
+  onClose: () => close(),
+  initialFocus: '.lb-close',
+  returnFocusTo: () => focusReturnTarget(),
+  preventScroll: true,
+});
 
 function lockScroll() {
   lockBodyScroll();
@@ -217,65 +230,23 @@ function onTouchMove(e) {
   onDragMove({ clientX: t.clientX, clientY: t.clientY });
 }
 
+/**
+ * 缩放快捷键。Esc 不在这里 —— 它属于模态约束，和 Tab 一起由 useFocusTrap
+ * 在 document 级处理（关灯箱的键，不该由「顺便也听键盘」的缩放处理器负责）。
+ */
 function onKeydown(e) {
-  if (e.key === 'Escape') close();
   if (!visible.value) return;
   if (e.key === '+' || e.key === '=') zoomBy(0.25);
   if (e.key === '-') zoomBy(-0.25);
   if (e.key === '0') resetZoom();
 }
 
-/**
- * 焦点陷阱：与搜索弹窗同一套做法。
- * 灯箱里可聚焦的东西很少（关闭 + 缩放按钮），但正因为少，
- * 一按 Tab 就会跑到背景页面上 —— 而背景已被 aria-modal 声明为不可达。
- * 原则：焦点不在灯箱内就无条件拉回，首尾元素上正常循环。
- */
-const FOCUSABLE = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',');
-
-function lightboxFocusables() {
-  const root = document.querySelector('.lightbox');
-  if (!root) return [];
-  return [...root.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
-}
-
-function onTabTrap(e) {
-  if (!visible.value || e.key !== 'Tab') return;
-  const list = lightboxFocusables();
-  if (!list.length) return;
-  const first = list[0];
-  const last = list[list.length - 1];
-  const active = document.activeElement;
-  if (!active || !active.closest || !active.closest('.lightbox')) {
-    e.preventDefault();
-    (e.shiftKey ? last : first).focus();
-    return;
-  }
-  if (e.shiftKey && active === first) {
-    e.preventDefault();
-    last.focus();
-    return;
-  }
-  if (!e.shiftKey && active === last) {
-    e.preventDefault();
-    first.focus();
-  }
-}
-
 onMounted(() => {
   document.addEventListener('keydown', onKeydown);
-  document.addEventListener('keydown', onTabTrap);
 });
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown);
-  document.removeEventListener('keydown', onTabTrap);
   if (visible.value) unlockScroll();
 });
 

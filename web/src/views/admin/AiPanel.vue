@@ -9,12 +9,21 @@
     </header>
 
     <!-- 未配置模型：一键直达设置页 -->
-    <div v-if="aiReady === false" class="ai-notice">
+    <div v-if="aiState === 'unconfigured'" class="ai-notice">
       <p class="ai-notice-title">尚未配置模型</p>
       <button class="ai-go" @click="goSettings">前往配置</button>
     </div>
 
     <template v-else>
+      <!-- 状态查询失败：与「未配置模型」分开。
+           这是浮层而不是整页，所以只插一条提示带 —— 上面的对话与下面输入框
+           都保持原样，用户已经敲了一半的指令不会因此被清掉 /
+           藏进另一个分支。 -->
+      <div v-if="aiState === 'error'" class="ai-error" role="alert">
+        <p class="ai-error-text">{{ aiError }}</p>
+        <button class="ai-retry" :disabled="aiChecking" @click="retryReady">重试</button>
+      </div>
+
       <div ref="listEl" class="ai-list">
         <div v-if="!messages.length" class="ai-empty">
         </div>
@@ -28,7 +37,16 @@
           <!-- AI 消息 -->
           <div v-else class="ai-row">
             <div class="ai-bubble ai-bubble-main">
-              <div v-if="m.content" class="ai-md" v-html="renderMarkdown(m.content)"></div>
+              <!-- 流式期间用纯文本，不渲染 Markdown。
+                   与前台 AskAi.vue 同一处理（那边先修的）。理由有两个：
+                   1) **性能**：流式回答每个 token 都会触发重渲染，而 renderMarkdown 要跑
+                      marked.parse + DOMPurify + demoteH1 + 三个后处理器。回答长到几千字时
+                      这是 O(n²) —— 令牌越多每帧越慢，最后会卡住输入框。
+                   2) **观感**：markdown 是块级元素，未闭合的 `**` 或 ``` 会让已收到的文字
+                      在解析中途跳来跳去。
+                   流式结束后（m.streaming = false）才走 v-html 渲染一次。 -->
+              <span v-if="m.streaming" class="ai-raw">{{ m.content }}</span>
+              <div v-else-if="m.content" class="ai-md" v-html="renderMarkdown(m.content)"></div>
               <span v-if="m.streaming && !m.content" class="ai-typing"></span>
 
               <!-- 图片卡片 -->
@@ -130,7 +148,8 @@
           @keydown.enter.exact.prevent="send()"
         />
         <button v-if="pending" class="ai-send stop" @click="stop">停止</button>
-        <button v-else class="ai-send" :disabled="!draft.trim()" @click="send()">
+        <!-- 与前台 AskAi 同一个问题：纯图标按钮读屏只会念「按钮」 -->
+        <button v-else class="ai-send" :disabled="!draft.trim()" aria-label="发送写作指令" @click="send()">
           <XIcon name="Send" :size="14" />
         </button>
       </footer>
@@ -165,8 +184,17 @@ const API_PREFIX = import.meta.env.VITE_API_PREFIX || '/api';
 const messages = ref([]);
 const draft = ref('');
 const pending = ref(false);
-/** null = 还没查；false = 未配置模型 */
-const aiReady = ref(null);
+/**
+ * 就绪状态是三态而不是布尔：`signedFetch` 对 403/500 不抛错，闸门没过或服务
+ * 报错时会拿到一段 `code:1` 的响应体（甚至网关的 HTML 错误页）。原来把它
+ * 归成 `ready=false` 直接渲染「尚未配置模型」，等于把票据/服务故障说成配置缺失
+ * —— 用户会被引去设置页白找一圈，而真正该做的是刷新或重试。
+ * 所以只有服务端**明确**回 `ready:false` 才算 unconfigured。
+ * null = 还在查（沿用原来的乐观渲染：先能用，查完再收闸）。
+ */
+const aiState = ref(null); // null | 'ready' | 'unconfigured' | 'error'
+const aiError = ref('');
+const aiChecking = ref(false);
 const modelName = ref('');
 const listEl = ref(null);
 let controller = null;
@@ -211,36 +239,67 @@ function goSettings() {
 }
 
 let readyTimer = null;
+/** 自动重试只用一次：闸门故障时无限轮询既救不回来，也会把请求日志刷满 */
+let readyRetried = false;
+
+function clearReadyTimer() {
+  if (readyTimer) {
+    clearTimeout(readyTimer);
+    readyTimer = null;
+  }
+}
+
+/**
+ * 查一次就绪状态。
+ *
+ * 两个关键点：
+ *  1. `ensurePass()` 每次都要走（重试也是）—— 403 的根源是票据，不续票重试
+ *     一辈子都是 403；
+ *  2. **响应体失败也要重试**。`signedFetch` 对非 2xx 从不抛错，原来的重试
+ *     定时器只挂在 catch 上，于是最常见的失败形态（403/500 带着 code:1 回来）
+ *     一次都不会重试，直接被钉成「未配置」。
+ */
 async function checkReady() {
+  aiChecking.value = true;
   try {
-    // 等 PoW 票据就绪再查：后台刚打开时挑战可能还没算完，直接查必然 403，
-    // 且面板只在打开时查这一次 —— 不重试就会一直显示「未配置」。
     await ensurePass();
     const res = await signedFetch(adminUrl('/ai/status'));
-    const json = await res.json();
-    const d = json?.data || {};
-    aiReady.value = d.ready === true;
-    modelName.value = d.model || '';
-    if (readyTimer) {
-      clearInterval(readyTimer);
-      readyTimer = null;
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
     }
+    // 网关错误页 / 空响应在这里抛：解析失败同样属于「请求失败」，不是「没配模型」
+    const json = await res.json();
+    if (!json || json.code !== 0) throw new Error('状态接口返回失败');
+    const d = json.data || {};
+    modelName.value = d.model || '';
+    aiState.value = d.ready === true ? 'ready' : 'unconfigured';
+    aiError.value = '';
+    readyRetried = false;
+    clearReadyTimer();
   } catch (e) {
-    aiReady.value = false;
-    // 失败（票据/网络抖动）每 6s 重试，最多 5 次 —— 仍失败才落定「未配置」
-    if (!readyTimer) {
-      let attempts = 0;
-      readyTimer = setInterval(async () => {
-        attempts += 1;
-        if (attempts > 5 || aiReady.value === true) {
-          clearInterval(readyTimer);
-          readyTimer = null;
-          return;
-        }
-        await checkReady();
+    aiState.value = 'error';
+    // 403 = 票据/安全通道没过（刷新页面能重建）；其余归到服务侧
+    aiError.value = e?.status === 403 ? '安全校验失败，请刷新页面' : '服务暂时不可用';
+    if (!readyTimer && !readyRetried) {
+      readyRetried = true;
+      readyTimer = setTimeout(() => {
+        readyTimer = null;
+        checkReady();
       }, 6000);
     }
+  } finally {
+    aiChecking.value = false;
   }
+}
+
+/** 手动重试：重新走一遍 ensurePass()，并允许再自动兜一次 */
+function retryReady() {
+  if (aiChecking.value) return;
+  readyRetried = false;
+  clearReadyTimer();
+  checkReady();
 }
 
 /** 发给服务端的上下文：页面上下文 + 当前选区（润色要让模型知道选中了什么） */
@@ -498,10 +557,7 @@ function undoOne(msg, j) {
 onMounted(checkReady);
 
 onUnmounted(() => {
-  if (readyTimer) {
-    clearInterval(readyTimer);
-    readyTimer = null;
-  }
+  clearReadyTimer();
 });
 
 defineExpose({
@@ -605,6 +661,49 @@ defineExpose({
   font-weight: 600;
 }
 
+/* ---------- 状态查询失败 ----------
+   故障提示带贴在消息区上方，不吃掉对话内容：失败不该把用户写了一半的
+   指令一起卷走。文字用实色 token，不靠 opacity 淡化（暗色主题下会糊）。 */
+.ai-error {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--lg-edge);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.ai-error-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.ai-retry {
+  flex-shrink: 0;
+  padding: 4px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: var(--card);
+  color: var(--accent-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: all var(--dur) var(--ease);
+}
+
+.ai-retry:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.ai-retry:disabled {
+  border-color: var(--lg-edge);
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+
 /* ---------- 消息区 ---------- */
 .ai-list {
   flex: 1;
@@ -619,11 +718,6 @@ defineExpose({
 .ai-empty {
   margin: auto 0;
   text-align: center;
-}
-
-.ai-empty-tip {
-  font-size: 0.8rem;
-  color: var(--text-3);
 }
 
 .ai-row {
@@ -658,6 +752,13 @@ defineExpose({
 }
 
 /* AI 回复的 Markdown 渲染 */
+/* 流式期间的纯文本容器：必须保留换行与连续空格，否则和渲染后的观感差异很大
+   （模型输出里的换行会全被折叠成空格）。与前台 AskAi 的 .ask-raw 一致。 */
+.ai-raw {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .ai-md :deep(p) {
   margin: 0 0 6px;
 }

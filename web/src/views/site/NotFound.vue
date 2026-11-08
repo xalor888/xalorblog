@@ -37,8 +37,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watchEffect } from 'vue';
 import { useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
-import { articleApi } from '@/api';
+import request from '@/api';
 import { useSiteStore } from '@/stores/site';
 
 const site = useSiteStore();
@@ -68,13 +69,19 @@ async function randomArticle() {
   if (loadingRandom.value) return;
   loadingRandom.value = true;
   try {
-    const r = await articleApi.random();
+    // silent：提示由下面分流，避免拦截器再弹一条意思相反的 toast（404 不是错误）
+    const r = await request.get('/articles/random', { silent: true });
     if (r && r.slug) {
           router.push(`/article/${r.slug}`);
       return;
     }
   } catch (e) {
-    /* 拦截器已提示 */
+    // 404 = 站内还没有文章（正常状态，不是失败）；其余才是网络/服务问题。
+    // 原来只写一句「拦截器已提示」：既分不清这两种情况，也无法确认提示真的出现过——
+    // 读者点了按钮却什么也没发生，只能反复点。
+    const status = e && e.response && e.response.status;
+    if (status === 404) ElMessage.info('还没有可跳转的文章');
+    else ElMessage.error('跳转失败，请稍后重试');
   } finally {
     loadingRandom.value = false;
   }

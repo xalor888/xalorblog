@@ -545,16 +545,32 @@ onMounted(async () => {
   await site.init();
   // 预热评论表单令牌（减少首次提交等待）
   warmFormToken();
-  // 空闲时预取常用页面 chunk（浏览器空闲期提前加载，导航即点即开）
-  const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 2000));
-  idle(() => {
+  // 空闲时预取常用页面 chunk（浏览器空闲期提前加载，导航即点即开）。
+  //
+  // 两个细节：
+  //   1. `requestIdleCallback` **必须带 timeout**。不带的话，在一直有小任务的页面
+  //      （滚动监听、动画、后台轮询）上它可能永远等不到"真正的空闲"，预取彻底不生效 ——
+  //      而"没生效"和"生效了"在功能上完全看不出来，只体现为导航慢一点。
+  //   2. 句柄要留着并在卸载时取消：不然组件销毁后 6 个 import 照样发出去，
+  //      白白拉几百 KB。
+  const prefetch = () => {
     import('@/views/site/ArticleList.vue').catch(() => {});
     import('@/views/site/ArticleDetail.vue').catch(() => {});
     import('@/views/site/Archive.vue').catch(() => {});
     import('@/views/site/Tags.vue').catch(() => {});
     import('@/views/site/Messages.vue').catch(() => {});
     import('@/views/site/About.vue').catch(() => {});
-  });
+  };
+  let cancelPrefetch = () => {};
+  if (typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(prefetch, { timeout: 3000 });
+    cancelPrefetch = () => window.cancelIdleCallback?.(handle);
+  } else {
+    // Safari 15.4 之前没有 requestIdleCallback：退回固定延时
+    const handle = setTimeout(prefetch, 2000);
+    cancelPrefetch = () => clearTimeout(handle);
+  }
+  onUnmounted(() => cancelPrefetch());
   try {
     await statsApi.record();
     await site.fetchStats();
@@ -754,26 +770,8 @@ onUnmounted(() => {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
 
-.brand-mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: var(--text);
-  color: var(--bg);
-  font-weight: 800;
-  font-size: 0.98rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  letter-spacing: -0.02em;
-  transition: background var(--dur) var(--ease);
-}
-
-.brand-mark.sm {
-  width: 26px;
-  height: 26px;
-  font-size: 0.85rem;
-}
+/* .brand-mark / .brand-mark.sm 已删除：站点 logo 现在统一用 <img class="brand-mark-img">，
+   原来的「字母方块」样式没有任何模板引用（含 .sm 变体）。 */
 
 .brand-text {
   font-weight: 700;
@@ -1256,11 +1254,7 @@ onUnmounted(() => {
   color: var(--accent-text);
 }
 
-.footer-powered em {
-  font-style: normal;
-  color: var(--accent-text);
-  font-weight: 600;
-}
+/* .footer-powered em 已删除：模板里 .footer-powered 是纯文本 span，其中没有 <em> 子元素 */
 
 .nav-progress {
   position: absolute;

@@ -62,6 +62,25 @@ export const useThemeStore = defineStore('theme', () => {
       '--accent-deep',
       isDark.value ? mix(accent.value, '#ffffff', 0.4) : shade(accent.value, 0.28)
     );
+    /**
+     * --accent-text（「主色作为**文字**」专用）：必须在这里**每次都写**。
+     *
+     * ⚠ 原来这个变量只由 public/theme-init.js 在首屏写一次内联值，apply() 从不碰它。
+     * 于是「页面以浅色加载 → 用户点主题按钮切到深色」时，内联的浅色公式
+     * `shade(accent, 0.18)` 会**一直留着**：珊瑚 3.65:1、黛绿 2.67:1、堇紫 2.59:1
+     * —— 八个主题色里七个跌破 WCAG AA 4.5:1，而全部 114 处 `color: var(--accent-text)`
+     * 的小字（阅读全文 / 置顶 / 公告标签 / 章节计数）都吃这一份。
+     * 反向（深色加载 → 切浅色）更糟：`mix(accent, #fff, 0.4)` 对浅底只有 1.65–2.27:1。
+     * 内联变量优先级高于样式表，所以样式表里那两条正确的 dark/light 定义根本救不了。
+     *
+     * 浅色压深 0.28（不是 0.18）：0.18 对默认珊瑚刚好 4.71 过线，但**琥珀只有 3.68**
+     * —— 与 --accent-fill 当年踩的是同一个坑（按默认色调参，色板里最亮的那个不达标）。
+     * 0.28 时八色对页底与对 accent-soft 淡底双双 ≥4.5。
+     */
+    root.style.setProperty(
+      '--accent-text',
+      isDark.value ? mix(accent.value, '#ffffff', 0.4) : shade(accent.value, 0.28)
+    );
     // 实心填充色（主色作底 + 白字）：**不随深色提亮**。
     // --accent 在深色下变亮是为了当文字时对深底够对比度；同一抹亮色配白字
     // 只有 2.55:1（实测「发布留言」/ skip-link / .btn-primary）。
@@ -71,8 +90,14 @@ export const useThemeStore = defineStore('theme', () => {
     // 差 0.46 没过 AA。0.24 时七色分别为
     // 珊瑚 5.84 / 琥珀 4.62 / 黛绿 7.78 / 黛蓝 7.78 / 绛红 7.20 / 堇紫 8.08 / 青碧 6.14，
     // 全部 ≥4.5，而观感上仍是同一个色（只是重了一点点，按钮本来就该比文字重）。
+    // theme-init.js 与 main.css 的字面量必须同为 0.24 —— 否则首屏那一帧是 0.18，
+    // 挂载后跳成 0.24，典型「刷新闪一下」；深色首屏用的 --accent-dark (#f06a4e)
+    // 配白字更是只有 3.05:1。
     root.style.setProperty('--accent-fill', shade(accent.value, 0.24));
     // 同步 Element Plus 主色（深色下主色提亮、light-N 朝深底压暗，镜像样式表深色色板的配方）
+    // ⚠ brightBase 是 mix() 返回的 'rgb(r, g, b)' 字符串，下面还要拿它继续 mix ——
+    //   所以颜色工具必须吃得下 rgb() 输入（旧 parseHex 只认 #rrggbb，会算出 rgb(NaN, NaN, NaN)，
+    //   浏览器整条丢弃 → 深色下 EP 的 light-3/5/7/8/9 全部退回默认蓝）。
     const brightBase = isDark.value ? mix(accent.value, '#ffffff', 0.1) : accent.value;
     root.style.setProperty('--el-color-primary', brightBase);
     root.style.setProperty('--el-color-primary-dark-2', isDark.value
@@ -150,25 +175,48 @@ export const useThemeStore = defineStore('theme', () => {
 });
 
 // 色彩工具
-function parseHex(hex) {
-  const h = hex.replace('#', '');
-  return {
-    r: parseInt(h.slice(0, 2), 16),
-    g: parseInt(h.slice(2, 4), 16),
-    b: parseInt(h.slice(4, 6), 16),
-  };
+
+/**
+ * 颜色解析：同时接受 `#rrggbb` 与 `mix()/shade()` 自己产出的 `rgb(r, g, b)`。
+ *
+ * 为什么必须两种都认：深色 EP 色阶是**链式**的 —— 先把主色 mix 成 `--el-color-primary`
+ * （字符串），再拿这个字符串继续 mix 出 light-3/5/7/8/9。旧 parseHex 只会按
+ * `h.slice(0,2)` 取十六进制：喂进去 `'rgb(231, 104, 80)'` 时 r 通道是 `parseInt('rg')` = NaN，
+ * g/b 还会从 `'b('`、`'23'` 里被 parseInt 侥幸读出 11/35 这种垃圾值（实测旧 dark light-3
+ * 输出 `rgb(NaN, 13, 29)`）—— 只要有一个通道是 NaN，整条声明就算非法被浏览器丢弃，
+ * 于是深色主题下 EP 的 light-3/5/7/8/9 静默变回默认蓝（不报错、控制台无痕迹，
+ * 只能靠肉眼在深色下看按钮）。
+ *
+ * 无法识别的输入退回黑色：宁可颜色不准，也绝不把 NaN 写进 CSS（声明会被静默丢弃）。
+ */
+function parseColor(input) {
+  const s = String(input).trim();
+  if (s.charAt(0) === '#') {
+    const h = s.slice(1);
+    return {
+      r: parseInt(h.slice(0, 2), 16),
+      g: parseInt(h.slice(2, 4), 16),
+      b: parseInt(h.slice(4, 6), 16),
+    };
+  }
+  const m = s.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:[,/]\s*[\d.]+\s*)?\)$/i);
+  if (!m) return { r: 0, g: 0, b: 0 };
+  return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
 }
 
-function shade(hex, amount) {
-  const { r, g, b } = parseHex(hex);
+/** 历史名：解析入口现在同时认 hex 与 rgb()，老调用点保持可读 */
+const parseHex = parseColor;
+
+function shade(color, amount) {
+  const { r, g, b } = parseColor(color);
   const mix = (c) => Math.round(c * (1 - amount));
   return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
 }
 
-/** 与白色/目标色混合出浅色 */
-function mix(hex, target, amount) {
-  const { r, g, b } = parseHex(hex);
-  const t = parseHex(target);
+/** 与白色/目标色混合出浅色（target 可以是 hex，也可以是本方产出的 rgb() 字符串） */
+function mix(color, target, amount) {
+  const { r, g, b } = parseColor(color);
+  const t = parseColor(target);
   const m = (c, tc) => Math.round(c + (tc - c) * amount);
   return `rgb(${m(r, t.r)}, ${m(g, t.g)}, ${m(b, t.b)})`;
 }

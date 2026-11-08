@@ -23,6 +23,7 @@ import ini from 'highlight.js/lib/languages/ini';
 import kotlin from 'highlight.js/lib/languages/kotlin';
 import swift from 'highlight.js/lib/languages/swift';
 import DOMPurify from 'dompurify';
+import { copyText } from './clipboard';
 
 // 按需注册常用语言（替代全量引入，chunk 体积大幅减小）
 const LANGUAGES = {
@@ -94,16 +95,51 @@ renderer.code = ({ text, lang: langInfo }) => {
 marked.use({ renderer });
 
 /**
- * 将 Markdown 渲染为安全的 HTML
+ * 渲染结果缓存（LRU，按 Markdown 原文做 key）。
+ *
+ * 为什么需要：`renderMarkdown(m.content)` 写在模板里，**每次组件重渲染都会重新求值**。
+ * AskAi 面板有一个 `v-model` 输入框 —— 在输入框里每敲一个字都会触发整个消息列表重渲染，
+ * 也就是说打完一句 20 字的问题，历史上所有回答（可能十几条、每条约 2000 字）
+ * 会被 `marked.parse + DOMPurify.sanitize` 重跑 20 遍。
+ *
+ * 缓存的是**已净化后的 HTML**，不绕过任何安全步骤：未命中时才走
+ * `marked.parse → 语义修补 → DOMPurify.sanitize` 全流程，命中直接返回上次的成品。
+ * 因此不会把未净化内容漏出去。
+ *
+ * 上限 40：一个会话里可见的历史消息通常不超过这个量；
+ * 超出时按**插入顺序**淘汰最旧的一条（Map 保证迭代顺序），
+ * 不做访问序 LRU —— 聊天场景里旧消息一旦滚出视野就不再重渲染，两害相权取实现最简单。
+ */
+const RENDER_CACHE_MAX = 40;
+const renderCache = new Map();
+
+/** 仅供测试与排查：清空渲染缓存 */
+export function clearRenderCache() {
+  renderCache.clear();
+}
+
+/**
+ * 将 Markdown 渲染为安全的 HTML（带 LRU 缓存）
  * @param {string} md
  * @returns {string}
  */
 export function renderMarkdown(md = '') {
-  const raw = marked.parse(md, { breaks: true, gfm: true });
+  const key = String(md);
+  const cached = renderCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const raw = marked.parse(key, { breaks: true, gfm: true });
   // 注意顺序：先修语义（这些正则只认 marked 的原始输出），再降 h1 / 补表头
-  return DOMPurify.sanitize(
+  const html = DOMPurify.sanitize(
     addTableScopes(demoteH1(annotateTaskItems(raw)))
   );
+
+  if (renderCache.size >= RENDER_CACHE_MAX && !renderCache.has(key)) {
+    const oldest = renderCache.keys().next().value;
+    if (oldest !== undefined) renderCache.delete(oldest);
+  }
+  renderCache.set(key, html);
+  return html;
 }
 
 /**
@@ -392,64 +428,14 @@ const COPY_FEEDBACK_MS = 1600;
 const copyTimers = new WeakMap();
 
 /**
- * 把文本写进剪贴板，返回**真实结果**。
+ * 复制文本：走 `utils/clipboard.js` 的唯一实现。
  *
- * 两条路径都必须把结论交回来：
- * 1. `navigator.clipboard.writeText` —— 只在安全上下文（https / localhost）且用户
- *    授权时可用；局域网 IP 上打开、或权限被拒时会 reject。
- * 2. `document.execCommand('copy')` —— 老浏览器与非安全上下文的兜底，它**返回布尔值**
- *    且失败时可能不抛异常（只是返回 false），所以必须读返回值，不能只看有没有异常。
+ * 这里原本有一份私有的 `copyToClipboard` + `legacyCopy`，与
+ * `components/site/CommentItem.vue`、`components/site/AskAi.vue` 里的两份逐行同构。
+ * 三份实现意味着三条失效路径（例如 iOS 的 setSelectionRange、execCommand 返回 false
+ * 却不抛异常、复制后焦点掉回 body），修一处漏两处只是时间问题。
+ * 兜底实现已合并到 clipboard.js（采用原先这份更完整的版本：保留焦点 + 1px 固定定位）。
  */
-async function copyToClipboard(text) {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch (e) {
-      // 落到下面的兜底路径
-    }
-  }
-  return legacyCopy(text);
-}
-
-/** execCommand 兜底：返回它真实给出的成功与否 */
-function legacyCopy(text) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  // 固定在视口内但不可见：display:none / visibility:hidden 会让 select() 失效
-  ta.setAttribute('readonly', '');
-  ta.style.position = 'fixed';
-  ta.style.top = '0';
-  ta.style.left = '0';
-  ta.style.width = '1px';
-  ta.style.height = '1px';
-  ta.style.padding = '0';
-  ta.style.border = 'none';
-  ta.style.opacity = '0';
-  ta.style.pointerEvents = 'none';
-  document.body.appendChild(ta);
-  const prevFocus = document.activeElement;
-  let ok = false;
-  try {
-    ta.select();
-    // iOS Safari 只认 range 选中，仅 select() 会复制出空串
-    ta.setSelectionRange(0, ta.value.length);
-    ok = document.execCommand('copy') === true;
-  } catch (e) {
-    ok = false;
-  } finally {
-    ta.remove();
-    // 把焦点还给原来的元素（按钮），否则键盘用户会掉回 body
-    if (prevFocus && typeof prevFocus.focus === 'function') {
-      try {
-        prevFocus.focus({ preventScroll: true });
-      } catch (e) {
-        /* 老浏览器不认 options 参数 */
-      }
-    }
-  }
-  return ok;
-}
 
 /** 按钮回到「复制」状态（复位文案与状态标记） */
 function resetCopyButton(btn) {
@@ -513,7 +499,7 @@ export function initMarkdownInteractions() {
 
     btn.dataset.copying = '1';
     try {
-      showCopyResult(btn, await copyToClipboard(text));
+      showCopyResult(btn, await copyText(text));
     } finally {
       btn.dataset.copying = '0';
     }

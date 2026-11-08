@@ -30,7 +30,11 @@
     <div v-else class="image-grid">
       <div v-for="f in visibleFiles" :key="f.name" class="image-cell">
         <div class="thumb">
-          <img :src="`/uploads/${f.name}`" :alt="f.name" loading="lazy" @click="preview(f.name)" />
+          <!-- img 不能直接键盘化（它没有可激活语义），用 button 包裹：
+               按钮给出「可点」语义与焦点，img 的 alt 继续给读屏念文件名。 -->
+          <button type="button" class="thumb-btn" :aria-label="'预览：' + f.name" @click="preview(f.name)">
+            <img :src="`/uploads/${f.name}`" :alt="f.name" loading="lazy" />
+          </button>
           <span v-if="f.used" class="used-badge">引用中</span>
           <span v-else class="free-badge">未引用</span>
         </div>
@@ -62,7 +66,15 @@
     </div>
 
     <!-- 预览灯箱 -->
-    <el-dialog v-model="previewOpen" :title="previewName" width="min(92vw, 720px)" append-to-body>
+    <el-dialog
+      ref="previewRef"
+      v-model="previewOpen"
+      :title="previewName"
+      width="min(92vw, 720px)"
+      append-to-body
+      @opened="onPreviewOpened"
+      @closed="onPreviewClosed"
+    >
       <img :src="`/uploads/${previewName}`" class="preview-img" :alt="previewName" />
     </el-dialog>
   </div>
@@ -70,6 +82,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { imagesApi, uploadApi } from '@/api';
@@ -113,6 +126,17 @@ async function uploadOne(e) {
 }
 
 /** 引用信息由后端 collectReferencedUploads 返回（used 标记），本页直接消费 */
+/* 焦点陷阱：el-dialog 的 aria-modal="true" 需要真的困住焦点才算数。
+   用 @opened/@closed 手动 engage —— watch(v-model) 的 nextTick 赶不上过渡动画。 */
+const previewRef = ref(null);
+const trap = useFocusTrap(
+  computed(() => (previewRef.value && previewRef.value.$el) || null),
+  computed(() => false),
+  {}
+);
+function onPreviewOpened() { if (trap.value) trap.value.engage(); }
+function onPreviewClosed() { if (trap.value) trap.value.disengage(); }
+
 function load() {
   loading.value = true;
   imgPage.value = 1; // 列表变化后回到第一页
@@ -249,6 +273,18 @@ onMounted(load);
 .image-cell:hover {
   border-color: var(--accent);
   box-shadow: var(--shadow-1);
+}
+
+/* 缩略图外层是 button（为了键盘可达），img 放在里面铺满 */
+.thumb-btn {
+  appearance: none;
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
 }
 
 .thumb {

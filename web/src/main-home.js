@@ -21,7 +21,7 @@ import { getAuthToken, getCachedAuthUser } from './utils/authSession';
 
 // 命令式组件（ElMessage / ElMessageBox）的主题样式必须显式引入（同博客入口，原因见 src/main.js）
 import 'element-plus/es/components/message/style/css';
-import 'element-plus/es/components/message-box/style/css';
+// message-box 的样式同样不在此引入（与 main.js 同一个理由，见那边的说明）。
 
 import './styles/main.css';
 import './styles/markdown.css';

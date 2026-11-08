@@ -88,26 +88,43 @@ export function readingMinutes(content = '', opts = {}) {
  */
 export function aggregateReading(articles = []) {
   const list = Array.isArray(articles) ? articles : [];
-  let totalWords = 0;
+  let totalCn = 0;
+  let totalEn = 0;
   let longest = null;
 
   for (const a of list) {
     const { cn, en } = countWords(a?.content || '');
-    const words = cn + en;
-    totalWords += words;
+    totalCn += cn;
+    totalEn += en;
     // 逐篇比较只为挑出「最长」那篇；总时长**不**在循环里累加，
     // 否则就变成「逐篇取整再相加」（100 篇 10 字文章 = 100 分钟）。
-    if (words > 0 && (!longest || words > longest.words)) {
-      longest = { title: a?.title || '', slug: a?.slug || '', words };
+    if (cn + en > 0 && (!longest || cn + en > longest.words)) {
+      longest = { title: a?.title || '', slug: a?.slug || '', words: cn + en };
     }
   }
 
+  const totalWords = totalCn + totalEn;
   return {
     total_articles: list.length,
     total_words: totalWords,
     // 0 篇时不能是 NaN（0/0）；这里显式给 0
     avg_words: list.length === 0 ? 0 : Math.round(totalWords / list.length),
     longest,
-    total_reading_minutes: totalWords === 0 ? 0 : Math.ceil(totalWords / CN_WPM),
+    /**
+     * 总阅读时长：中文、英文要**分开算再相加**，与 readingMinutes 同一口径。
+     *
+     * ⚠ 原来这里写的是 `Math.ceil(totalWords / CN_WPM)` —— 把英文词也按
+     * 中文的 350 字/分钟折算。英文的阅读速度是 250 词/分钟（EN_WPM），
+     * 于是同一篇文章在两个地方报出不同时长：
+     *   700 词纯英文 → 详情页 readingMinutes 说 **3 分钟**，
+     *                  站点统计 aggregateReading 说 **2 分钟**；
+     *   2000 词 → 8 分钟 vs 6 分钟。
+     * 用户看到的就是「文章里写 8 分钟，统计页说全站才 6 分钟」。
+     * 统计口径不一致比数字偏差更伤信任，所以这里改成和详情页同一套算法。
+     *
+     * 取整时机保持不变：**总量一次性取整**，不逐篇取整后相加。
+     */
+    total_reading_minutes:
+      totalWords === 0 ? 0 : Math.ceil(totalCn / CN_WPM + totalEn / EN_WPM),
   };
 }

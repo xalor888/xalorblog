@@ -98,9 +98,16 @@
         <button class="emoji-toggle" :class="{ active: showEmoji }" :aria-pressed="showEmoji" title="表情" aria-label="表情选择" @click="toggleEmoji">
           <XIcon name="Smile" :size="15" />
         </button>
-        <span v-if="replyingTo" class="reply-target" @click="cancelReply">
+        <!-- 取消回复的入口：原来是 span，键盘取消不了（只能清空输入框绕过去）。 -->
+        <button
+          v-if="replyingTo"
+          type="button"
+          class="reply-target"
+          aria-label="取消回复"
+          @click="cancelReply"
+        >
           回复 @{{ replyingTo.nickname }} <XIcon name="X" :size="13" />
-        </span>
+        </button>
         <span class="char-count" :class="{ near: form.content.length > 1800 }">{{ form.content.length }}/2000</span>
         <span class="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> 提交</span>
         <button class="submit-btn" :disabled="submitting" @click="submit">
@@ -765,6 +772,12 @@ watch(
 }
 
 .reply-target {
+  /* 由 span 改成 button：清掉 UA 默认样式，保留原有软底胶囊外观 */
+  appearance: none;
+  border: 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 5px;

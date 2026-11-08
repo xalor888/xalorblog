@@ -14,29 +14,43 @@ const route = useRoute();
 // 文章详情页顶部是阅读进度条，路由进度条不叠加
 const onArticle = computed(() => /^\/article\//.test(route.path || ''));
 const visible = ref(false);
-let timer = null;
 let doneTimer = null;
 
-// 路由切换时短暂显示进度条（页面组件懒加载的真实耗时感知）
-router.beforeEach(() => {
+/**
+ * 三个路由钩子的**注销函数必须留着**。
+ *
+ * 原来这里直接 `router.beforeEach(fn)` 而丢弃返回值，onUnmounted 里只清 timer。
+ * 后果：这个组件每挂载一次就多注册一套全局钩子，且永不注销 —— 反复进出
+ * （比如把 Layout 拆了新实例、HMR 多次热更）之后，一次导航会触发 N 次
+ * `visible.value = true` 和 N 个 350ms 定时器。现象是进度条卡住不收尾，
+ * 或者切换瞬间闪几下。dev 下 HMR 最容易复现，所以以前一直没被当回事。
+ *
+ * 另外原来的 `let timer` 从未被赋过值（只在 clearTimeout 里出现），是死变量；
+ * 真正控制收尾的只有 doneTimer。
+ */
+const offBefore = router.beforeEach(() => {
   visible.value = true;
-  clearTimeout(timer);
   clearTimeout(doneTimer);
 });
 
-router.afterEach(() => {
+const offAfter = router.afterEach(() => {
   // 最小展示时长，避免闪烁
+  clearTimeout(doneTimer);
   doneTimer = setTimeout(() => {
     visible.value = false;
   }, 350);
 });
 
-router.onError(() => {
+const offError = router.onError(() => {
+  clearTimeout(doneTimer);
   visible.value = false;
 });
 
 onUnmounted(() => {
-  clearTimeout(timer);
+  // 先注销钩子再清定时器：顺序反了会在注销前的最后一个回调里再种一个定时器
+  offBefore();
+  offAfter();
+  offError();
   clearTimeout(doneTimer);
 });
 </script>

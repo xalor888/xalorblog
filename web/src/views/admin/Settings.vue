@@ -725,13 +725,35 @@ async function revertChanges() {
 }
 
 async function save() {
-  // site_url 格式校验：影响 RSS/Sitemap/分享页链接，非法值直接拦截
-  if (form.value.site_url && !/^https?:\/\//i.test(String(form.value.site_url).trim())) {
-    return ElMessage.warning('站点 URL 需以 http:// 或 https:// 开头');
+  /**
+   * site_url 格式校验：影响 RSS/Sitemap/分享页链接，非法值直接拦截。
+   *
+   * ⚠ 必须与 server/src/utils/settings.js 的 saveSettings 判据**完全一致**，
+   * 否则会出现「提示已保存、值其实没变」的静默失败：
+   * 服务端对 site_url 是 `safeUrl()` + `if (u.search || u.hash) continue;`
+   * —— 带 query 或 hash 的 URL 会被**静默丢弃**（continue，不报错，整个请求仍返回成功）。
+   * 而前端原来只查协议前缀，于是填 `https://blog.x.com/?ref=1` 点保存：
+   * 弹「设置已保存」，刷新后值又变回旧的，用户完全不知道为什么。
+   */
+  if (form.value.site_url) {
+    const raw = String(form.value.site_url).trim();
+    if (!/^https?:\/\//i.test(raw)) {
+      return ElMessage.warning('站点 URL 需以 http:// 或 https:// 开头');
+    }
+    // 与服务端同一判据：URL 里不能带 query / hash（它们会让 RSS/Sitemap
+    // 里的每条链接都被拼上同一个参数，且 og:url 与 canonical 会互相矛盾）
+    try {
+      const u = new URL(raw);
+      if (u.search || u.hash) {
+        return ElMessage.warning('站点 URL 不能带查询参数（?）或锚点（#），请只填到域名');
+      }
+    } catch (e) {
+      return ElMessage.warning('站点 URL 格式不合法');
+    }
   }
   saving.value = true;
   try {
-    await settingsApi.save(form.value);
+    const saved = await settingsApi.save(form.value);
     // 密钥不回显：保存后立刻清掉表单里的明文，避免残留在内存里被再次提交
     if (form.value.ai_api_key) form.value.ai_api_key = '';
     if (form.value.websearch_api_key) form.value.websearch_api_key = '';
@@ -744,7 +766,17 @@ async function save() {
     // 那是明显的误报：用户刚保存过，页面却说没保存。
     // 放在清空密钥之后，因为清空密钥本身也是一次 form 变更。
     setBaseline(form.value);
-    ElMessage.success('设置已保存');
+    // 服务端会把「未通过校验、保持原值」的字段放在 rejected 里（saveSettings 的每个
+    // 校验分支都是静默 continue）。不提示的话用户会以为配置生效了，然后去别处排查。
+    if (saved && Array.isArray(saved.rejected) && saved.rejected.length) {
+      ElMessage.warning({
+        message: `已保存，但 ${saved.rejected.length} 个字段未通过校验、保持原值：${saved.rejected.map((r) => r.key).join('、')}`,
+        duration: 6000,
+        showClose: true,
+      });
+    } else {
+      ElMessage.success('设置已保存');
+    }
   } catch (e) {
     /* 拦截器已提示 */
   } finally {

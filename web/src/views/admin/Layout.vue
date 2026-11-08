@@ -28,7 +28,12 @@
           >
             <XIcon :name="item.icon" :size="17" />
             <span v-show="!collapsed || isMobile">{{ item.title }}</span>
-            <span v-if="badgeFor(item)" class="side-badge" :class="{ hide: collapsed && !isMobile }">{{ badgeFor(item) }}</span>
+            <span
+              v-if="badgeFor(item)"
+              class="side-badge"
+              :class="{ hide: collapsed && !isMobile, error: admin.failed && badgeFor(item) === '!' }"
+              :title="admin.failed && badgeFor(item) === '!' ? '待审数量获取失败，请刷新或检查服务' : ''"
+            >{{ badgeFor(item) }}</span>
           </router-link>
         </template>
       </nav>
@@ -114,6 +119,9 @@
 </template>
 
 <script setup>
+// ElMessageBox 的样式（含 el-button / el-input / el-overlay / el-dialog 依赖链）。
+// 放在这里而不是 main.js：放进入口会让这 35,933 字节进首屏，而首屏并不需要它们。
+import 'element-plus/es/components/message-box/style/css';
 import { ref, computed, watch, watchEffect } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
@@ -191,8 +199,15 @@ watchEffect(() => {
 });
 
 // 待审角标
+// 拉取失败时返回 '!' 而不是空：空角标会被读成「没有待审」，
+// 而实际上我们只是不知道有多少 —— 这两件事在运维意义上完全不同。
 function badgeFor(item) {
   const p = admin.pending;
+  const FAILED = '!';
+  if (admin.failed) {
+    // 只给「待审类」的三个入口打标，其余菜单没有角标语义
+    return ['comments', 'links', 'messages'].includes(item.path) ? FAILED : '';
+  }
   if (item.path === 'comments') return p.comments > 0 ? p.comments : '';
   if (item.path === 'links') return p.links > 0 ? p.links : '';
   if (item.path === 'messages') return p.messages > 0 ? p.messages : '';
@@ -322,6 +337,13 @@ async function logout() {
 }
 
 /* 待审角标 */
+.side-badge.error {
+  /* 失败态用红底而不是品牌色：它表示「不知道」，不是「有 N 条等你处理」 */
+  background: var(--el-color-danger, #f56c6c);
+  color: #fff;
+  font-weight: 800;
+}
+
 .side-badge {
   margin-left: auto;
   min-width: 20px;

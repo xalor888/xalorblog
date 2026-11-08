@@ -10,10 +10,23 @@
 
   <!-- 面板单独挂 body（覆盖式弹层），底部贴在浮层栈上方 -->
   <Teleport to="body">
-    <section v-if="open" class="ask-box" aria-label="就这篇文章提问" :style="{ '--ask-bottom': bottomOffset + 'px' }">
+    <!-- 这是**模态**面板：role=dialog + aria-modal 声明「打开时背景不可达」，
+         必须配真的焦点约束（useFocusTrap）才算数 —— 只写 aria-modal 而
+         Tab 仍能走到背后页面，是比不写更误导读屏用户的用法。
+         名字取自标题元素（aria-labelledby），别再单独写一份 aria-label：
+         两份同时存在时只有 labelledby 生效，另一份会悄悄烂掉。 -->
+    <section
+      v-if="open"
+      ref="panelRef"
+      class="ask-box"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="ask-ai-title"
+      :style="{ '--ask-bottom': bottomOffset + 'px' }"
+    >
       <header class="ask-head">
-        <span class="ask-title">问这篇</span>
-        <button class="ask-close" type="button" title="关闭" @click="open = false">
+        <span id="ask-ai-title" class="ask-title">问这篇</span>
+        <button class="ask-close" type="button" title="关闭" aria-label="关闭问 AI 面板" @click="close">
           <XIcon name="X" :size="14" />
         </button>
       </header>
@@ -54,7 +67,14 @@
 
       <form class="ask-form" @submit.prevent="send()">
         <input v-model="draft" class="ask-field" :disabled="pending" placeholder="输入问题…" maxlength="500" />
-        <button class="ask-send" type="submit" :disabled="!draft.trim() || pending">
+        <!-- 纯图标按钮必须有 aria-label：读屏只会念「按钮」，不说是干什么的。
+             旁边虽有输入框，但用 Tab 直接落到这个按钮时听不到上下文。 -->
+        <button
+          class="ask-send"
+          type="submit"
+          :disabled="!draft.trim() || pending"
+          :aria-label="pending ? '正在回答，请稍候' : '发送问题'"
+        >
           <XIcon name="Send" :size="15" />
         </button>
       </form>
@@ -65,9 +85,11 @@
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 import { signedFetch } from '@/utils/signedFetch';
 import { ensurePass } from '@/utils/pass';
 import { renderMarkdown } from '@/utils/markdown';
+import { copyText } from '@/utils/clipboard';
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -77,6 +99,8 @@ const API_PREFIX = import.meta.env.VITE_API_PREFIX || '/api';
 
 const open = ref(false);
 const available = ref(false);
+/** 面板根元素（焦点陷阱的作用域边界） */
+const panelRef = ref(null);
 /** 底部偏移：面板抬到浮层栈上方（默认 20） */
 const bottomOffset = ref(20);
 /** 按钮并进右下角浮层栈；栈不存在时退回 body（避免 Teleport 目标缺失告警） */
@@ -131,23 +155,36 @@ function toggle() {
   open.value = true;
 }
 
-/** 复制一条回答（不用全局弹层，按钮自身变「已复制」就够） */
+/**
+ * 关面板只收起，不重置会话：重新打开要能看到刚才问过的问题
+ * （和原来的 `open = false` 完全一致，只是把出口收成一个函数，
+ * 让按钮、Esc、useFocusTrap 三处走同一条路径）。
+ */
+function close() {
+  open.value = false;
+}
+
+/**
+ * 焦点管理：打开把焦点移进面板、Tab 锁在面板内、Esc 关闭、关闭还焦。
+ *
+ * 还焦目标不能用「打开前的 activeElement」—— 触发它的那颗悬浮按钮带
+ * `v-if="!open"`，打开瞬间就被卸载了，记下来也 focus 不到（会静默落回 body）。
+ * 所以显式回到同一位置的那颗按钮：面板关掉后它会被重新渲染出来。
+ */
+useFocusTrap(panelRef, open, {
+  onClose: () => close(),
+  returnFocusTo: () => document.querySelector('.ask-fab'),
+});
+
+/** 复制一条回答（不用全局弹层，按钮自身变「已复制」就够）
+ *
+ *  复制链路统一在 utils/clipboard.js（clipboard → execCommand 兜底 → iOS
+ *  setSelectionRange），本组件与 CommentItem.vue 曾各抄一份重复实现。
+ *  失败时什么都不亮 —— 让用户知道得手动选，文案与原来一致。 */
 async function copyAnswer(m) {
   const text = String(m.content || '').trim();
   if (!text) return;
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (e) {
-    // 旧浏览器降级
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    ta.remove();
-  }
+  if (!(await copyText(text))) return; // 没复制成功就不亮「已复制」
   m.copied = true;
   setTimeout(() => {
     m.copied = false;
@@ -160,8 +197,15 @@ async function send(preset) {
   if (!question || pending.value) return;
   draft.value = '';
   messages.value.push({ role: 'user', content: question });
-  const reply = { role: 'assistant', content: '', streaming: true };
-  messages.value.push(reply);
+  messages.value.push({ role: 'assistant', content: '', streaming: true });
+  // 必须从数组里把响应式代理**读回来**再改，不能留着一个原始对象引用。
+  //
+  // 为什么：push 进去的是裸对象，Vue 只在读数组元素时才包一层代理，
+  // 原始引用本身没有被代理。写 reply.content 改的是裸对象，
+  // 依赖收集到的却是代理 —— 于是流式正文一个字都不上屏：
+  // 气泡始终是空的「正在思考…」，直到别处的响应式变化顺带触发重渲染，
+  // 整段回答才「突然整块冒出来」。实测（裸对象写入 0 次重渲染 / 代理写入 1 次）。
+  const reply = messages.value[messages.value.length - 1];
   pending.value = true;
   await scrollToEnd();
 

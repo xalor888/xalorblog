@@ -3,7 +3,11 @@
   <teleport to="body">
     <div v-if="open" class="help-overlay" @click.self="close"></div>
     <!-- role=dialog 必须配 aria-modal：否则读屏仍会把背景当作可读内容，
-         Tab 也会穿出去。实测修前 5/5 次 Tab 都逃到背景导航。 -->
+         Tab 也会穿出去。实测修前 5/5 次 Tab 都逃到背景导航。
+
+         ⚠ 焦点约束**不能**绑在面板上（原来的 @keydown.tab 就是这样）：
+         焦点在面板外时事件根本不冒泡到这里，宣称的约束形同虚设。
+         现在由 useFocusTrap 在 document 级接管，和另外三处弹层同一份实现。 -->
     <div
       v-if="open"
       ref="panelRef"
@@ -11,11 +15,10 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby="help-title"
-      @keydown.tab="onTabTrap"
     >
       <div class="help-head">
         <h3 id="help-title" class="help-title">快捷键</h3>
-        <button class="help-close" ref="closeBtnRef" @click="close" aria-label="关闭">
+        <button class="help-close" @click="close" aria-label="关闭">
           <XIcon name="X" :size="16" />
         </button>
       </div>
@@ -36,46 +39,29 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 
 const route = useRoute();
 const open = ref(false);
 const panelRef = ref(null);
-const closeBtnRef = ref(null);
-/** 打开前的焦点，关闭时还回去（否则焦点掉到 body，键盘用户失去位置） */
-let lastFocused = null;
 
 /**
- * Tab 焦点陷阱。
- * 只处理「焦点跑到面板外」的情况 —— 无条件拉回，不依赖「是否正好在首尾」，
- * 因为那个判断在动态内容下经常漏（搜索弹窗就是这么漏的，实测 10/10 逃逸）。
+ * 焦点管理统一交给 useFocusTrap（打开移入 / Tab 首尾循环 / Esc 关闭 / 关闭还焦）。
+ *
+ * 这里曾经有两条各自为政的实现：面板上的 `@keydown.tab` 陷阱，以及打开/关闭
+ * 时自己记的 lastFocused。前者的问题是**绑定位置错了** —— 焦点在面板外时
+ * 按键事件不会冒泡到面板，`aria-modal="true"` 宣称的约束完全落空；
+ * 后者和另外三个弹层各写一遍，还各自漏了「元素已从 DOM 移除」的分支。
+ * 差异只剩一个：进入面板时聚焦关闭按钮。
  */
-function onTabTrap(e) {
-  const panel = panelRef.value;
-  if (!panel) return;
-  const focusables = [...panel.querySelectorAll(
-    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-  )].filter((el) => el.offsetParent !== null);
-  if (!focusables.length) return;
-  const first = focusables[0];
-  const last = focusables[focusables.length - 1];
-  const active = document.activeElement;
-  if (!panel.contains(active)) {
-    e.preventDefault();
-    first.focus();
-    return;
-  }
-  if (!e.shiftKey && active === last) {
-    e.preventDefault();
-    first.focus();
-  } else if (e.shiftKey && active === first) {
-    e.preventDefault();
-    last.focus();
-  }
-}
+useFocusTrap(panelRef, open, {
+  onClose: () => close(),
+  initialFocus: '.help-close',
+});
 
 // 路由变化时自动关闭帮助弹窗
 watch(() => route.path, () => {
@@ -109,36 +95,22 @@ const groups = [
   },
 ];
 
-function toggle() {
-  if (open.value) {
-    close();
-  } else {
-    open.value = true;
-    lockBodyScroll();
-  }
-}
-
 function openHelp() {
-  // 记录打开前的焦点（用 body 当返回值等于没返回）
-  const active = document.activeElement;
-  lastFocused = active && active !== document.body ? active : null;
   open.value = true;
   lockBodyScroll();
-  // 等面板渲染后再把焦点送进去
-  nextTick(() => closeBtnRef.value?.focus?.());
+  // 焦点由 useFocusTrap 移入面板（见上面的 initialFocus）
 }
 
 function close() {
   if (open.value) unlockBodyScroll();
   open.value = false;
-  const back = lastFocused;
-  lastFocused = null;
-  nextTick(() => {
-    // 触发元素可能已不存在（例如刚发生过导航），此时不强行聚焦
-    if (back && typeof back.focus === 'function' && document.contains(back)) back.focus();
-  });
+  // 焦点由 useFocusTrap 还给打开前的元素（元素已不在 DOM 时退回 body）
 }
 
+/**
+ * 这里只管「打开/关闭」这一个键位（? / Shift+/）。
+ * Esc 不在这里：它是模态约束，和 Tab 一起由 useFocusTrap 在 document 级处理。
+ */
 function onKeydown(e) {
   // ? 或 Shift+/ 打开帮助（输入框内不触发）
   const tag = e.target.tagName;
@@ -147,8 +119,6 @@ function onKeydown(e) {
     e.preventDefault();
     if (open.value) close();
     else openHelp();
-  } else if (e.key === 'Escape') {
-    close();
   }
 }
 

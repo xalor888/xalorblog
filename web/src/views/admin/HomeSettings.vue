@@ -99,6 +99,11 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { onBeforeRouteLeave } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import { settingsApi } from '@/api';
+import {
+  normalizeSocialExtra,
+  parseSocialExtra,
+  SOCIAL_MAX_ITEMS,
+} from '@/utils/socialExtra';
 
 const loading = ref(false);
 const saving = ref(false);
@@ -114,17 +119,9 @@ const form = reactive({
   home_about_excerpt: '',
 });
 
-function parseExtra(raw) {
-  try {
-    const list = JSON.parse(String(raw || '[]'));
-    if (!Array.isArray(list)) return [];
-    return list
-      .filter((it) => it && typeof it === 'object')
-      .map((it) => ({ label: String(it.label || ''), url: String(it.url || '') }));
-  } catch (e) {
-    return [];
-  }
-}
+// 社交链接的读写归一见 @/utils/socialExtra —— 它和服务端 saveSettings 用同一套规则
+// （协议 http(s)、label 必填、8 条上限、长度截断）。两边规则不一致时会出现
+// 「保存后列表还在、刷新就没了」，而用户以为自己保存成功了。
 
 /**
  * 未保存修改保护（与 Settings.vue 同一套做法）。
@@ -171,7 +168,7 @@ onMounted(() => window.addEventListener('beforeunload', onBeforeUnload));
 onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload));
 
 function addSocial() {
-  if (socialExtra.value.length >= 8) return;
+  if (socialExtra.value.length >= SOCIAL_MAX_ITEMS) return;
   socialExtra.value.push({ label: '', url: '' });
 }
 
@@ -208,7 +205,7 @@ async function load() {
     form.home_status = data.home_status || 'online';
     form.home_since_date = data.home_since_date || '';
     form.home_about_excerpt = data.home_about_excerpt || '';
-    socialExtra.value = parseExtra(data.home_social_extra);
+    socialExtra.value = parseSocialExtra(data.home_social_extra);
     // 记录基线：之后任何差异才算「未保存」。放在这里而不是 watch 里，
     // 是为了避免「刚打开就提示未保存」。
     setBaseline();
@@ -220,16 +217,17 @@ async function load() {
 }
 
 async function save() {
-  // 只提交非空的社交项；服务端会再做一次 URL/长度清洗与 8 条上限校验
-  const cleaned = socialExtra.value
-    .map((it) => ({ label: String(it.label || '').trim(), url: String(it.url || '').trim() }))
-    .filter((it) => it.label && it.url);
+  // 与服务端同规则清洗（协议白名单 / label 必填 / 8 条上限 / 长度截断）。
+  // 关键是**先在前端算出一份和服务端一致的结果**再提交：
+  // 原来前端只过滤空值，服务端还会因协议不在白名单而丢弃 ——
+  // 于是「保存后列表还在、刷新就没了」，用户以为自己成功了。
+  const { list: cleaned, dropped } = normalizeSocialExtra(socialExtra.value);
 
   saving.value = true;
   try {
     // 日期控件清空后是 null：显式转成空串，语义是「清空」而不是「不修改」
     // （服务端也把 null 当清空处理，这里只是把意图写在调用点）
-    await settingsApi.save({
+    const saved = await settingsApi.save({
       ...form,
       home_since_date: form.home_since_date || '',
       home_social_extra: JSON.stringify(cleaned),
@@ -239,7 +237,24 @@ async function save() {
     // 服务端的清洗差异会立刻被判定成新的未保存修改。
     socialExtra.value = cleaned;
     setBaseline();
-    ElMessage.success('主页设置已保存');
+    if (saved && Array.isArray(saved.rejected) && saved.rejected.length) {
+      ElMessage.warning({
+        message: `已保存，但 ${saved.rejected.length} 个字段未通过校验、保持原值：${saved.rejected.map((r) => r.key).join('、')}`,
+        duration: 6000,
+        showClose: true,
+      });
+    } else if (dropped > 0) {
+      // 社交项被本地清洗掉了（空 label / 非 http(s) / 超出 8 条）：
+      // 明确说出来，而不是让用户刷新后发现少了几条
+      ElMessage.warning({
+        message: `主页设置已保存，但社交链接有 ${dropped} 项未通过校验（需要填写名称且链接以 http(s) 开头，最多 ${SOCIAL_MAX_ITEMS} 条），已忽略`,
+        duration: 6000,
+        showClose: true,
+      });
+      socialExtra.value = cleaned;
+    } else {
+      ElMessage.success('主页设置已保存');
+    }
   } catch (e) {
     /* 拦截器已提示 */
   } finally {

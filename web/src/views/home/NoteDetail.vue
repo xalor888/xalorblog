@@ -65,7 +65,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch, watchEffect } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue';
 import { useRoute } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
 import ImageLightbox from '@/components/ui/ImageLightbox.vue';
@@ -137,13 +137,29 @@ function onBodyClick(e) {
   if (img) lightboxRef.value?.open(img.src, img.alt);
 }
 
+/**
+ * 「已复制」提示的复位定时器。
+ *
+ * 原来每次点击都新起一个 setTimeout，没有保存也没有清理 —— 连点两次就变成：
+ * 第 1 个定时器在第 1 次点击后 1.8s 把 copied 置 false，
+ * 而第 2 次点击的提示本该再显示 1.8s，于是**提前消失**。
+ * 现在后一次点击覆盖前一次的定时器（与 utils/markdown.js 的 copyTimers 同一做法），
+ * 并在卸载时清掉，避免往已卸载组件的 ref 上写值。
+ */
+let copyTimer = null;
+
 async function copyLink() {
   try {
     await navigator.clipboard.writeText(window.location.href);
     copied.value = true;
-    setTimeout(() => { copied.value = false; }, 1800);
-  } catch (e) { /* 剪贴板不可用时忽略 */ }
+    clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => { copied.value = false; }, 1800);
+  } catch (e) {
+    // 剪贴板不可用（非安全上下文 / 权限被拒）时不给假成功提示，静默即可
+  }
 }
+
+onUnmounted(() => clearTimeout(copyTimer));
 
 watch(() => route.params.id, (id) => { if (id) load(id); });
 

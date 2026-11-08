@@ -92,7 +92,18 @@
       </div>
 
       <!-- 留言列表 -->
-      <div v-if="messages.length" class="msg-list" v-reveal="'stagger'">
+      <SkeletonList v-if="listLoading && !messages.length" :count="3" :cover="false" class="msg-skeleton" />
+      <!-- 加载失败必须与「真的没有留言」区分开：两者对用户的含义完全相反
+           （一个是「检查网络」，一个是「来做第一位访客」）。
+           原来 load() 没有 try/catch，请求一失败 messages 就是空数组，
+           页面于是常年显示「还没有留言，来做第一位访客吧」——
+           读者会以为留言板没人用，实际是接口挂了，而且**没有任何恢复入口**。 -->
+      <div v-else-if="listFailed" class="empty-state state-error list-error" role="alert">
+        <div class="icon-wrap"><XIcon name="ShieldAlert" :size="30" /></div>
+        <p>留言加载失败，可能是网络波动或服务暂时不可用</p>
+        <button class="search-btn retry-btn" @click="load">重试</button>
+      </div>
+      <div v-else-if="messages.length" class="msg-list" v-reveal="'stagger'">
         <div v-for="m in messages" :key="m.id" class="msg-item card fade-up">
           <div class="msg-avatar" :style="{ background: avatarColor(m.nickname) }">
             {{ (m.nickname || '?').charAt(0).toUpperCase() }}
@@ -135,6 +146,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, watchEffect, nextTick } from 'vue';
 import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
+import SkeletonList from '@/components/ui/SkeletonList.vue';
 import EmojiPicker from '@/components/ui/EmojiPicker.vue';
 import { messageApi } from '@/api';
 import { getFormTokenInfo, refreshFormToken, getHpField } from '@/utils/formToken';
@@ -168,6 +180,11 @@ const pageSize = 12;
 const total = ref(0);
 const submitting = ref(false);
 const loading = ref(false);
+// 首屏加载与失败态的独立状态：不能复用 loading ——
+// loading 现在是「加载更多」按钮的禁用标志（见模板 :disabled="loading"），
+// 两者混用会让首屏也去禁用那颗按钮，失败态也判断不出来。
+const listLoading = ref(false);
+const listFailed = ref(false);
 const hasMore = ref(false);
 // 昵称可长期记忆；邮箱只保留在当前标签页，旧 localStorage 值会迁移并清理。
 let savedName = '';
@@ -254,10 +271,23 @@ function avatarColor(nickname) {
 }
 
 async function load() {
-  const res = await messageApi.list({ page: page.value, pageSize });
-  messages.value = res.list;
-  total.value = res.pagination.total;
-  hasMore.value = messages.value.length < total.value;
+  // 必须自己兜住失败：这个函数在 onMounted 里是**裸调用**（没有 .catch），
+  // 拦截器把错误 reject 出来后没人接 —— 首屏就是一次未处理的 Promise rejection，
+  // 而 messages 仍是 []，模板于是落到空态，显示「还没有留言，来做第一位访客吧」。
+  // 读者看到的是「留言板没人用」，实际是接口挂了，且没有重试入口。
+  listLoading.value = true;
+  listFailed.value = false;
+  try {
+    const res = await messageApi.list({ page: page.value, pageSize });
+    messages.value = res.list;
+    total.value = res.pagination.total;
+    hasMore.value = messages.value.length < total.value;
+  } catch (e) {
+    listFailed.value = true;
+    // toast 由拦截器统一弹（toastOnce 去重），这里只负责页面内的失败态
+  } finally {
+    listLoading.value = false;
+  }
 }
 
 async function loadMore() {
@@ -587,6 +617,39 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* 首屏骨架：留言是窄栏单列，用不上 SkeletonList 默认的封面网格 */
+.msg-skeleton :deep(.sk-grid) {
+  /* 网格已移到 SkeletonList 内部的 .sk-grid（外层要容纳 sr-only 播报文本），
+     所以覆盖列数必须用 :deep() 穿透 scoped 边界，否则窄栏布局失效 */
+  grid-template-columns: 1fr;
+}
+
+/* 加载失败态：与「还没有留言」共用 .empty-state 的几何，但按钮要自成一套 ——
+   .retry-btn / .search-btn 的完整样式只写在 ArticleList 的 scoped 块里，
+   这里引用不到（scoped 不共享），所以本组件自带一份最小实现。 */
+.list-error .retry-btn {
+  margin-top: 16px;
+  min-height: 40px;
+  padding: 8px 28px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--accent-fill);
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.list-error .retry-btn:hover {
+  opacity: 0.88;
+}
+
+.list-error .retry-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .msg-item {

@@ -154,8 +154,9 @@ async function exportCsv() {
       return;
     }
     const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    // 见 CommentManage.exportCsv：`const a = document.createElement('a')` 与
+    // `URL.createObjectURL` 都是手写下载代码的残留 —— 下载实际由 downloadBlob 完成，
+    // 这两行只制造一个不 append 的游离元素和一个永不 revoke 的 blob URL。
     const cd = resp.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="([^"]+)"/);
     downloadBlob(blob, m ? m[1] : 'audit.csv');

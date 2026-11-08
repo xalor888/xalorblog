@@ -68,11 +68,14 @@
          2. 所有关闭入口（取消按钮、X、Esc）统一走 requestClose()。
          这样不依赖库版本对 before-close 的实现细节。 -->
     <el-dialog
+      ref="dialogRef"
       v-model="dialogVisible"
       title="编辑分类"
       width="min(480px, 92vw)"
       :close-on-click-modal="false"
       :show-close="false"
+      @opened="onDialogOpened"
+      @closed="onDialogClosed"
     >
       <el-form label-width="70px">
         <el-form-item label="名称">
@@ -98,6 +101,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { categoryApi } from '@/api';
@@ -114,6 +118,16 @@ const loading = ref(false);
 const creating = ref(false);
 const exporting = ref(false);
 const dialogVisible = ref(false);
+/* 焦点陷阱：el-dialog 有过渡动画，`watch(v-model)` 的 nextTick 时机不可靠，
+   所以用 EP 的 @opened / @closed 手动接管（useFocusTrap 暴露的 engage/disengage）。
+   不接的话 el-dialog 模板里的 aria-modal="true" 是**假承诺** ——
+   键盘用户能 Tab 到背景页面，读屏软件却告诉用户「焦点被困在对话框里」。 */
+const dialogRef = ref(null);
+const trap = useFocusTrap(
+  computed(() => (dialogRef.value && dialogRef.value.$el) || null),
+  computed(() => false),          // 自动接管关掉，改由 @opened 手动 engage
+  { onClose: () => { dialogVisible.value = false; } }
+);
 const saveLoading = ref(false);
 
 const newCat = ref({ name: '', description: '', color: '#e4573d' });
@@ -125,6 +139,9 @@ const filteredList = computed(() => {
   if (!kw) return list.value;
   return list.value.filter((c) => (c.name && c.name.toLowerCase().includes(kw)) || (c.description && c.description.toLowerCase().includes(kw)));
 });
+
+function onDialogOpened() { if (trap.value) trap.value.engage(); }
+function onDialogClosed() { if (trap.value) trap.value.disengage(); }
 
 async function load() {
   loading.value = true;

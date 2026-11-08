@@ -99,7 +99,15 @@
     </div>
 
     <!-- 站长回复弹窗 -->
-    <el-dialog v-model="replyDialog" title="回复留言" width="min(520px, 92vw)" :close-on-click-modal="false">
+    <el-dialog
+      ref="replyRef"
+      v-model="replyDialog"
+      title="回复留言"
+      width="min(520px, 92vw)"
+      :close-on-click-modal="false"
+      @opened="onReplyOpened"
+      @closed="onReplyClosed"
+    >
       <el-input
         v-model="replyForm.content"
         type="textarea"
@@ -118,7 +126,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { messageApi, securityApi } from '@/api';
@@ -149,6 +158,19 @@ function statusText(s) {
 function statusType(s) {
   return { pending: 'warning', approved: 'success', rejected: 'danger' }[s] || 'info';
 }
+
+/* 焦点陷阱：el-dialog 的 aria-modal="true" 需要真的困住焦点才算数。
+   用 @opened/@closed 手动 engage —— watch(v-model) 的 nextTick 赶不上过渡动画。
+   这个对话框的主体是 textarea，所以 initialFocus 直接指向它
+   （默认的「第一个可聚焦元素」在 EP 的头部关闭按钮上，按一次 Tab 才能到输入框）。 */
+const replyRef = ref(null);
+const trap = useFocusTrap(
+  computed(() => (replyRef.value && replyRef.value.$el) || null),
+  computed(() => false),
+  { initialFocus: '.el-textarea__inner' }
+);
+function onReplyOpened() { if (trap.value) trap.value.engage(); }
+function onReplyClosed() { if (trap.value) trap.value.disengage(); }
 
 async function load(p = page.value) {
   loading.value = true;
@@ -241,7 +263,8 @@ async function exportCsv() {
       return;
     }
     const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
+    // 见 CommentManage.exportCsv：downloadBlob 自己创建并 revoke，
+    // 这里再建一个就是永不释放的泄漏（变量也从未使用）。
     const cd = resp.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="([^"]+)"/);
     downloadBlob(blob, m ? m[1] : 'messages.csv');

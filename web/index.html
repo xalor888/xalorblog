@@ -41,9 +41,9 @@
          都按扩展名给它强缓存。不带版本号改动后老访客会继续跑旧脚本
          （曾导致「复制已放开」上线两小时仍有人被拦）。改这两个文件时必须递增 v，
          且 CDN 缓存键必须保留查询串（见 deploy/README.md 的 CDN 接入清单）。 -->
-    <script src="/theme-init.js?v=20261006"></script>
+    <script src="/theme-init.js?v=0f8b31a4"></script>
     <!-- 反调试：最早加载，防 DevTools 分析 -->
-    <script src="/anti-debug.js?v=20261018c"></script>
+    <script src="/anti-debug.js?v=545a10f7"></script>
   </head>
   <body>
     <!-- 启动骨架：放在 #app 内部，Vue 挂载时会整体替换掉。
@@ -70,6 +70,6 @@
          放在 #app 之外是为了让它先于任何组件存在（同源组件内的目标在挂载时还查不到） -->
     <div id="float-dock" class="float-dock"></div>
     <script type="module" src="/src/main.js"></script>
-    <script src="/boot-guard.js?v=20261025"></script>
+    <script src="/boot-guard.js?v=0c3a7802"></script>
   </body>
 </html>

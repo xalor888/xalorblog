@@ -1,14 +1,15 @@
 <template>
   <teleport to="body">
-    <!-- 遮罩 -->
-    <div v-if="open" class="search-overlay" @click.self="close" @keydown.esc="close"></div>
+    <!-- 遮罩。原先这里还挂了 @keydown.esc —— 遮罩自身不可聚焦、也包不住面板
+         （两者是兄弟节点），键盘事件永远不会落在它上面，是条死绑定。
+         Esc 现在由 useFocusTrap 在 document 级统一处理。 -->
+    <div v-if="open" class="search-overlay" @click.self="close"></div>
 
     <!-- 弹窗 -->
-    <div v-if="open" class="search-modal" role="dialog" aria-modal="true" aria-label="全局搜索">
+    <div v-if="open" ref="panelRef" class="search-modal" role="dialog" aria-modal="true" aria-label="全局搜索">
       <div class="search-head">
         <XIcon name="Search" :size="18" class="search-icon" />
         <input
-          ref="inputRef"
           v-model="keyword"
           class="search-input"
           placeholder="搜索文章标题或内容…"
@@ -99,14 +100,10 @@ import { articleApi } from '@/api';
 import { formatDate } from '@/utils/format';
 import { highlightKeyword } from '@/utils/highlight';
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 
 const router = useRouter();
 const route = useRoute();
-
-// 路由变化时自动关闭搜索浮层
-watch(() => route.fullPath, () => {
-  if (open.value) close();
-});
 
 const open = ref(false);
 const keyword = ref('');
@@ -116,7 +113,8 @@ const loading = ref(false);
 const searched = ref(false);
 const lastKeyword = ref('');
 const activeIndex = ref(0);
-const inputRef = ref(null);
+/** 面板根元素（焦点陷阱的作用域边界） */
+const panelRef = ref(null);
 
 // 搜索历史（localStorage 记忆最近 6 条）
 const HISTORY_KEY = 'xalor_search_history';
@@ -211,22 +209,20 @@ function highlight(text = '') {
   return highlightKeyword(text, keyword.value);
 }
 
-let lastFocused = null;
-
 function openSearch() {
-  // 记录触发元素，关闭后恢复焦点（可访问性）。
+  // 已经打开就立刻返回 —— 这是**必须**的幂等守卫，不只是省一次赋值。
   //
-  // ⚠ 不能无条件记 document.activeElement：用 `/` 或 Ctrl+K 打开时，
-  // 焦点本来就在 body 上，记下来等于「关闭后恢复到 body」—— 实测焦点
-  // 确实落在 body，键盘用户得从页首重新 Tab 一遍。body 不是有效的返回点，
-  // 这种情况记 null，关闭时退回到搜索入口按钮（顶栏那颗），
-  // 那才是用户心里「搜索是从这儿打开的」。
-  const active = document.activeElement;
-  lastFocused = active && active !== document.body ? active : null;
+  // 触发链：Ctrl+K（或 `/`）会同时命中两个监听器 ——
+  // 本组件的 document keydown，以及 Layout.vue 挂在 window 上的 onGlobalKeydown
+  // （后者是为了覆盖「SearchModal 还没挂载」的那一屏，见 Layout 里的注释）。
+  // 事件冒泡 document → window，于是 openSearch 被调用两次。
+  // lockBodyScroll 是**计数锁**：两次 lock 只配了一次 unlock（close 里那句），
+  // 计数永远停在 1 —— 关闭搜索后 body.style.overflow 一直是 'hidden'，
+  // 整页滚不动，只有刷新才恢复。实测：打开→Esc 之后 overflow 停在 hidden。
+  if (open.value) return;
   open.value = true;
   lockBodyScroll();
   activeIndex.value = 0;
-  nextTick(() => inputRef.value?.focus());
 }
 
 function close() {
@@ -235,73 +231,26 @@ function close() {
   keyword.value = '';
   results.value = [];
   searched.value = false;
-  // 焦点还给触发元素；没有有效触发元素时退回搜索入口按钮
-  if (lastFocused && typeof lastFocused.focus === 'function') {
-    lastFocused.focus();
-  } else {
-    document.querySelector('.search-btn, [data-open-search]')?.focus?.();
-  }
-  lastFocused = null;
 }
 
 /**
- * Tab 焦点循环：把焦点限制在弹窗内。
- *
- * 之前这里只判断「焦点是否恰好落在第一个或最后一个元素上」，
- * 但只要焦点**不在弹窗内**（例如落到 body、或用户点了一下遮罩外），
- * 两个分支都不成立，函数直接返回 —— Tab 就顺畅地跑到背景页面的导航链接上。
- * 实测：打开搜索框后连按 Tab 10 次，**10 次全部逃逸**到背后的
- * skip-link / nav-link。而弹窗标了 aria-modal="true"，等于向读屏宣称
- * 「这是模态，背景不可达」却做不到，是最糟的一类误导。
- *
- * 现在的做法：
- * 1. 焦点不在弹窗内 → 直接拉回第一个可聚焦元素（无论从哪个方向进来）；
- * 2. 在首/尾元素上 → 正常循环。
- * 另外把「可聚焦元素」的选择器放宽：任何 tabindex 非 -1 的可交互元素都算，
- * 不再靠列举标签名（漏一个 kbd/div[role=button] 就会开个口子）。
+ * 焦点管理（打开移入 / Tab 首尾循环 / Esc 关闭 / 关闭还焦）统一交给
+ * useFocusTrap。这里只声明本弹窗的两处差异：
+ *   - 焦点落在搜索框上（而不是第一个可聚焦元素碰巧也是它，写明意图）；
+ *   - 打开前焦点在 body（用 `/` 或 Ctrl+K 打开）时，退回顶栏那颗搜索按钮 ——
+ *     那才是用户心里「搜索是从这儿打开的」。body 不是有效的返回点。
  */
-const FOCUSABLE = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',');
+useFocusTrap(panelRef, open, {
+  onClose: () => close(),
+  initialFocus: '.search-input',
+  returnFocusTo: (opener) => opener || document.querySelector('.search-btn, [data-open-search]'),
+});
 
-function modalFocusables() {
-  const root = document.querySelector('.search-modal');
-  if (!root) return [];
-  return [...root.querySelectorAll(FOCUSABLE)].filter(
-    (el) => el.offsetParent !== null || el === document.activeElement
-  );
-}
-
-function onTabTrap(e) {
-  if (!open.value || e.key !== 'Tab') return;
-  const list = modalFocusables();
-  if (!list.length) return;
-  const first = list[0];
-  const last = list[list.length - 1];
-  const active = document.activeElement;
-
-  // 焦点不在弹窗里（或落在 body）：无条件拉回，不区分方向
-  if (!active || !active.closest || !active.closest('.search-modal')) {
-    e.preventDefault();
-    (e.shiftKey ? last : first).focus();
-    return;
-  }
-  if (e.shiftKey && active === first) {
-    e.preventDefault();
-    last.focus();
-    return;
-  }
-  if (!e.shiftKey && active === last) {
-    e.preventDefault();
-    first.focus();
-  }
-}
-
+/**
+ * 全局键位：打开（Ctrl/Cmd K、`/`）+ 结果列表导航（↑↓ / Enter）。
+ * Esc 与 Tab 不在这里 —— 它们是「模态约束」，由 useFocusTrap 在 document 级处理，
+ * 否则弹窗一关就没人管，而弹窗开着时又和陷阱抢同一个事件。
+ */
 function onKeydown(e) {
   // Ctrl+K / Cmd+K 打开
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -320,9 +269,7 @@ function onKeydown(e) {
   }
   if (!open.value) return;
 
-  if (e.key === 'Escape') {
-    close();
-  } else if (e.key === 'ArrowDown') {
+  if (e.key === 'ArrowDown') {
     e.preventDefault();
     activeIndex.value = Math.min(activeIndex.value + 1, results.value.length - 1);
     scrollActiveIntoView();
@@ -346,23 +293,21 @@ function scrollActiveIntoView() {
   });
 }
 
+// 路由变化时自动关闭搜索浮层。
+// 之前在 onMounted 里还挂过第二份 `watch(router.currentRoute.fullPath)` ——
+// 和这份是同一个源，绑定在同一个组件作用域上，纯属重复注册。
+watch(() => route.fullPath, () => {
+  if (open.value) close();
+});
+
 onMounted(() => {
   document.addEventListener('keydown', onKeydown);
-  document.addEventListener('keydown', onTabTrap);
   window.addEventListener('xalor-open-search', openSearch);
-  // 路由变化（后退/导航跳转等）时关闭弹窗，防残留覆盖
-  watch(
-    () => router.currentRoute.value.fullPath,
-    () => {
-      if (open.value) close();
-    }
-  );
 });
 
 onUnmounted(() => {
   if (open.value) unlockBodyScroll();
   document.removeEventListener('keydown', onKeydown);
-  document.removeEventListener('keydown', onTabTrap);
   window.removeEventListener('xalor-open-search', openSearch);
   clearTimeout(debounceTimer); // 卸载后 300ms 内不再触发一次多余的搜索请求
 });

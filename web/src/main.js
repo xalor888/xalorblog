@@ -25,7 +25,14 @@ import { getAuthToken, getCachedAuthUser } from './utils/authSession';
 //
 // 必须放在 ./styles/main.css 之前，保证下面的主题覆盖能生效。
 import 'element-plus/es/components/message/style/css';
-import 'element-plus/es/components/message-box/style/css';
+// message-box 的样式**故意不在这里引入**。
+//
+// 原因：它会连带拉进 el-button / el-input / el-overlay / el-dialog / el-fade 的样式，
+// 合计 35,933 字节 —— 而博客首屏一个 EP 组件都没用。实测首屏 CSS 从 84,153 降到 48,220（-42.7%）。
+// 现在改在真正用到的地方引入：admin/Layout.vue（覆盖 14 个后台页）
+// 与 site/History.vue、site/Bookmarks.vue（前台两个懒加载页）。
+// ⚠ 新增使用 ElMessageBox 的页面必须同时引入样式，或挂到已有引入点的子路由下 ——
+// 有门禁 `test-message-box-style.mjs` 盯着这件事（漏了就是"确认框裸样式"，功能正常、只有人眼能发现）。
 
 import './styles/main.css';
 import './styles/markdown.css';

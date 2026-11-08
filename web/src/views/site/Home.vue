@@ -8,6 +8,10 @@
 
       <div class="hero-card sg-liquid">
         <p class="hero-kicker">XALOR</p>
+        <!-- 侧栏卡片标题用 h2 而不是 h3。
+             整页只有 hero 的 h1 与这些卡片标题，从 h1 直接跳到 h3 是**层级跳级**：
+             读屏用户按 heading 快速导航时，会以为中间漏了一级内容（WCAG 1.3.1）。
+             将来若在 hero 与卡片之间加一级内容，卡片标题要跟着降到 h3 并恢复这里的注释。 -->
         <h1 class="hero-title">{{ site.settings.site_name || 'Xalor的小站' }}</h1>
         <p class="hero-desc" :title="typedFull">
           <span>{{ typed }}</span><span class="type-caret"></span>
@@ -65,7 +69,11 @@
               <div class="author-halo">
                 <img class="author-avatar" :src="site.settings.avatar || '/logo-256.webp'" alt="" />
               </div>
-              <h3>{{ site.settings.site_name || 'Xalor' }}</h3>
+              <!-- 作者卡里的站点名是**重复** hero 里的 h1，不是这一节的标题。
+                   占一个 heading 层级会让读屏用户听到两遍同样的标题；改成普通段落。
+                   （历史上它曾是 h2，被降成 h3 以避免重复占层级 —— 但那样 h1→h3 又是跳级。
+                   正解是不让它参与 heading 层级。有门禁 test-heading-order.mjs 盯着。） -->
+              <p class="author-name">{{ site.settings.site_name || 'Xalor' }}</p>
               <p>{{ site.settings.site_desc || '记录技术、生活与思考' }}</p>
               <div class="author-stats">
                 <span><b>{{ site.stats.article_count || 0 }}</b>文章</span>
@@ -80,7 +88,7 @@
             </div>
 
             <div v-if="categories.length" class="side-card">
-              <h3>分类</h3>
+              <h2>分类</h2>
               <router-link
                 v-for="c in categories"
                 :key="c.id"
@@ -95,7 +103,7 @@
 
             <div v-if="hotArticles.length" class="side-card">
               <div class="side-head">
-                <h3>{{ hotSort === 'hot' ? '热门' : '热议' }}</h3>
+                <h2>{{ hotSort === 'hot' ? '热门' : '热议' }}</h2>
                 <div class="hot-tabs">
                   <button :class="{ active: hotSort === 'hot' }" @click="setHotSort('hot')">热</button>
                   <button :class="{ active: hotSort === 'commented' }" @click="setHotSort('commented')">议</button>
@@ -113,7 +121,7 @@
             </div>
 
             <div v-if="recentComments.length" class="side-card">
-              <h3>最新评论</h3>
+              <h2>最新评论</h2>
               <router-link
                 v-for="c in recentComments.slice(0, 5)"
                 :key="c.id"
@@ -131,7 +139,7 @@
             <!-- 阅读统计：只在拿到真实数据时渲染（site.reading 为 null 时整块不出现），
                  宁可不显示也不要给读者一排「0 字 / 0 分钟」。 -->
             <div v-if="site.reading && site.reading.total_articles" class="side-card reading-card">
-              <h3>阅读统计</h3>
+              <h2>阅读统计</h2>
               <p class="rc-lead">
                 全站 <b>{{ formatNumber(site.reading.total_words) }}</b> 字，
                 约 <b>{{ site.reading.total_reading_minutes }}</b> 分钟读完
@@ -161,7 +169,7 @@
             </div>
 
             <div v-if="tags.length" class="side-card">
-              <h3>标签</h3>
+              <h2>标签</h2>
               <div class="tag-cloud">
                 <router-link
                   v-for="t in tags.slice(0, 18)"
@@ -809,7 +817,7 @@ onUnmounted(() => {
   color: var(--text-3);
 }
 
-.side-card h3 {
+.side-card h2 {
   font-size: 0.82rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -841,8 +849,13 @@ onUnmounted(() => {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
-.author-card h2 {
+.author-name {
+  /* 原先由 .author-card h2 提供；现在它是 <p>，样式必须显式给，
+     否则会掉到 .author-card p 的规则里（字号变小、颜色变浅） */
+  margin: 0;
   font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .author-card p {

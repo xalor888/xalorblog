@@ -5,6 +5,7 @@ import { getFingerprint } from '@/utils/fingerprint';
 import { decryptContent } from '@/utils/crypto';
 import { getCachedAdminPath, getAdminPath, refreshAdminPath } from '@/utils/adminPath';
 import { getAuthToken } from '@/utils/authSession';
+import { buildRequestSignature } from '@/utils/requestSignature';
 
 // 接口前缀与后端一致（生产可改为随机字符串，前端同环境变量注入）
 const API_PREFIX = import.meta.env.VITE_API_PREFIX || '/api';
@@ -14,40 +15,17 @@ const request = axios.create({
   timeout: 20000,
 });
 
-/** 请求签名：X-Sig = HMAC(key=ticket, method|path|ts|bodyHash|jti|nonce)，与服务端同源逻辑 */
-async function signRequest(config) {
-  const ticket = getTicket();
-  const jti = ticket ? ticket.split('.')[1] || '' : '';
-  const ts = String(Date.now());
-  const nonce = randomHex(16);
-  const bodyHash = await sha256Hex(JSON.stringify(config.data ?? {}));
-  const path = config.url.split('?')[0];
-  const msg = [config.method.toUpperCase(), path, ts, bodyHash, jti, nonce].join('|');
-  const sig = await hmacHex(ticket, msg);
-  return { ts, sig, nonce };
-}
-
-function randomHex(bytes) {
-  const arr = new Uint8Array(bytes);
-  crypto.getRandomValues(arr);
-  return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function sha256Hex(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function hmacHex(key, msg) {
-  const k = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(key || ''),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(msg));
-  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
+/** 请求签名：X-Sig = HMAC(key=ticket, method|path|ts|bodyHash|jti|nonce)
+ *  唯一实现在 utils/requestSignature.js（与 signedFetch 共用同一份，
+ *  别再在本文件里抄第二份 —— 抄两份的结果是口径悄悄分叉、整站 403）。
+ *  axios 侧 config.url 相对 baseURL，本身不含 /api 前缀 → stripApiPrefix: false */
+function signRequest(config) {
+  return buildRequestSignature({
+    ticket: getTicket(),
+    method: config.method,
+    url: config.url,
+    data: config.data,
+  });
 }
 
 // 请求拦截：附加票据 + 指纹 + JWT + 时间戳 + 签名
@@ -60,6 +38,28 @@ request.interceptors.request.use(async (config) => {
   // 若请求在途期间票据被 8 分钟自动续期替换，响应到达时 getTicket()
   // 已指向新票据，直接解密会因密钥不匹配而失败（正文渲染为空）
   config._ticket = getTicket();
+  /**
+   * 留一份「未被 axios 加工过」的原始 body，供重试时还原。
+   *
+   * ⚠ 这是一个必须记录的坑：axios 的 dispatchRequest 会**原地**把
+   * `config.data` 换成序列化后的字符串（`config.data = transformData(...)`）。
+   * 我们签名时算的是 `sha256(JSON.stringify(config.data))`，而服务端算的是
+   * `sha256(JSON.stringify(req.body))`（已解析的对象）。首次请求两者一致，
+   * 但响应拦截器里重试用的正是**同一个 config 对象** —— 此时 `config.data`
+   * 已经是字符串 `'{"title":"t"}'`，再 `JSON.stringify` 一次会变成
+   * `'"{\\"title\\":\\"t\\"}"'`（多包了一层引号并转义），哈希与服务端永久对不上。
+   *
+   * 后果：票据过期 / 后台秘钥路径变更后，**所有写请求的重试都必然 403**
+   * （GET 无 body 所以不受影响，问题只在写操作上，极难与「网络抖动」区分）。
+   *
+   * 补充：签名实现抽到 utils/requestSignature.js 之后，字符串 body 按**原样**
+   * 参与哈希，上面那条「再 stringify 一次」的路径本身已不再发生。这份
+   * `_rawData` 仍然保留 —— 它保证重试发出的 body 与首次逐字节相同，
+   * 不依赖 axios 各版本对字符串 body 的处理细节。
+   */
+  if (config.data && typeof config.data === 'object' && typeof config.data.append !== 'function') {
+    config._rawData = config.data;
+  }
   // JWT 认证头：后台接口依赖它通过 authRequired
   const token = getAuthToken();
   if (token) config.headers['Authorization'] = `Bearer ${token}`;
@@ -72,6 +72,22 @@ request.interceptors.request.use(async (config) => {
   }
   return config;
 });
+
+/**
+ * 重试前把 body 还原成「未序列化的对象」。
+ *
+ * 见请求拦截器里 `_rawData` 的注释：axios 会把 config.data 原地替换成字符串，
+ * 而我们的签名算的是 `JSON.stringify(config.data)`。若直接拿这个被加工过的
+ * config 重试，字符串会被再 stringify 一次（多一层引号 + 转义），
+ * 哈希与服务端永久不一致 —— 写请求的重试 100% 拿 403。
+ *
+ * 只处理「原本是普通对象」的请求；FormData / URLSearchParams / 字符串
+ * 都不该被改写（前者不能序列化，后两者本来就是 body 本身）。
+ */
+function restoreRawBody(cfg) {
+  if (cfg && cfg._rawData !== undefined) cfg.data = cfg._rawData;
+  return cfg;
+}
 
 // 响应拦截：统一错误处理 + 正文解密
 //
@@ -160,7 +176,7 @@ request.interceptors.response.use(
         const cfg = error.config;
         if (cfg && !cfg._retried) {
           cfg._retried = true;
-          return request(cfg);
+          return request(restoreRawBody(cfg));
         }
       } catch (e) {
         toastOnce('error', '安全通道失效，请刷新页面');
@@ -180,7 +196,7 @@ request.interceptors.response.use(
         if (cfg && !cfg._retried && newKey && newKey !== oldKey) {
           cfg._retried = true;
           cfg.url = cfg.url.replace(new RegExp(`^/${oldKey}/`), `/${newKey}/`);
-          return request(cfg);
+          return request(restoreRawBody(cfg));
         }
       } catch (e) { /* 忽略 */ }
     } else if (status === 429) {
@@ -371,7 +387,10 @@ export const uploadApi = {
 
 export const imagesApi = {
   list: () => adminGet('/uploads/list'),
-  remove: (name) => adminDelete(`/uploads/${encodeURIComponent(name)}`),
+  // name 可能是 `ai/x.png`（AI 转存图在子目录里）：逐段编码并保留 `/`。
+  // 整段 encodeURIComponent 会把分隔符编成 %2F，请求落到 `:filename` 路由后
+  // 被判「文件名不合法」—— 子目录图从此既看不见也删不掉。
+  remove: (name) => adminDelete(`/uploads/${String(name).split('/').map(encodeURIComponent).join('/')}`),
   cleanupOrphans: () => adminPost('/uploads/cleanup-orphans'),
 };
 

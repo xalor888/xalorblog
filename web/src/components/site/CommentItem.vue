@@ -9,9 +9,19 @@
     :aria-label="depth > 0 ? `回复 ${comment.nickname} 的评论` : `${comment.nickname} 的评论`"
   >
     <div class="comment-card" :class="{ highlighted: isHighlighted }" :id="'comment-' + comment.id" :data-id="comment.id">
-      <div class="avatar" :style="{ background: avatarColor }" @click="$emit('reply', comment)">
-        <span>{{ initial }}</span>
-      </div>
+      <!-- 头像点击＝回复。原来是个裸 div：鼠标能点、键盘和读屏完全到不了，
+           而且"点头像会进入回复"这件事没有任何可发现的提示。
+           改成 button 后天然可聚焦、可回车触发，aria-label 说清它会做什么；
+           span 里的首字母只是视觉兜底，加 aria-hidden 免得读屏念一个孤零零的字。 -->
+      <button
+        type="button"
+        class="avatar"
+        :style="{ background: avatarColor }"
+        :aria-label="`回复 ${comment.nickname} 的评论`"
+        @click="$emit('reply', comment)"
+      >
+        <span aria-hidden="true">{{ initial }}</span>
+      </button>
 
       <div class="comment-body">
         <div class="comment-head">
@@ -21,7 +31,16 @@
           <a v-if="comment.website" :href="comment.website" target="_blank" rel="noopener noreferrer nofollow" class="web" :title="comment.website">
             <XIcon name="Globe" :size="13" />
           </a>
-          <span class="time" :title="'复制评论链接'" @click="copyCommentLink">{{ timeAgo(comment.created_at) }}</span>
+          <!-- 同一类问题：点时间戳复制链接，但原来是 span，键盘不可达。
+               用 button 而不是加 tabindex+role：原生 button 自带 Enter/Space 与
+               "可激活"的读屏语义，也不用自己维护按键分支。 -->
+          <button
+            type="button"
+            class="time"
+            :title="'复制评论链接'"
+            aria-label="复制这条评论的链接"
+            @click="copyCommentLink"
+          >{{ timeAgo(comment.created_at) }}</button>
         </div>
 
         <p class="comment-content">
@@ -83,6 +102,7 @@ import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import { commentApi } from '@/api';
 import { timeAgo } from '@/utils/format';
+import { copyText } from '@/utils/clipboard';
 
 const props = defineProps({
   comment: { type: Object, required: true },
@@ -149,37 +169,16 @@ async function likeComment() {
   }
 }
 
-/** 复制本条评论的直达链接（hash 路由下用 query 定位评论） */
+/** 复制本条评论的直达链接（hash 路由下用 query 定位评论）
+ *
+ *  复制链路（clipboard → execCommand 的 textarea 兜底 → iOS setSelectionRange）
+ *  统一在 utils/clipboard.js 里，本组件与 AskAi.vue 曾各抄一份重复实现。
+ *  这里只负责「成功/失败说哪句话」——文案保持原样不改。 */
 async function copyCommentLink() {
   const url = `${location.origin}${location.pathname}${location.hash.split('?')[0]}?comment=${props.comment.id}`;
-  const done = () => ElMessage.success('评论链接已复制');
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(url);
-      done();
-    } else {
-      fallbackCopy(url);
-      done();
-    }
-  } catch (e) {
-    try {
-      fallbackCopy(url);
-      done();
-    } catch (err) {
-      ElMessage.error('复制失败，请手动复制地址栏链接');
-    }
-  }
-}
-
-function fallbackCopy(text) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand('copy');
-  document.body.removeChild(ta);
+  // copyText 内部已经读 execCommand 的真实返回值，失败返回 false 而不抛错
+  if (await copyText(url)) ElMessage.success('评论链接已复制');
+  else ElMessage.error('复制失败，请手动复制地址栏链接');
 }
 
 // 昵称哈希 → 渐变配色（无头像时）
@@ -227,6 +226,12 @@ const avatarColor = computed(() => {
 
 /* 头像 */
 .avatar {
+  /* 由 div 改成 button 后必须清掉 UA 默认样式（padding/外边距/字体/默认底），
+     否则 40×40 会被撑成 40+padding，圆头像变形 */
+  appearance: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -303,6 +308,13 @@ const avatarColor = computed(() => {
 }
 
 .time {
+  /* 由 span 改成 button 后必须清掉 UA 默认样式，否则会多出内边距与灰底 */
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
   font-size: 0.76rem;
   color: var(--text-3);
   cursor: pointer;

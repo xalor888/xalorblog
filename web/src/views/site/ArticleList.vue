@@ -63,9 +63,12 @@
           </div>
         </div>
 
+        <!-- role="group" + aria-labelledby：一组「多选一」的筛选按钮如果只是平铺，
+             读屏用户听到的是「全部 按钮、技术 3 按钮、生活 5 按钮…」——
+             不知道这串按钮在筛什么。分组并绑定可见的 label，读屏会先念「分类 分组」。 -->
         <div class="filter-row">
-          <span class="filter-label">分类</span>
-          <div class="chips">
+          <span class="filter-label" id="filter-category-label">分类</span>
+          <div class="chips" role="group" aria-labelledby="filter-category-label">
             <!-- aria-pressed 让「当前选中哪个」被播报出来。
                  原来只有 .active 这个视觉类，读屏用户听到的是一串按钮，
                  不知道此刻筛的是哪个分类。 -->
@@ -89,8 +92,8 @@
         </div>
 
         <div class="filter-row">
-          <span class="filter-label">标签</span>
-          <div class="chips">
+          <span class="filter-label" id="filter-tag-label">标签</span>
+          <div class="chips" role="group" aria-labelledby="filter-tag-label">
             <button
               class="chip"
               :class="{ active: !activeTag }"
@@ -144,7 +147,7 @@
       </p>
 
       <!-- 列表 -->
-      <SkeletonList v-if="loading" :count="3" class="list-loading" aria-hidden="true" />
+      <SkeletonList v-if="loading" :count="3" class="list-loading" />
       <template v-else-if="loadFailed">
         <!-- 网络/服务错误：明确提示并提供重试，避免误显示空状态。
              加 state-error 类是为了能和「真的没有文章」区分开 ——
@@ -291,11 +294,12 @@
 <script setup>
 import { ref, computed, watch, watchEffect, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
 import SkeletonList from '@/components/ui/SkeletonList.vue';
 import { applyPageMeta } from '@/utils/pageMeta';
 import { highlightKeyword } from '@/utils/highlight';
-import { articleApi, categoryApi, tagApi } from '@/api';
+import request, { articleApi, categoryApi, tagApi } from '@/api';
 import { formatDate, formatNumber } from '@/utils/format';
 import { useSiteStore } from '@/stores/site';
 
@@ -433,7 +437,11 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.v
  */
 const resultAnnouncement = computed(() => {
   if (loading.value) return '正在加载文章…';
-  if (loadFailed.value) return '加载失败';
+  // 失败时这里刻意返回空串：下面的失败态块本身带 role=alert，会立刻播报原因。
+  // 若这条 polite 播报点也喊一句「加载失败」，同一次失败会被播两遍（读屏听起来
+  // 像结巴，且 alert 已经把「检查网络 / 重试」说清楚了）。状态点仍然常驻，只负责
+  // 加载中 / 有数据 / 空态三种。
+  if (loadFailed.value) return '';
   if (!total.value) return emptyTitle.value;
   const from = (page.value - 1) * pageSize.value + 1;
   const to = Math.min(page.value * pageSize.value, total.value);
@@ -522,7 +530,23 @@ function setSort(s) {
   router.push({ path: '/articles', query: q });
 }
 
+/**
+ * 请求序号：只要最新的那次响应。
+ *
+ * 为什么需要：load() 是会发网络请求的，而它有好几个并发入口 ——
+ * 筛选栏点分类/标签（每次点都 push 一条路由 → filterKey watcher → load(1)）、
+ * 翻页按钮、重试按钮、改每页条数。这些操作之间**没有**任何互斥。
+ * 原来拿到响应就无条件写 `articles.value = res.list; total.value = ...`，
+ * 于是慢的那次后到就会盖掉新的：
+ *   快速点「技术笔记」再点「生活随笔」，若技术的请求更慢回来，
+ *   页面上是技术笔记的文章，而筛选条高亮的是生活随笔 ——
+ *   内容与条件对不上，且没有任何提示。
+ * 与 ArticleDetail.vue 的写法保持一致（那里已用同一套 loadSeq）。
+ */
+let loadSeq = 0;
+
 async function load(p = 1) {
+  const my = ++loadSeq;
   loading.value = true;
   loadFailed.value = false;
   try {
@@ -534,6 +558,19 @@ async function load(p = 1) {
       keyword: kw.value || undefined,
       sort: sort.value,
     });
+    if (my !== loadSeq) return; // 已有更新的请求，丢弃本次响应
+    // 越界页码必须纠正到最后一页。
+    //
+    // 为什么：后端只把 page 夹在 [1,10000]，**不按 total 纠正** ——
+    // 24 篇 / 每页 8 时请求 ?page=99 会老老实实返回空数组、total 仍是 24。
+    // 于是页面进空态，文案还是「没有找到相关文章」，而 hasFilter 为 false
+    // 连「清除筛选」都不给（本来也没有筛选可清），读者被困在一片空白里，
+    // 唯一的出路是自己去改地址栏。收藏了旧页码、或文章被删到只剩一页时就会踩到。
+    // 这里回到真实最后一页，等于替用户把地址栏修对。
+    const lastPage = Math.max(1, Math.ceil(res.pagination.total / pageSize.value));
+    if (p > lastPage && res.pagination.total > 0) {
+      return load(lastPage); // 递归会自增 loadSeq，本次的 finally 因此不再动 loading
+    }
     articles.value = res.list;
     total.value = res.pagination.total;
     page.value = p;
@@ -545,25 +582,36 @@ async function load(p = 1) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   } catch (e) {
+    if (my !== loadSeq) return; // 过期请求的错误同样丢弃，别把新请求的页面报成失败
     loadFailed.value = true;
   } finally {
-    loading.value = false;
+    if (my === loadSeq) loading.value = false;
   }
 }
 
-/** 空态「随便看看」：随机跳一篇已发布文章（有筛选无结果时快速离开死胡同） */
+/** 空态「随便看看」：随机跳一篇已发布文章（有筛选无结果时快速离开死胡同）
+ *
+ * 「站内还没有文章」（后端 404）与「请求失败」是两种结局：前者点一百次都不会
+ * 有结果，该说清是没内容；后者才是让人稍后再试。原来 catch 是空的，按钮文案
+ * 只是闪一下又回来，用户完全不知道自己点到的东西发生了什么。
+ *
+ * 这里走 silent 请求：404 已按 info 分流播报，若再让 axios 拦截器按 `!silent`
+ * 的错误分支弹一次 toast，同一次点击会连出两条意思重复、语气相反的提示。
+ */
 const randomLoading = ref(false);
 async function randomArticle() {
   if (randomLoading.value) return;
   randomLoading.value = true;
   try {
-    const r = await articleApi.random();
+    const r = await request.get('/articles/random', { silent: true });
     if (r && r.slug) {
       router.push(`/article/${r.slug}`);
       return;
     }
+    ElMessage.info('还没有可跳转的文章');
   } catch (e) {
-    /* 拦截器已提示 */
+    if (e?.response?.status === 404) ElMessage.info('还没有可跳转的文章');
+    else ElMessage.error('跳转失败，请稍后重试');
   } finally {
     randomLoading.value = false;
   }
@@ -609,11 +657,18 @@ watch(filterKey, () => {
 watchEffect(() => {
   const siteName = site.settings.site_name || 'Xalor的小站';
   document.title = `${pageTitle.value} · ${siteName}`;
-  // canonical 与 og:url 要带上当前筛选，否则「搜 mysql」和「全部文章」
-  // 会指向同一个规范地址，重复内容
+  // canonical / og:url 只带**内容定位**参数。
+  //
+  // 两个维度的区别很容易混：
+  //   - keyword / tag / category / page → 决定「这一页显示哪些文章」，是不同内容，
+  //     必须进 canonical（否则「搜 mysql」和「全部文章」会被当成同一页，重复内容）。
+  //   - sort / pageSize → 只是**同一批文章的展示偏好**。把它们拼进 canonical 会制造
+  //     一份内容对应多个规范地址（`?sort=views`、`?sort=date`、`?pageSize=50` 各有
+  //     一个 canonical），搜索引擎反而更难判断哪一个是主版本 —— 这正是 canonical
+  //     要避免的事，不能一边用它去重一边自己制造重复。
   const q = route.query;
   const params = new URLSearchParams();
-  for (const k of ['keyword', 'tag', 'category', 'page', 'pageSize', 'sort']) {
+  for (const k of ['keyword', 'tag', 'category', 'page']) {
     if (q[k]) params.set(k, String(q[k]));
   }
   const qs = params.toString();
@@ -935,7 +990,9 @@ onMounted(async () => {
   gap: 14px;
 }
 
-.list-loading {
+.list-loading :deep(.sk-grid) {
+  /* 网格已移到 SkeletonList 内部的 .sk-grid（外层要容纳 sr-only 播报文本），
+     所以覆盖列数必须用 :deep() 穿透 scoped 边界，否则窄栏布局失效 */
   grid-template-columns: 1fr;
 }
 

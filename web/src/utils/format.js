@@ -60,8 +60,21 @@ function rel(diff, time) {
 /** 格式化日期 YYYY-MM-DD */
 export function formatDate(time) {
   if (!time) return '';
-  const s = String(time).slice(0, 10);
-  return s.replace(/-/g, '-');
+  // ⚠ 必须分支处理 Date 与字符串。
+  //
+  // 旧实现只有 `String(time).slice(0, 10)`，对 Date 对象产出
+  // `"Thu Sep 24"`（`String(new Date())` = "Thu Sep 24 2026 04:05:21 GMT+0800 …"）——
+  // 而 `timeAgo` 的签名明确支持 `string|Date`，且超过 30 天会走到这里。
+  // 目前所有调用方传的都是 API 返回的字符串，所以这条路径还没被触发；
+  // 但函数承诺了 Date 却不支持它，是个等着被踩的坑。
+  //
+  // 顺带删掉 `s.replace(/-/g, '-')` —— 把 '-' 替换成 '-' 是无操作，
+  // 疑似原本想换成 '/' 但没改完的死代码。
+  if (time instanceof Date) {
+    const p = (n) => String(n).padStart(2, '0');
+    return `${time.getFullYear()}-${p(time.getMonth() + 1)}-${p(time.getDate())}`;
+  }
+  return String(time).slice(0, 10);
 }
 
 /** 格式化日期时间 YYYY-MM-DD HH:mm */

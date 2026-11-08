@@ -1,69 +1,88 @@
 /**
  * 绕过 axios JSON 拦截器的签名 GET（后台导出 CSV/JSON）。
  * 读接口现在也要 X-Sig，裸 fetch 会被闸门拒绝。
+ *
+ * ⚠ 签名算法**只**来自 utils/requestSignature.js（与 api/index.js 共用一份）。
+ * 本文件曾经抄了第二份逐行相同的 HMAC 实现，随后与 axios 侧分叉：
+ * 没有超时、不解析业务码、不处理 401/403/429、票据刷新后不重试，
+ * 未登录时还会发出 `"Bearer "`（空 token 的假认证头）。
+ *
+ * 返回 `Response` 的契约保持不变（调用方 AiPanel 依赖 `res.json()`，
+ * AskAi 依赖 `res.body` 读 SSE 流），业务码与 401/403/429 的语义仍由
+ * axios 侧的拦截器负责 —— 这里只补齐「传输层」的两件短板：
+ *   1) 15s 超时（响应头到手即撤销，避免把 SSE 长流截断）
+ *   2) 未登录时不发 Authorization 头（与 api/index.js 对齐）
  */
 
 import { getTicket } from './pass';
 import { getFingerprint } from './fingerprint';
 import { getAuthToken } from './authSession';
+import { buildRequestSignature } from './requestSignature';
 
-const API_PREFIX = import.meta.env.VITE_API_PREFIX || '/api';
+/** 传输层超时：低于 axios 侧的 20s，导出/流式接口卡死时能尽快失败 */
+const REQUEST_TIMEOUT_MS = 15000;
 
-function randomHex(bytes) {
-  const arr = new Uint8Array(bytes);
-  crypto.getRandomValues(arr);
-  return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function sha256Hex(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function hmacHex(key, msg) {
-  const k = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(key || ''),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(msg));
-  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function sigPath(url) {
-  const path = url.split('?')[0];
-  const prefix = API_PREFIX.replace(/\/+$/, '');
-  if (prefix && path.startsWith(prefix)) return path.slice(prefix.length) || '/';
-  return path;
+/**
+ * 组合「超时」与「调用方传入的 signal」。
+ *
+ * 为什么要自建 AbortController 而不是直接用 `AbortSignal.timeout`：
+ * 需要同时响应调用方的中止（AiPanel 的「停止生成」）与超时，而
+ * `AbortSignal.any` 的兼容面还不够宽。
+ *
+ * `disarm()` 必须在**拿到响应头之后**立刻调用：超时只该管「多久没有响应头」，
+ * 不该管正文传输 —— AiPanel 的 SSE 流活到 60s 以上，不撤定时器会把整段回答
+ * 在 15s 处掐断。调用方之后主动 abort 仍然有效（监听器一直挂着）。
+ */
+function createRequestSignal(outer) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => {
+    ctrl.abort(new DOMException(`请求超时（${REQUEST_TIMEOUT_MS / 1000}s）`, 'TimeoutError'));
+  }, REQUEST_TIMEOUT_MS);
+  if (outer) {
+    if (outer.aborted) ctrl.abort(outer.reason);
+    else outer.addEventListener('abort', () => ctrl.abort(outer.reason), { once: true });
+  }
+  return {
+    signal: ctrl.signal,
+    disarm() {
+      clearTimeout(timer);
+    },
+  };
 }
 
 export async function signedFetch(url, { method = 'GET', body = null, headers = {}, signal = null } = {}) {
   const ticket = getTicket();
-  const jti = ticket ? ticket.split('.')[1] || '' : '';
-  const ts = String(Date.now());
-  const nonce = randomHex(16);
-  // 与 axios 拦截器的 signRequest 保持同一算法：body 哈希取 JSON 序列化后的 sha256，
-  // 空 body 等价于 '{}'（GET 沿用旧行为，POST 传真实 body）
-  const payload = body === null || body === undefined ? {} : body;
-  const bodyHash = await sha256Hex(typeof payload === 'string' ? payload : JSON.stringify(payload));
-  const msg = [method.toUpperCase(), sigPath(url), ts, bodyHash, jti, nonce].join('|');
-  const sig = await hmacHex(ticket, msg);
-  return fetch(url, {
+  // url 是完整路径（含 VITE_API_PREFIX），而服务端比对的是挂载点相对路径
+  const { ts, sig, nonce } = await buildRequestSignature({
+    ticket,
     method,
-    credentials: 'same-origin',
-    headers: {
-      Authorization: `Bearer ${getAuthToken()}`,
-      'X-Pass': ticket,
-      'X-Fp': await getFingerprint(),
-      'X-Timestamp': ts,
-      'X-Nonce': nonce,
-      'X-Sig': sig,
-      ...(body !== null && body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-      ...headers,
-    },
-    body: body === null || body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
-    ...(signal ? { signal } : {}),
+    url,
+    data: body,
+    stripApiPrefix: true,
   });
+  const token = getAuthToken();
+  const requestSignal = createRequestSignal(signal);
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      credentials: 'same-origin',
+      headers: {
+        // 未登录不发假认证头：`Bearer ` 空 token 会被后端当成无效凭证
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'X-Pass': ticket,
+        'X-Fp': await getFingerprint(),
+        'X-Timestamp': ts,
+        'X-Nonce': nonce,
+        'X-Sig': sig,
+        ...(body !== null && body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...headers,
+      },
+      body: body === null || body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
+      signal: requestSignal.signal,
+    });
+  } finally {
+    requestSignal.disarm();
+  }
+  return res;
 }

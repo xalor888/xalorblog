@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { authApi } from '@/api';
+import { useAdminStore } from '@/stores/admin';
 import {
   clearAdminDrafts,
   clearAuthSession,
@@ -35,10 +36,11 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       clearAdminDrafts();
       clearSession();
-      try {
-        const { useAdminStore } = await import('@/stores/admin');
-        useAdminStore().$reset?.();
-      } catch (e) {}
+      // 角标必须一起清：否则下一个登录者会看到上一个会话的待审数。
+      // 这里原本是 `const { useAdminStore } = await import(...)` + `$reset?.()`——
+      // setup 式 store 没有 `$reset`（只有 options 式才有），可选链让它变成静默 no-op；
+      // 动态 import 也是多余的（admin store 本来就随主包加载）。
+      useAdminStore().reset();
     }
     return { revoked };
   }

@@ -50,13 +50,17 @@
         <el-table-column type="selection" width="44" />
         <el-table-column label="封面" width="64" align="center">
           <template #default="{ row }">
-            <div
+            <!-- 缩略图点击＝打开文章。原来是 div，键盘不可达；
+                 用 button 让它可以 Tab 到、回车打开，title 兼作读屏文案。 -->
+            <button
               v-if="row.cover"
+              type="button"
               class="thumb"
               :style="{ backgroundImage: `url(${row.cover})` }"
               :title="'查看：' + row.title"
+              :aria-label="'查看文章：' + row.title"
               @click="gotoArticle(row)"
-            ></div>
+            ></button>
             <div v-else class="thumb thumb-empty"><XIcon name="ImageOff" :size="16" /></div>
           </template>
         </el-table-column>
@@ -600,6 +604,11 @@ onMounted(async () => {
 
 /* 封面缩略图 */
 .thumb {
+  /* 由 div 改成 button：清掉 UA 默认的 padding/背景/字体，否则 44×32 会被撑开 */
+  appearance: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
   width: 44px;
   height: 32px;
   border-radius: 6px;

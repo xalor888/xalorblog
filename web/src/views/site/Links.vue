@@ -8,7 +8,16 @@
       </div>
 
       <!-- 友链列表 -->
-      <div v-if="links.length" class="link-grid" v-reveal="'stagger'">
+      <SkeletonList v-if="listLoading && !links.length" :count="3" />
+      <!-- 加载失败要区别于「还没有友链」：一个该检查网络，一个该去申请。
+           原来 load() 没有 try/catch，请求一失败 links 就是空数组，
+           页面显示「还没有友链，来申请第一个吧」—— 等于把接口故障说成内容为空。 -->
+      <div v-else-if="listFailed" class="empty-state list-error" role="alert">
+        <div class="icon-wrap"><XIcon name="ShieldAlert" :size="30" /></div>
+        <p>友链加载失败，可能是网络波动或服务暂时不可用</p>
+        <button class="retry-btn" @click="load">重试</button>
+      </div>
+      <div v-else-if="links.length" class="link-grid" v-reveal="'stagger'">
         <a v-for="l in links" :key="l.id" :href="l.url" target="_blank" rel="noopener noreferrer nofollow" class="link-card card fade-up">
           <div class="link-avatar" :style="{ background: avatarColor(l.name) }">
             <img v-if="l.avatar && !failedAvatars.has(l.id)" :src="l.avatar" :alt="l.name" @error="failedAvatars.add(l.id)" />
@@ -26,8 +35,11 @@
         <p>还没有友链，来申请第一个吧</p>
       </div>
 
-      <!-- 申请表单 -->
-      <div class="apply-card card fade-up">
+      <!-- 申请表单。
+           用 <form> 而不是 <div>：原生 <form> 才有「回车提交」与浏览器内置校验
+           （type="url" 的格式提示、required 的必填提示）。原来是一堆裸 input 套 div，
+           键盘用户按回车什么也不会发生，移动端也失去 autocomplete 的联想。 -->
+      <form class="apply-card card fade-up" @submit.prevent="submit">
         <!-- h2 而不是 h3：本页 h1 是「友情链接」，中间没有分区标题，
              用 h3 会造成 h1→h3 跳级（实测本页跳级就是这一处）。
              样式走 .apply-title 类，不依赖标签名。 -->
@@ -35,25 +47,25 @@
         <p class="apply-tip">请先添加本站链接，再提交申请，审核通过后展示。</p>
         <div class="apply-grid">
           <div class="field">
-            <label class="field-label">网站名称 *</label>
-            <input v-model="form.name" class="field-input" maxlength="80" placeholder="你的网站名称" />
+            <label class="field-label" for="link-name">网站名称 *</label>
+            <input id="link-name" v-model="form.name" class="field-input" maxlength="80" placeholder="你的网站名称" required />
           </div>
           <div class="field">
-            <label class="field-label">网站地址 *</label>
-            <input v-model="form.url" class="field-input" type="url" maxlength="300" placeholder="https://example.com" autocomplete="url" />
+            <label class="field-label" for="link-url">网站地址 *</label>
+            <input id="link-url" v-model="form.url" class="field-input" type="url" maxlength="300" placeholder="https://example.com" autocomplete="url" required />
           </div>
           <div class="field">
-            <label class="field-label">网站图标 URL</label>
-            <input v-model="form.avatar" class="field-input" type="url" maxlength="500" placeholder="https://…/icon.png" />
+            <label class="field-label" for="link-avatar">网站图标 URL</label>
+            <input id="link-avatar" v-model="form.avatar" class="field-input" type="url" maxlength="500" placeholder="https://…/icon.png" />
           </div>
           <div v-if="mailNotify" class="field">
-            <label class="field-label">联系邮箱</label>
-            <input v-model="form.email" class="field-input" type="email" maxlength="100" placeholder="用于审核反馈" autocomplete="email" />
+            <label class="field-label" for="link-email">联系邮箱</label>
+            <input id="link-email" v-model="form.email" class="field-input" type="email" maxlength="100" placeholder="用于审核反馈" autocomplete="email" />
           </div>
         </div>
         <div class="field">
-          <label class="field-label">一句话介绍</label>
-          <input v-model="form.description" class="field-input" maxlength="200" placeholder="简单介绍你的网站" />
+          <label class="field-label" for="link-desc">一句话介绍</label>
+          <input id="link-desc" v-model="form.description" class="field-input" maxlength="200" placeholder="简单介绍你的网站" />
         </div>
         <!-- 随机蜜罐字段：字段名由服务端动态签发 -->
         <input
@@ -65,11 +77,11 @@
           aria-hidden="true"
         />
         <div class="apply-actions">
-          <button class="apply-btn" :disabled="submitting" @click="submit">
+          <button type="submit" class="apply-btn" :disabled="submitting">
             {{ submitting ? '提交中…' : '提交申请' }}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   </div>
 </template>
@@ -78,6 +90,7 @@
 import { ref, computed, onMounted, watchEffect } from 'vue';
 import { ElMessage } from 'element-plus';
 import XIcon from '@/components/ui/XIcon.vue';
+import SkeletonList from '@/components/ui/SkeletonList.vue';
 import { linkApi } from '@/api';
 import { getFormTokenInfo, refreshFormToken, getHpField } from '@/utils/formToken';
 import { useSiteStore } from '@/stores/site';
@@ -98,6 +111,8 @@ watchEffect(() => {
 const mailNotify = computed(() => !!site.settings.mail_notify);
 const links = ref([]);
 const submitting = ref(false);
+const listLoading = ref(false);
+const listFailed = ref(false);
 const failedAvatars = ref(new Set());
 const form = ref({ name: '', url: '', avatar: '', email: '', description: '' });
 const hpField = ref(getHpField('/links'));
@@ -120,7 +135,18 @@ function avatarColor(name) {
 }
 
 async function load() {
-  links.value = await linkApi.list();
+  // 必须自己兜住：onMounted 里是裸调用 load()，拦截器 reject 出来没人接 ——
+  // 首屏就是一次未处理的 Promise rejection，而 links 仍是 []，
+  // 模板落到空态显示「还没有友链，来申请第一个吧」，且没有重试入口。
+  listLoading.value = true;
+  listFailed.value = false;
+  try {
+    links.value = await linkApi.list();
+  } catch (e) {
+    listFailed.value = true; // toast 由拦截器统一弹，这里只负责页面内失败态
+  } finally {
+    listLoading.value = false;
+  }
 }
 
 async function submit() {
@@ -229,6 +255,9 @@ onMounted(() => {
 }
 
 .link-name {
+  /* 友链名称由访客申请时填写，超长英文/URL 会撑破卡片 */
+  overflow-wrap: anywhere;
+
   font-weight: 650;
   font-size: 0.96rem;
   transition: color var(--dur) var(--ease);
@@ -356,5 +385,30 @@ onMounted(() => {
   .apply-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* 加载失败态的重试按钮：.retry-btn 的完整样式在 ArticleList 的 scoped 块里，
+   这里引用不到，所以本组件自带一份最小实现。 */
+.list-error .retry-btn {
+  margin-top: 16px;
+  min-height: 40px;
+  padding: 8px 28px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--accent-fill);
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.list-error .retry-btn:hover {
+  opacity: 0.88;
+}
+
+.list-error .retry-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 </style>
