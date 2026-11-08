@@ -66,12 +66,12 @@ function refererRequired(req, res, next) {
 
   // 双头同带必须一致：攻击者可控 Referer 头，但跨站表单的 Origin 由浏览器强制写入
   if (oriHost && refHost && oriHost !== refHost) {
-    return res.status(403).json({ code: 1, message: '来源不合法' });
+    return res.status(403).json({ code: 1, message: '来源不合法', data: null });
   }
 
   const host = oriHost || refHost;
   if (!host || !isAllowedOriginHost(host)) {
-    return res.status(403).json({ code: 1, message: '来源不合法' });
+    return res.status(403).json({ code: 1, message: '来源不合法', data: null });
   }
   next();
 }
@@ -83,10 +83,10 @@ function refererRequired(req, res, next) {
 function timestampRequired(req, res, next) {
   const ts = Number(req.headers['x-timestamp']);
   if (!Number.isFinite(ts)) {
-    return res.status(403).json({ code: 1, message: '请求时间戳缺失' });
+    return res.status(403).json({ code: 1, message: '请求时间戳缺失', data: null });
   }
   if (Math.abs(Date.now() - ts) > TIMESTAMP_WINDOW) {
-    return res.status(403).json({ code: 1, message: '请求已过期，请刷新页面' });
+    return res.status(403).json({ code: 1, message: '请求已过期，请刷新页面', data: null });
   }
   next();
 }

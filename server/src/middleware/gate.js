@@ -344,10 +344,10 @@ function hmacWithKey(key, data) {
 function gateRequired(req, res, next) {
   const t = verifyTicket(req);
   if (!t.ok) {
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
   if (req.method !== 'HEAD' && !verifySig(req, t)) {
-    return res.status(403).json({ code: 1, message: '请求签名无效' });
+    return res.status(403).json({ code: 1, message: '请求签名无效', data: null });
   }
   req.passTicket = t;
   if (req.method !== 'HEAD') req.sigVerified = true;
@@ -358,10 +358,10 @@ function gateRequired(req, res, next) {
 function gateWriteRequired(req, res, next) {
   const t = verifyTicket(req);
   if (!t.ok) {
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
   if (!verifySig(req, t)) {
-    return res.status(403).json({ code: 1, message: '请求签名无效' });
+    return res.status(403).json({ code: 1, message: '请求签名无效', data: null });
   }
   req.passTicket = t;
   // 显式标记「签名已验证」：供 refererRequired 等下游中间件据此旁路，

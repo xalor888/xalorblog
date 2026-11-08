@@ -204,7 +204,7 @@ router.get('/slug/:slug', async (req, res) => {
       if (!scrape.ok) {
         report(req.ip, 'rate', `SCRAPE /articles/slug/${row.slug}`);
         retryAfter(res, 60);
-    return res.status(429).json({ code: 1, message: '阅读过于频繁，请稍后再试' });
+    return res.status(429).json({ code: 1, message: '阅读过于频繁，请稍后再试', data: null });
       }
     }
 

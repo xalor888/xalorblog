@@ -12,7 +12,7 @@ function fetchMetaGuard(req, res, next) {
   const site = String(req.headers['sec-fetch-site'] || '').toLowerCase();
   if (!site) return next(); // 旧浏览器/脚本，签名兜底
   if (site === 'same-origin' || site === 'same-site' || site === 'none') return next();
-  return res.status(403).json({ code: 1, message: '请求被拒绝' });
+  return res.status(403).json({ code: 1, message: '请求被拒绝', data: null });
 }
 
 module.exports = { fetchMetaGuard };

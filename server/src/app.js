@@ -120,7 +120,7 @@ const { ALLOWED_METHODS, isWriteMethod } = require('./utils/httpMethods');
 app.use((req, res, next) => {
   if (!ALLOWED_METHODS.includes(req.method)) {
     res.set('Allow', ALLOWED_METHODS.join(', '));
-    return res.status(405).json({ code: 1, message: '方法不允许' });
+    return res.status(405).json({ code: 1, message: '方法不允许', data: null });
   }
   next();
 });
@@ -138,7 +138,7 @@ app.use((req, res, next) => {
   hostname = hostname.replace(/\.+$/, '');
   if (!config.allowedHosts.includes(hostname)) {
     report(req.ip, 'waf', 'HOST 头不合法');
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
   next();
 });
@@ -151,7 +151,7 @@ app.use((req, res, next) => {
   const timer = setTimeout(() => {
     if (!res.writableEnded) {
       try {
-        res.status(408).json({ code: 1, message: '请求超时' });
+        res.status(408).json({ code: 1, message: '请求超时', data: null });
       } catch (e) { /* 连接可能已不可写 */ }
       req.socket.destroy();
     }
@@ -190,7 +190,7 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
   handler: (req, res) => {
     report(req.ip, 'rate', req.path);
-    res.status(429).json({ code: 1, message: '请求过于频繁，请稍后再试' });
+    res.status(429).json({ code: 1, message: '请求过于频繁，请稍后再试', data: null });
   },
 });
 app.use(config.apiPrefix, apiLimiter);
@@ -212,7 +212,7 @@ const strictLimiter = rateLimit({
   limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '操作过于频繁，请稍后再试' },
+  message: { code: 1, message: '操作过于频繁，请稍后再试', data: null },
 });
 
 // 上传文件静态资源限流（防高频刷带宽/防盗链拖库）
@@ -221,7 +221,7 @@ const uploadsLimiter = rateLimit({
   limit: 120,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '读取过于频繁，请稍后再试' },
+  message: { code: 1, message: '读取过于频繁，请稍后再试', data: null },
 });
 
 // 上传文件静态资源：置于 WAF/信誉闸门之前 —— 图片请求不付全量特征扫描成本，
@@ -284,19 +284,19 @@ app.use(api, async (req, res, next) => {
       if (v.ok) return next();
       // 伪造爬虫：UA 声称是搜索爬虫但 IP 归属不匹配 → 计罚并拒绝
       report(req.ip, 'waf', `FAKE-CRAWLER ${req.path}`);
-      return res.status(403).json({ code: 1, message: '访问被拒绝' });
+      return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
     }
     const ua = String(req.headers['user-agent'] || '');
     if (!ua) {
       // 空 UA（curl 默认/探活脚本）：拒绝但不记信誉分 —— 普通脚本行为非攻击
-      return res.status(403).json({ code: 1, message: '访问被拒绝' });
+      return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
     }
     // HEAD 与 GET 同为只读语义，只需票据（CDN 探测/预检/监控探活均发 HEAD）
     if (req.method === 'GET' || req.method === 'HEAD') return gateRequired(req, res, next);
     return gateWriteRequired(req, res, next);
   } catch (e) {
     // 异步异常兜底：拒绝而非挂起（防中间件抛错导致请求悬挂）
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
 });
 
@@ -406,7 +406,7 @@ const rssLimiter = rateLimit({
   legacyHeaders: false,
   handler: (req, res) => {
     report(req.ip, 'rate', 'RSS 高频读取');
-    res.status(429).json({ code: 1, message: '读取过于频繁，请稍后再试' });
+    res.status(429).json({ code: 1, message: '读取过于频繁，请稍后再试', data: null });
   },
 });
 const shareLimiter = rateLimit({
@@ -416,7 +416,7 @@ const shareLimiter = rateLimit({
   legacyHeaders: false,
   handler: (req, res) => {
     report(req.ip, 'rate', '分享页高频读取');
-    res.status(429).json({ code: 1, message: '读取过于频繁，请稍后再试' });
+    res.status(429).json({ code: 1, message: '读取过于频繁，请稍后再试', data: null });
   },
 });
 app.use(`${api}`, rssLimiter, feedRouter);
@@ -427,9 +427,9 @@ app.use((req, res) => {
   res.set('Cache-Control', 'no-store');
   // 目录爆破检测：短时间大量访问不存在路径 → 计入信誉积分
   if (recordMiss(req.ip, req.path)) {
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
-  res.status(404).json({ code: 1, message: '访问被拒绝' });
+  res.status(404).json({ code: 1, message: '访问被拒绝', data: null });
 });
 
 // 错误处理：对外统一脱敏，不泄露内部细节
@@ -438,24 +438,24 @@ app.use((err, req, res, next) => {
   if (err.message === '不允许的跨域来源') {
     // 配置不匹配/外站直调，非攻击行为：仅记录不计信誉分
     console.warn(`[cors] 非法跨域来源 ${req.headers.origin || '-'} ${req.method} ${req.path}`);
-    return res.status(403).json({ code: 1, message: err.message });
+    return res.status(403).json({ code: 1, message: err.message, data: null });
   }
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ code: 1, message: '文件大小超过 5MB 限制' });
+    return res.status(400).json({ code: 1, message: '文件大小超过 5MB 限制', data: null });
   }
   if (err.code === 'LIMIT_UNEXPECTED_FILE' || err.message === '仅支持图片文件') {
-    return res.status(400).json({ code: 1, message: err.message || '上传文件不合法' });
+    return res.status(400).json({ code: 1, message: err.message || '上传文件不合法', data: null });
   }
   if (err.type === 'entity.too.large') {
     report(req.ip, 'rate', '超大请求体');
-    return res.status(413).json({ code: 1, message: '请求体过大' });
+    return res.status(413).json({ code: 1, message: '请求体过大', data: null });
   }
   if (err.type === 'entity.parse.failed') {
     report(req.ip, 'waf', '非法 JSON');
-    return res.status(400).json({ code: 1, message: '请求格式不合法' });
+    return res.status(400).json({ code: 1, message: '请求格式不合法', data: null });
   }
   console.error(`[error] rid=${req.requestId || '-'}`, err.message);
-  res.status(500).json({ code: 1, message: '服务器开小差了，请稍后再试' });
+  res.status(500).json({ code: 1, message: '服务器开小差了，请稍后再试', data: null });
 });
 
 module.exports = app;

@@ -14,7 +14,7 @@ const linkLimiter = rateLimit({
   limit: 5,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '申请太频繁了，请稍后再试' },
+  message: { code: 1, message: '申请太频繁了，请稍后再试', data: null },
 });
 
 /** 已通过的友链（公开） */

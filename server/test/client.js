@@ -27,16 +27,20 @@ function hmac(key, data) {
   return crypto.createHmac('sha256', key).update(data).digest('hex');
 }
 
-function req(method, path, { body, headers = {}, ticket, silent = false, ua } = {}) {
+/**
+ * rawBody：原样发送的请求体（用于「非法 JSON」「超大请求体」这类契约测试）。
+ * 与 body 互斥 —— 传了 rawBody 就不再 JSON.stringify，Content-Type 由调用方自己给。
+ */
+function req(method, path, { body, rawBody, headers = {}, ticket, silent = false, ua } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(BASE + path);
-    const data = body ? JSON.stringify(body) : null;
+    const data = typeof rawBody === 'string' ? rawBody : body ? JSON.stringify(body) : null;
     const h = {
       'User-Agent': ua || UA,
       'X-Fp': fp,
       ...headers,
     };
-    if (data) h['Content-Type'] = 'application/json';
+    if (data && !Object.keys(h).some((k) => k.toLowerCase() === 'content-type')) h['Content-Type'] = 'application/json';
     if (ticket) {
       const ts = Date.now();
       const nonce = Math.random().toString(36).slice(2, 14) + Math.random().toString(36).slice(2, 6);

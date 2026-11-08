@@ -174,7 +174,7 @@ router.post('/login', async (req, res) => {
     const fp = String(req.headers['x-fp'] || '');
     if (!/^[a-f0-9]{64}$/i.test(fp)) {
       report(ip, 'auth', 'POST /auth/login NO-FP');
-      return res.status(400).json({ code: 1, message: '设备指纹缺失，请刷新页面后重试' });
+      return res.status(400).json({ code: 1, message: '设备指纹缺失，请刷新页面后重试', data: null });
     }
 
     if (!cleanUser || typeof password !== 'string' || !password) {
@@ -197,11 +197,11 @@ router.post('/login', async (req, res) => {
       // 若在这里也记分，第 4 次被 429 打回的请求就会升级成 403 封禁，
       // 把「等 5 分钟可自愈」变成「等 15 分钟且翻倍」，与分级的初衷相反。
       retryAfter(res, reservation.remain);
-      return res.status(429).json({ code: 1, message: `登录失败过多，请 ${reservation.remain} 秒后再试` });
+      return res.status(429).json({ code: 1, message: `登录失败过多，请 ${reservation.remain} 秒后再试`, data: null });
     }
     if (!reservation.ok) {
       // 账号锁定返回与“凭据错误”同形，避免攻击者通过状态差异枚举有效用户名
-      return res.status(401).json({ code: 1, message: '用户名或密码错误' });
+      return res.status(401).json({ code: 1, message: '用户名或密码错误', data: null });
     }
 
     // 防时序枚举：用户不存在时对固定哈希做同成本比较（响应时间一致）

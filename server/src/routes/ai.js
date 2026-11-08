@@ -27,7 +27,7 @@ const askLimiter = rateLimit({
   limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '提问次数已达上限，请稍后再试' },
+  message: { code: 1, message: '提问次数已达上限，请稍后再试', data: null },
 });
 
 /** 同一 IP 同时只允许一个问答在进行：并发刷会同时烧多份 token */
@@ -146,7 +146,7 @@ router.post('/ask', askLimiter, async (req, res) => {
   const running = inflight.get(ip) || 0;
   if (running >= MAX_INFLIGHT_PER_IP) {
     retryAfter(res, 5);
-    return res.status(429).json({ code: 1, message: '上一个问题还没答完，稍等一下' });
+    return res.status(429).json({ code: 1, message: '上一个问题还没答完，稍等一下', data: null });
   }
   inflight.set(ip, running + 1);
 

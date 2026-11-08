@@ -28,7 +28,7 @@ const postLimiter = rateLimit({
   limit: 6,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '留言太频繁了，请稍后再发' },
+  message: { code: 1, message: '留言太频繁了，请稍后再发', data: null },
 });
 
 /** 留言列表（公开，仅已审核） */

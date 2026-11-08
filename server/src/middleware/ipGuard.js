@@ -438,7 +438,7 @@ function ipGuard(req, res, next) {
   if (isBanned(req.ip)) {
     const remain = banRemain(req.ip);
     res.set('Retry-After', String(remain || 1));
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
   next();
 }

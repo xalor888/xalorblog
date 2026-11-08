@@ -223,6 +223,38 @@ console.log('\n=== G. 5xx 必须留痕（104 处 catch 全靠这一处兜底） 
   check('自检：4xx 与 5xx 的判定确实不同', before4xx === 1 && captured.length === 4);
 }
 
+console.log('\n【静态：全仓没有「手写错误响应缺 data」】');
+{
+  // 为什么值得扫：`fail()` / `notFound()` 都会给 data，而手写的 `res.status(...).json({code,message})`
+  // 曾经有 77 处漏掉 data —— 前端在错误分支读 `res.data.data` 会拿到 undefined，
+  // 与「键存在且为 null」在解构默认值/in 判定下行为不同，排查时极易误判成接口结构变了。
+  const fs = require('fs');
+  const path = require('path');
+  const walk = (dir, out = []) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p, out);
+      else if (e.name.endsWith('.js')) out.push(p);
+    }
+    return out;
+  };
+  const offenders = [];
+  for (const f of walk(path.join(__dirname, '..', 'src'))) {
+    const lines = fs.readFileSync(f, 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      // 只看单行字面量；`{ code: 1, message, data }`（简写）与带 data 的不算
+      // 「有 data」两种写法都要认：`data: null` 与对象简写 `{ code: 1, message, data }`
+      if (/{ code: 1, message/.test(line) && !/\bdata\b/.test(line)) {
+        offenders.push(`${path.relative(path.join(__dirname, '..'), f)}:${i + 1}`);
+      }
+    });
+  }
+  check('没有缺 data 的手写错误响应', offenders.length === 0, offenders.join(' | '));
+  check('自检：这条判据能识别缺 data 的字面量', () => {
+    const fake = "return res.status(403).json({ code: 1, message: 'x' });";
+    return /{ code: 1, message/.test(fake) && !/\bdata\b/.test(fake);
+  });
+}
+
 console.log(`\nresponseShape 套件结果: ${passCount} 通过, ${failCount} 失败`);
-if (failCount) process.exit(1);
 if (failCount) process.exit(1);

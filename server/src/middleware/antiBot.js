@@ -43,7 +43,7 @@ function antiBot(req, res, next) {
   if (req.method !== 'GET') return next();
   const ua = req.headers['user-agent'] || '';
   if (isBotUserAgent(ua)) {
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
   next();
 }
@@ -54,7 +54,7 @@ const readLimiter = rateLimit({
   limit: 40,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '读取过于频繁，请稍后再试' },
+  message: { code: 1, message: '读取过于频繁，请稍后再试', data: null },
 });
 
 /** 表单 honeypot 校验：真实用户看不到该字段，机器人会填写 */
@@ -62,7 +62,7 @@ const HONEYPOT_FIELD = 'website_url';
 
 function honeypotCheck(req, res, next) {
   if (req.body && req.body[HONEYPOT_FIELD]) {
-    return res.status(403).json({ code: 1, message: '提交被拒绝' });
+    return res.status(403).json({ code: 1, message: '提交被拒绝', data: null });
   }
   next();
 }

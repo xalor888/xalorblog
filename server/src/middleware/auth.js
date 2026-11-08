@@ -109,13 +109,13 @@ async function authRequired(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   if (!token) {
-    return res.status(401).json({ code: 1, message: '未登录，请先登录' });
+    return res.status(401).json({ code: 1, message: '未登录，请先登录', data: null });
   }
   let payload;
   try {
     payload = jwt.verify(token, config.jwt.secret, { issuer: ISSUER, audience: AUDIENCE });
   } catch (e) {
-    return res.status(401).json({ code: 1, message: '登录已过期，请重新登录' });
+    return res.status(401).json({ code: 1, message: '登录已过期，请重新登录', data: null });
   }
 
   // 设备指纹一致性校验：令牌签发指纹必须与当前请求一致
@@ -123,7 +123,7 @@ async function authRequired(req, res, next) {
   // 必须要求请求方提供与签发时一致的指纹
   const curFp = String(req.headers['x-fp'] || '').slice(0, 128);
   if (!payload.fp || !curFp || payload.fp !== curFp) {
-    return res.status(401).json({ code: 1, message: '登录设备发生变化，请重新登录' });
+    return res.status(401).json({ code: 1, message: '登录设备发生变化，请重新登录', data: null });
   }
 
   // 服务端会话校验：已撤销/过期即拒绝
@@ -133,30 +133,30 @@ async function authRequired(req, res, next) {
     sessionTableOk = await sessionTableReady();
   } catch (e) {
     console.error('[auth] 会话表检查异常，拒绝请求（fail-closed）：', e && e.message);
-    return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录' });
+    return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录', data: null });
   }
   if (sessionTableOk) {
     try {
       const session = await db('sessions').where('jti', payload.jti).first();
-      if (!session) return res.status(401).json({ code: 1, message: '会话不存在，请重新登录' });
-      if (session.revoked) return res.status(401).json({ code: 1, message: '会话已注销，请重新登录' });
+      if (!session) return res.status(401).json({ code: 1, message: '会话不存在，请重新登录', data: null });
+      if (session.revoked) return res.status(401).json({ code: 1, message: '会话已注销，请重新登录', data: null });
       if (Number(session.user_id) !== Number(payload.sub)) {
-        return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录' });
+        return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录', data: null });
       }
       const sessionFp = String(session.fp || '').slice(0, 128);
       if (!sessionFp || sessionFp !== payload.fp || sessionFp !== curFp) {
-        return res.status(401).json({ code: 1, message: '登录设备发生变化，请重新登录' });
+        return res.status(401).json({ code: 1, message: '登录设备发生变化，请重新登录', data: null });
       }
       if (new Date(session.expires_at).getTime() < Date.now()) {
-        return res.status(401).json({ code: 1, message: '会话已过期，请重新登录' });
+        return res.status(401).json({ code: 1, message: '会话已过期，请重新登录', data: null });
       }
     } catch (e) {
       console.error('[auth] 会话查询异常，拒绝请求（fail-closed）：', e && e.message);
-      return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录' });
+      return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录', data: null });
     }
   } else {
     console.error('[auth] 会话表不存在，拒绝纯 JWT 降级');
-    return res.status(503).json({ code: 1, message: '会话服务不可用，请稍后重试' });
+    return res.status(503).json({ code: 1, message: '会话服务不可用，请稍后重试', data: null });
   }
 
   // 角色等账号信息以数据库为准：防止 JWT 中的旧 role 在降权后继续生效
@@ -165,9 +165,9 @@ async function authRequired(req, res, next) {
     userRow = await db('users').where('id', payload.sub).select('id', 'username', 'nickname', 'role').first();
   } catch (e) {
     console.error('[auth] 用户信息查询异常，拒绝请求（fail-closed）：', e && e.message);
-    return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录' });
+    return res.status(401).json({ code: 1, message: '会话校验失败，请重新登录', data: null });
   }
-  if (!userRow) return res.status(401).json({ code: 1, message: '用户不存在，请重新登录' });
+  if (!userRow) return res.status(401).json({ code: 1, message: '用户不存在，请重新登录', data: null });
 
   req.user = {
     ...payload,

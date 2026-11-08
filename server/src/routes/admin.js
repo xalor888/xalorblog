@@ -35,7 +35,7 @@ router.use(authRequired);
 // 角色纵深：仅管理员角色可访问后台（当前系统无其他角色，为未来扩展留闸）
 router.use((req, res, next) => {
   if (req.user && req.user.role === 'admin') return next();
-  return res.status(403).json({ code: 1, message: '访问被拒绝' });
+  return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
 });
 
 /**

@@ -32,7 +32,7 @@ const summaryLimiter = rateLimit({
   handler: (req, res) => {
     report(req.ip, 'rate', 'HOME-SUMMARY 高频读取');
     retryAfter(res, 60);
-    res.status(429).json({ code: 1, message: '读取过于频繁，请稍后再试' });
+    res.status(429).json({ code: 1, message: '读取过于频繁，请稍后再试', data: null });
   },
 });
 

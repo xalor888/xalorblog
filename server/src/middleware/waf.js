@@ -506,36 +506,36 @@ function waf(req, res, next) {
   const method = String(req.method || '').toUpperCase();
   if (!ALLOWED_METHODS.includes(method)) {
     report(ip, 'waf', `BAD-METHOD ${method} ${req.path}`);
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
   // HTTP 请求走私检测：CL 与 TE 同时存在 → 前后端解析歧义
   const hasCL = req.headers['content-length'] !== undefined;
   const hasTE = req.headers['transfer-encoding'] !== undefined;
   if (hasCL && hasTE) {
     report(ip, 'waf', `SMUGGLING ${method} ${req.path}`);
-    return res.status(400).json({ code: 1, message: '请求头冲突' });
+    return res.status(400).json({ code: 1, message: '请求头冲突', data: null });
   }
   if (typeof req.headers['content-length'] === 'object' || typeof req.headers['transfer-encoding'] === 'object') {
     report(ip, 'waf', `SMUGGLING-DUP ${method} ${req.path}`);
-    return res.status(400).json({ code: 1, message: '请求头不合法' });
+    return res.status(400).json({ code: 1, message: '请求头不合法', data: null });
   }
   // 超长 URL（>8KB）：畸形/扫描器特征
   const rawUrl = String(req.originalUrl || '');
   if (rawUrl.length > 8192) {
     report(ip, 'waf', `URL-TOO-LONG ${req.path}`);
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
   // 单个头值上限 8KB
   for (const v of Object.values(req.headers)) {
     if (typeof v === 'string' && v.length > 8192) {
       report(ip, 'waf', `HEADER-TOO-LONG ${req.path}`);
-      return res.status(403).json({ code: 1, message: '访问被拒绝' });
+      return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
     }
   }
   const headerCount = Object.keys(req.headers).length;
   if (headerCount > 60) {
     report(ip, 'waf', `HEADER-FLOOD ${req.path} (${headerCount})`);
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
 
   // ---- 0b. 蜜罐路径：直接高积分封禁（不返回任何提示，与 404 同形） ----
@@ -549,21 +549,21 @@ function waf(req, res, next) {
   const isAdminRoute = pathOnly === adminBase || pathOnly.startsWith(`${adminBase}/`);
   if (sec.honeypotEnabled && !isAdminRoute && (HONEYPOT_SET.has(pathOnly) || HONEYPOT_SET.has(rawPath))) {
     report(ip, 'honeypot', `HONEYPOT ${req.method} ${req.path}`);
-    return res.status(404).json({ code: 1, message: '访问被拒绝' });
+    return res.status(404).json({ code: 1, message: '访问被拒绝', data: null });
   }
 
   // ---- 1. 扫描器 UA（一票硬拦）----
   const ua = String(req.headers['user-agent'] || '');
   if (sec.scannerUaBlock && ua && isScannerUA(ua)) {
     report(ip, 'waf', `SCANNER ${req.path}`);
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
   // 超长 UA：畸形/扫描器特征。阈值按客户端类型分档 —— 普通客户端 512，
   // 应用内 WebView（微信 380+、支付宝/QQ 同类）给 2048。
   const uaLimit = isInAppBrowserUA(ua) ? 2048 : 512;
   if (ua.length > uaLimit) {
     report(ip, 'waf', `UA-TOO-LONG ${req.path}`);
-    return res.status(403).json({ code: 1, message: '访问被拒绝' });
+    return res.status(403).json({ code: 1, message: '访问被拒绝', data: null });
   }
   // UA 轮换检测：同一 IP 窗口内切换 ≥6 个浏览器 UA → 脚本规避特征，计积分不阻断
   if (trackUaRotation(ip, ua)) {
@@ -574,7 +574,7 @@ function waf(req, res, next) {
   const queryEntries = Object.keys(req.query || {});
   if (queryEntries.length > 200) {
     report(ip, 'waf', `PARAM-FLOOD ${req.path}`);
-    return res.status(403).json({ code: 1, message: '请求被拒绝' });
+    return res.status(403).json({ code: 1, message: '请求被拒绝', data: null });
   }
 
   // ---- 2. 特征检测：path / query / body 值 / body 键名 / 关键头（评分累积） ----
@@ -622,7 +622,7 @@ function waf(req, res, next) {
   // JSON 炸弹防护：嵌套过深或数组过长
   if (typeof body === 'object' && body !== null && !bodyShapeSafe(body)) {
     report(ip, 'waf', `JSON-BOMB ${req.method} ${req.path}`);
-    return res.status(403).json({ code: 1, message: '请求被拒绝' });
+    return res.status(403).json({ code: 1, message: '请求被拒绝', data: null });
   }
   const bodyScan = scanRequestBody(body);
   hits.push(...bodyScan.hits);
@@ -640,12 +640,12 @@ function waf(req, res, next) {
   if (keyInjected) {
     report(ip, 'waf', `MSC-KEY-INJECT ${req.method} ${req.path}`);
     console.warn(`[waf] MSC-KEY-INJECT(MISC) blocked: ${ip} ${req.method} ${req.path}`);
-    return res.status(403).json({ code: 1, message: '请求被拒绝' });
+    return res.status(403).json({ code: 1, message: '请求被拒绝', data: null });
   }
   if (score >= threshold) {
     report(ip, 'waf', `SCORE:${score} ${topIds} ${req.method} ${req.path}`);
     console.warn(`[waf] score=${score} (${topIds}) blocked: ${ip} ${req.method} ${req.path}`);
-    return res.status(403).json({ code: 1, message: '请求被拒绝' });
+    return res.status(403).json({ code: 1, message: '请求被拒绝', data: null });
   }
   if (score > 0) {
     // 监控态：低分可疑请求不拦截、不记信誉分，只留安全事件供调参

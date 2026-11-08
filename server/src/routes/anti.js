@@ -13,7 +13,7 @@ const puzzleLimiter = rateLimit({
   limit: 10,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '操作过于频繁，请稍后再试' },
+  message: { code: 1, message: '操作过于频繁，请稍后再试', data: null },
 });
 
 // 票据签发/续期/后台路径限流：每 IP 每分钟 20 次。
@@ -23,7 +23,7 @@ const issueLimiter = rateLimit({
   limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '操作过于频繁，请稍后再试' },
+  message: { code: 1, message: '操作过于频繁，请稍后再试', data: null },
 });
 
 // 表单令牌（seed）单独限流：每 IP 每分钟 60 次。
@@ -35,7 +35,7 @@ const seedLimiter = rateLimit({
   limit: 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '操作过于频繁，请稍后再试' },
+  message: { code: 1, message: '操作过于频繁，请稍后再试', data: null },
 });
 
 /** 获取 PoW 挑战（前端需完成工作量证明后换取票据） */

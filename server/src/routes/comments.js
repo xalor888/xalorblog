@@ -29,7 +29,7 @@ const readLimiter = rateLimit({
   limit: 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '读取过于频繁，请稍后再试' },
+  message: { code: 1, message: '读取过于频繁，请稍后再试', data: null },
 });
 
 // 评论提交限流（防刷屏）：每 IP 每分钟 6 次
@@ -38,7 +38,7 @@ const postLimiter = rateLimit({
   limit: 6,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { code: 1, message: '评论太频繁了，请稍后再发' },
+  message: { code: 1, message: '评论太频繁了，请稍后再发', data: null },
 });
 
 /**
@@ -318,7 +318,7 @@ router.post('/:id/like', async (req, res) => {
     if (!canCommentLike(ip, id)) {
       report(ip, 'rate', `LIKE-FLOOD /comments/${id}`);
       retryAfter(res, 10);
-      return res.status(429).json({ code: 1, message: '点赞太频繁了，请稍后再试' });
+      return res.status(429).json({ code: 1, message: '点赞太频繁了，请稍后再试', data: null });
     }
     const row = await db('comments as cm')
       .join('articles as a', 'cm.article_id', 'a.id')
