@@ -19,6 +19,7 @@
  * 用法：node scripts/test-mobile-baseline.mjs
  */
 import { readFileSync, existsSync } from 'node:fs';
+import { stripCommentLines } from './lib/sourceText.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -39,9 +40,13 @@ function ok(name, condition, hint) {
   }
 }
 
+/** 剥掉 HTML 注释：注释里的示例文本不能让断言误判 */
+const stripHtmlComments = (html) => String(html).replace(/<!--[\s\S]*?-->/g, '');
+
 const indexHtml = read('index.html');
 const homeHtml = read('home.html');
-const mainCss = read('src/styles/main.css');
+// 剥注释：注释里提到 `touch-action: manipulation` 之类的属性名会让正向断言假绿
+const mainCss = stripCommentLines(read('src/styles/main.css'));
 const siteHome = read('src/views/site/Home.vue');
 
 /* ---------- 1. viewport ---------- */
@@ -66,14 +71,36 @@ for (const [name, html] of [
 }
 
 /* ---------- 2. 禁缩放检查（全仓） ---------- */
+//
+// 三处修正（都是原先的漏洞）：
+//   a. 必须先剥 HTML 注释 —— 注释里写「不要用 user-scalable=no」这种说明时，
+//      整份文本扫过去会被**误判为违规**（假红）。本项目两个入口的注释里恰好提到这两个词，
+//      当时只是因为没写 `=` 才侥幸没踩。
+//   b. `user-scalable=0` 也要拦 —— 多数浏览器（尤其 Android）把它等同于 `no`。
+//   c. `maximum-scale=1` 的边界：原来要求后面紧跟 `["\s,;]`，裸写（无引号无空格）会漏。
+//      改成用 `(?![\d.])` 负向断言，任何「1 之后不是数字或点」的形式都算限死。
+const FORBIDDEN_ZOOM = [
+  { label: 'user-scalable=no/0', re: /user-scalable\s*=\s*(?:no|0\b)/i },
+  // 要同时拦 `1` / `1.0` / `1.00`，但不能误拦 `1.5`（允许放大）或 `10`。
+  // 写成 `1(?:\.0+)?(?![\d.])`：
+  //   `1`     → 匹配（后面没有数字/点）
+  //   `1.0`   → 匹配（\.0+ 吃掉 .0，后面没有数字/点）
+  //   `1.5`   → 不匹配（\.0+ 匹配不上 .5，而 `1` 后面紧跟 `.` → 负向断言失败）
+  //   `10`    → 不匹配（`1` 后面是数字）
+  { label: 'maximum-scale=1', re: /maximum-scale\s*=\s*1(?:\.0+)?(?![\d.])/i },
+];
 for (const [name, html] of [
   ['index.html', indexHtml],
   ['home.html', homeHtml],
 ]) {
-  ok(
-    `${name} 未禁用用户缩放（无 user-scalable=no / maximum-scale=1）`,
-    !/user-scalable\s*=\s*no/i.test(html) && !/maximum-scale\s*=\s*1(\.0)?["\s,;]/i.test(html)
-  );
+  const visible = stripHtmlComments(html);
+  for (const { label, re } of FORBIDDEN_ZOOM) {
+    ok(
+      `${name} 未禁用用户缩放（无 ${label}）`,
+      !re.test(visible),
+      '注释里提到这两个词是允许的（已剥注释）；真实属性会在这里被抓到'
+    );
+  }
 }
 
 /* ---------- 3~5 & 8. main.css 基线 ---------- */
@@ -282,5 +309,110 @@ console.log('\n【移动菜单的开合语义不能被削掉】');
   ok('ESC 能关闭菜单', /Escape/.test(layout));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 自检：禁缩放的正则**真的能抓到**、且**不会被注释绊倒**
+//
+// 这段检查修过两次，两次都是被自检抓出来的：
+//   假红 —— 注释里写「不要用 user-scalable=no」会被整份文本扫到。
+//          本项目两个入口的注释里恰好提到这两个词，只是因为没写 `=` 才侥幸没踩。
+//   漏报 —— `user-scalable=0` 与 `no` 同效（尤其 Android），原正则只拦 `no`。
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n【自检：禁缩放判定的假红与漏报】');
+{
+  const forbidden = (html) => {
+    const visible = stripHtmlComments(html);
+    return FORBIDDEN_ZOOM.some(({ re }) => re.test(visible));
+  };
+
+  // a. 剥注释：这是修掉的假红
+  ok('自检：注释里的 user-scalable=no 不算违规',
+    forbidden('<!-- 不要写 user-scalable=no --><meta name="viewport" content="width=device-width">') === false);
+  ok('自检：注释里的 maximum-scale=1 不算违规',
+    forbidden('<!-- maximum-scale=1 是缺陷掩盖缺陷 --><meta name="viewport" content="width=device-width">') === false);
+  ok('自检：多行注释同样被剥掉',
+    forbidden('<!--\n  说明：\n  不要用 user-scalable=no\n--><meta content="width=device-width">') === false);
+
+  // b. 真实属性必须被抓（含原本漏掉的 user-scalable=0）
+  ok('自检：user-scalable=no 被抓', forbidden('content="user-scalable=no"') === true);
+  ok('自检：user-scalable=0 被抓（原正则漏了这种）', forbidden('content="user-scalable=0"') === true);
+  ok('自检：大小写不敏感（user-scalable=NO）', forbidden('content="USER-SCALABLE=NO"') === true);
+  ok('自检：maximum-scale=1 被抓', forbidden('content="maximum-scale=1"') === true);
+  ok('自检：maximum-scale=1.0 被抓', forbidden('content="maximum-scale=1.0"') === true);
+  ok('自检：maximum-scale=1 无引号尾随也能抓（原正则要求后跟分隔符）',
+    forbidden('content=maximum-scale=1>') === true);
+
+  // c. 合法写法不能被误判
+  ok('自检：正常 viewport 通过', forbidden('content="width=device-width, initial-scale=1.0"') === false);
+  ok('自检：maximum-scale=1.5 通过（允许放大）', forbidden('content="maximum-scale=1.5"') === false);
+  ok('自检：maximum-scale=2 通过', forbidden('content="maximum-scale=2"') === false);
+  ok('自检：user-scalable=yes 通过', forbidden('content="user-scalable=yes"') === false);
+  ok('自检：initial-scale=1 不算限死缩放（它是初始值，不是上限）',
+    forbidden('content="initial-scale=1"') === false);
+
+  // d. 空输入的陷阱：否定断言在空串上永远通过，所以真实文件必须非空
+  ok('自检：空串上任何禁用写法都「通过」（所以要另有断言保证文件非空）',
+    forbidden('') === false);
+  ok('真实 index.html 非空', indexHtml.length > 100, String(indexHtml.length));
+  ok('真实 home.html 非空', homeHtml.length > 100, String(homeHtml.length));
+
+  // e. viewport 提取
+  const vp = (html) => {
+    const m = html.match(/<meta\s+name="viewport"\s+content="([^"]*)"/i);
+    return m ? m[1] : null;
+  };
+  ok('自检：能提取 viewport content',
+    vp('<meta name="viewport" content="width=device-width">') === 'width=device-width');
+  ok('自检：没有 viewport 时返回 null（不是空串）',
+    vp('<meta charset="utf-8">') === null);
+  ok('自检：属性顺序颠倒时不匹配（已知限制，所以真实文件用的是标准顺序）',
+    vp('<meta content="width=device-width" name="viewport">') === null);
+
+  // f. 真实文件的 viewport 确实带这两项（否则上面的断言全是空转）
+  const realVp = vp(stripHtmlComments(indexHtml));
+  ok('真实 index.html 的 viewport 能提取到', !!realVp, String(realVp));
+  ok('真实 viewport 含 viewport-fit=cover', /viewport-fit\s*=\s*cover/i.test(realVp || ''));
+  ok('真实 viewport 含 interactive-widget=resizes-content',
+    /interactive-widget\s*=\s*resizes-content/i.test(realVp || ''));
+}
+
+console.log('\n【超长文本不能撑破布局（用户可控的标题/名称）】');
+{
+  // 实测过的问题：`.detail-title` 用 clamp(1.85rem, 4vw, 2.6rem) 放大字号，
+  // 但没有任何断行保护 —— 一个超长英文单词或长 URL 会横向撑破容器，
+  // 在窄屏上直接把整页撑出横向滚动条（比"文字换行难看"严重得多：
+  // 横向滚动条会让固定定位的头部错位）。
+  //
+  // 判据：用户可控 + 可能超长的**标题类**容器必须有 overflow-wrap / word-break。
+  // 不检查正文（markdown.css 已统一处理），也不检查已经有的（NoteCard / CommentItem / AskAi）。
+  const titleContainers = [
+    ['src/views/site/ArticleDetail.vue', '.detail-title', '文章标题（作者可控）'],
+    ['src/views/site/Links.vue', '.link-name', '友链名称（访客申请时填写）'],
+    ['src/views/site/Archive.vue', '.tl-title', '归档条目标题'],
+  ];
+  for (const [file, sel, why] of titleContainers) {
+    const src = read(file);
+    // 取该选择器的规则体（到下一个 } 或 400 字符内）
+    const re = new RegExp(sel.replace('.', '\\.') + '\\s*\\{([\\s\\S]{0,400}?)\\}');
+    const m = src.match(re);
+    ok(`${sel} 存在`, !!m, `${file} 里找不到该规则`);
+    if (!m) continue;
+    ok(`${sel} 有断行保护（${why}）`,
+      /overflow-wrap\s*:\s*(anywhere|break-word)|word-break\s*:\s*break-word/.test(m[1]),
+      '超长英文单词或长 URL 会撑破容器 → 窄屏出现横向滚动条');
+  }
+
+  // 反向：不许用 `word-break: break-all` —— 它会把中文也逐字断开，比溢出更难看
+  const allVue = ['src/views/site/ArticleDetail.vue', 'src/views/site/Links.vue', 'src/views/site/Archive.vue']
+    .map((f) => read(f)).join('\n');
+  ok('没有用 word-break: break-all（会把中文逐字断开）',
+    !/word-break\s*:\s*break-all/.test(allVue));
+
+  // 自检：判据真的能区分
+  ok('自检：overflow-wrap: anywhere 被判为有保护',
+    /overflow-wrap\s*:\s*(anywhere|break-word)|word-break\s*:\s*break-word/.test('  overflow-wrap: anywhere;'));
+  ok('自检：完全没有断行规则的规则体被判为无保护',
+    !/overflow-wrap\s*:\s*(anywhere|break-word)|word-break\s*:\s*break-word/.test('  font-size: 2rem;\n  margin: 0;'));
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
-process.exit(fail === 0 ? 0 : 1);
+if (fail > 0) process.exit(1)

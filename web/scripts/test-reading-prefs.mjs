@@ -188,13 +188,16 @@ console.log('\n【代码块复制 / 图片属性 / 目录滚动】');
   const { dirname, resolve } = await import('node:path');
   const here = dirname(fileURLToPath(import.meta.url));
   const md = readFileSync(resolve(here, '../src/utils/markdown.js'), 'utf8');
+  // 复制实现已合并到 utils/clipboard.js（markdown.js 的代码块按钮也调它）——
+  // 断言必须钉唯一实现，否则合并后就变成「在一个不再包含该代码的文件里找 execCommand」。
+  const clip = readFileSync(resolve(here, '../src/utils/clipboard.js'), 'utf8');
   const detail = readFileSync(resolve(here, '../src/views/site/ArticleDetail.vue'), 'utf8');
   const mdCss = readFileSync(resolve(here, '../src/styles/markdown.css'), 'utf8');
 
   // --- 代码块复制 ---
   // 旧实现丢弃了 execCommand 的返回值，并在 catch 里静默 → 非安全上下文点了没反应。
   eq('复制走 execCommand 时读取真实返回值（不能只看有没有抛异常）',
-    /execCommand\(['"]copy['"]\)/.test(md) && /return\s+\w*(ok|success|result)/i.test(md), true);
+    /execCommand\(['"]copy['"]\)/.test(clip) && /ok = document\.execCommand\(['"]copy['"]\) === true/.test(clip), true);
   eq('复制成功与失败都有反馈（不是静默）',
     /已复制/.test(md) && /复制失败/.test(md), true);
   eq('复制反馈 1.6s 后复位',
@@ -342,5 +345,67 @@ console.log('\n【加载失败必须区别于「没有文章」】');
   );
 }
 
-console.log('\n【空态文案区分层级】');
+// ─────────────────────────────────────────────────────────────────────────────
+// 自检：前半段是行为测试（import 真模块断言返回值），不需要自检；
+// 后半段是**源码检查**（读 .vue / .css 跑正则），这里补上的就是后者的保障。
+//
+// 源码检查最隐蔽的失效方式：`eq(name, /X/.test(src), false)` 这类否定断言，
+// 如果被检查的文件里有一段注释**提到** X（比如「不要写成 X」），断言会假红；
+// 反过来如果 src 是空串，任何否定断言都会假绿。
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n【自检：源码检查的注释陷阱与空输入】');
+{
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, resolve } = await import('node:path');
+  const { stripCommentLines } = await import('./lib/sourceText.mjs');
+  const here = dirname(fileURLToPath(import.meta.url));
+  const rawDetail = readFileSync(resolve(here, '../src/views/site/ArticleDetail.vue'), 'utf8');
+
+  // a) 否定断言在空串上必然通过 —— 这是所有源码检查的共同陷阱
+  ok('自检：空串上「不许出现 X」必然通过（所以必须另有断言保证文件非空）',
+    !/Number\(localStorage\.getItem\('xalor_font_size'\)\)/.test(''));
+  ok('真实 ArticleDetail.vue 非空', rawDetail.length > 1000, String(rawDetail.length));
+
+  // b) 注释里的反例会绊倒否定断言
+  const fakeWithComment = "// 旧写法：Number(localStorage.getItem('xalor_font_size')) 已废弃\nconst a = 1;";
+  ok('自检：注释里的反例会让否定断言假红（这就是要剥注释的理由）',
+    /Number\(localStorage\.getItem\('xalor_font_size'\)\)/.test(fakeWithComment) === true);
+  ok('自检：剥注释后同一个样本不再命中',
+    /Number\(localStorage\.getItem\('xalor_font_size'\)\)/.test(stripCommentLines(fakeWithComment)) === false);
+
+  // c) 真实文件：剥注释前后，被禁止的写法都不存在（说明这些断言不依赖注释）
+  const strippedDetail = stripCommentLines(rawDetail);
+  for (const [label, re] of [
+    ['裸 Number(localStorage) 字号读取', /Number\(localStorage\.getItem\('xalor_font_size'\)\)/],
+    ['max-width 过渡', /transition:\s*max-width/],
+  ]) {
+    ok(`自检：真实文件里没有「${label}」（剥注释后同样没有）`,
+      !re.test(rawDetail) && !re.test(strippedDetail));
+  }
+
+  // d) 正向断言必须在剥注释后仍然成立（否则说明它依赖注释里的文字）
+  for (const [label, re] of [
+    ['loadFontSize(localStorage)', /loadFontSize\(localStorage\)/],
+    ['documentElement.dataset.focus', /documentElement\.dataset\.focus/],
+  ]) {
+    ok(`自检：剥注释后仍能匹配「${label}」（断言不依赖注释）`, re.test(strippedDetail));
+  }
+
+  // e) readingPrefs 的默认值本身要合理（后半段的源码断言依赖这些常量存在）
+  // 注意字段名是 def，不是 default
+  ok('自检：FONT_SIZE 默认值是正数', FONT_SIZE.def > 0, String(FONT_SIZE.def));
+  ok('自检：FONT_SIZE 的 min < def < max',
+    FONT_SIZE.min < FONT_SIZE.def && FONT_SIZE.def < FONT_SIZE.max,
+    `${FONT_SIZE.min}/${FONT_SIZE.def}/${FONT_SIZE.max}`);
+  ok('自检：STORAGE_KEYS 都是非空字符串',
+    Object.values(STORAGE_KEYS).every((k) => typeof k === 'string' && k.length > 0));
+}
+
+// 这里原本有一个空的章节标题「【空态文案区分层级】」，紧跟 process.exit —— 没有任何断言。
+// 空态文案的检查在 §「列表页空态：文案必须对应真实筛选条件」里，那个段落是完整的。
+// 保留一个空标题会让读数的人以为这段有断言却看不见输出（实际是零断言）。
+// 已删除；元门禁 test-gate-integrity 现在会检查「标题之后必须有断言」。
+
+console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);

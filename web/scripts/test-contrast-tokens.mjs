@@ -17,7 +17,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const css = readFileSync(resolve(here, '../src/styles/main.css'), 'utf8');
+import { stripCommentLines } from './lib/sourceText.mjs';
+// 剥注释：注释里如果出现 `--text: #xxx` 这类示例，token() 会匹配到它而不是真实定义
+const css = stripCommentLines(readFileSync(resolve(here, '../src/styles/main.css'), 'utf8'));
 
 let pass = 0;
 let fail = 0;
@@ -366,6 +368,72 @@ console.log('\n【反向保护：这些地方必须继续用原色，不能也�
   ok('跨站入口有显式的激活态颜色', /\.site-nav\.overlay \.nav-link\.external\.active/.test(layout));
   const rule = (layout.match(/\.site-nav\.overlay \.nav-link\.external\.active \{[^}]*\}/) || [''])[0];
   ok('激活态用纯白（比 0.6/0.78 都亮）', /color:\s*#fff/.test(rule), rule.slice(0, 50));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 自检：这套对比度算术**有没有分辨力**
+//
+// 这道门禁的 52 条断言全部建立在 `contrast()` 一个函数上。
+// 公式错一处（比如漏掉 `+0.05`、或者亮度权重写成 0.3/0.6/0.1），
+// 所有断言会**系统性偏移**：要么全部放行（假绿），要么全部报错（噪音）。
+// 所以自检的基准值必须取自 WCAG 的公开结果，而不是「我认为应该是多少」。
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n【自检：对比度算术与 WCAG 基准值一致】');
+{
+  ok('黑/白 = 21（WCAG 定义的最大值）', contrast('#000000', '#ffffff') === 21,
+    String(contrast('#000000', '#ffffff')));
+  ok('同色 = 1（最小值）', contrast('#123456', '#123456') === 1,
+    String(contrast('#123456', '#123456')));
+
+  // 这两个值是关键：#767676 是「刚好达到 AA(4.5)」的经典灰，
+  // #777777 是「刚好差一点」的经典灰。能区分它们，说明判定在边界上真的敏感。
+  const aaPass = contrast('#767676', '#ffffff');
+  const aaFail = contrast('#777777', '#ffffff');
+  ok('#767676 on 白 = 4.54（公认值，刚好达 AA）', aaPass === 4.54, String(aaPass));
+  ok('#777777 on 白 = 4.48（公认值，刚好不达 AA）', aaFail === 4.48, String(aaFail));
+  ok('算术能区分 4.54 与 4.48（在 AA 边界上有分辨力）',
+    aaPass >= 4.5 && aaFail < 4.5);
+
+  // AAA(7:1) 的经典边界
+  ok('#595959 on 白 = 7.00（公认值，刚好达 AAA）', contrast('#595959', '#ffffff') === 7,
+    String(contrast('#595959', '#ffffff')));
+
+  ok('对比度对称（交换前景背景结果不变）',
+    contrast('#1a1a1a', '#f5f5f5') === contrast('#f5f5f5', '#1a1a1a'));
+}
+
+console.log('\n【自检：颜色解析】');
+{
+  ok('3 位简写与 6 位等价', contrast('#fff', '#000') === contrast('#ffffff', '#000000'));
+  ok('带与不带 # 等价', contrast('767676', 'ffffff') === contrast('#767676', '#ffffff'));
+
+  const [r, g, b] = parseHex('#7f8a91');
+  ok('parseHex 拆出三个通道', r === 0x7f && g === 0x8a && b === 0x91, `${r},${g},${b}`);
+
+  // lin() 的两个端点与拐点：这是 sRGB 线性化的定义，写错会让暗色偏差很大
+  ok('lin(0) = 0', lin(0) === 0, String(lin(0)));
+  ok('lin(255) ≈ 1', Math.abs(lin(255) - 1) < 1e-9, String(lin(255)));
+  ok('lin 在 0.03928 拐点处连续（两侧差 < 0.001）',
+    Math.abs(lin(10) - lin(10.01)) < 0.001, `${lin(10)} vs ${lin(10.01)}`);
+
+  // 亮度权重必须和为 1，否则纯白的相对亮度会偏离 1
+  ok('亮度权重之和 = 1（0.2126+0.7152+0.0722）',
+    Math.abs(0.2126 + 0.7152 + 0.0722 - 1) < 1e-12);
+  ok('纯白亮度 ≈ 1', Math.abs(lum('#ffffff') - 1) < 1e-9, String(lum('#ffffff')));
+  ok('纯黑亮度 = 0', lum('#000000') === 0, String(lum('#000000')));
+}
+
+console.log('\n【自检：token() 取不到值时会失败而不是静默通过】');
+{
+  // 这是这套断言的隐形风险：token() 正则写错会返回 null，
+  // 而 null 进 contrast() 会变成 NaN。要确认 NaN 不会被判为「达标」。
+  ok('token() 对不存在的名字返回 null', token('--definitely-not-a-token') === null);
+  const nanResult = contrast(token('--definitely-not-a-token'), '#ffffff');
+  ok('token 取空时对比度是 NaN（不是 0，也不是 21）', Number.isNaN(nanResult),
+    String(nanResult));
+  ok('NaN 不会被误判为达标（NaN >= 4.5 是 false）', !(nanResult >= 4.5));
+  ok('前置断言会先拦住「取不到 token」的情况（真实 token 都能取到）',
+    !!token('--bg') && !!token('--text'), '取不到会先红，不会进到对比度计算');
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

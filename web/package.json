@@ -6,11 +6,24 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-script-order.mjs && node scripts/test-mobile-baseline.mjs && node scripts/test-reading-prefs.mjs && node scripts/test-word-stats.mjs && node scripts/test-contrast-tokens.mjs && node scripts/test-theme-init-parity.mjs && node scripts/test-focus-visible.mjs && vite build",
+    "build": "node scripts/check-disk-space.mjs && node scripts/test-gate-integrity.mjs && node scripts/check-doc-numbers.mjs && node scripts/bump-assets.mjs --check && node scripts/check-theme-parity.mjs && node scripts/check-script-order.mjs && node scripts/test-script-order.mjs && node scripts/test-mobile-baseline.mjs && node scripts/test-reading-prefs.mjs && node scripts/test-word-stats.mjs && node scripts/test-contrast-tokens.mjs && node scripts/test-theme-init-parity.mjs && node scripts/test-focus-visible.mjs && node scripts/test-anti-debug.mjs && node scripts/test-copy-guard.mjs && node scripts/test-secure-storage.mjs && node scripts/test-form-token.mjs && node scripts/test-admin-path.mjs && node scripts/test-signed-fetch.mjs && node scripts/test-format.mjs && node scripts/test-request-signature.mjs && node scripts/test-ai-bridge.mjs && node scripts/test-use-media.mjs && node scripts/test-focus-trap-coverage.mjs && node scripts/test-focus-trap-api.mjs && node scripts/test-derived-tokens.mjs && node scripts/test-a11y-interactive.mjs && node scripts/test-lifecycle-cleanup.mjs && node scripts/test-markdown-cache.mjs && node scripts/test-error-states.mjs && node scripts/test-social-extra.mjs && node scripts/test-dead-code.mjs && node scripts/test-message-box-style.mjs && node scripts/test-heading-order.mjs && node scripts/test-icon-buttons.mjs && node scripts/test-form-errors.mjs && vite build",
     "preview": "vite preview",
     "check:script-order": "node scripts/check-script-order.mjs",
     "check:mobile": "node scripts/test-mobile-baseline.mjs",
-    "test:scripts": "node scripts/test-script-order.mjs && node scripts/test-anti-debug.mjs && node scripts/test-mobile-baseline.mjs && node scripts/test-reading-prefs.mjs && node scripts/test-word-stats.mjs && node scripts/test-contrast-tokens.mjs && node scripts/test-theme-init-parity.mjs && node scripts/test-focus-visible.mjs"
+    "test:scripts": "node scripts/check-disk-space.mjs && node scripts/test-gate-integrity.mjs && node scripts/check-doc-numbers.mjs && node scripts/bump-assets.mjs --check && node scripts/check-theme-parity.mjs && node scripts/check-script-order.mjs && node scripts/test-script-order.mjs && node scripts/test-mobile-baseline.mjs && node scripts/test-reading-prefs.mjs && node scripts/test-word-stats.mjs && node scripts/test-contrast-tokens.mjs && node scripts/test-theme-init-parity.mjs && node scripts/test-focus-visible.mjs && node scripts/test-anti-debug.mjs && node scripts/test-copy-guard.mjs && node scripts/test-secure-storage.mjs && node scripts/test-form-token.mjs && node scripts/test-admin-path.mjs && node scripts/test-signed-fetch.mjs && node scripts/test-format.mjs && node scripts/test-request-signature.mjs && node scripts/test-ai-bridge.mjs && node scripts/test-use-media.mjs && node scripts/test-focus-trap-coverage.mjs && node scripts/test-focus-trap-api.mjs && node scripts/test-derived-tokens.mjs && node scripts/test-a11y-interactive.mjs && node scripts/test-lifecycle-cleanup.mjs && node scripts/test-markdown-cache.mjs && node scripts/test-error-states.mjs && node scripts/test-social-extra.mjs && node scripts/test-dead-code.mjs && node scripts/test-message-box-style.mjs && node scripts/test-heading-order.mjs && node scripts/test-icon-buttons.mjs && node scripts/test-form-errors.mjs",
+    "check:a11y": "node scripts/test-a11y-interactive.mjs",
+    "check:lifecycle": "node scripts/test-lifecycle-cleanup.mjs",
+    "check:errors": "node scripts/test-error-states.mjs",
+    "check:social": "node scripts/test-social-extra.mjs",
+    "check:dead": "node scripts/test-dead-code.mjs",
+    "check:msgbox": "node scripts/test-message-box-style.mjs",
+    "check:heading": "node scripts/test-heading-order.mjs",
+    "check:icons": "node scripts/test-icon-buttons.mjs",
+    "check:forms": "node scripts/test-form-errors.mjs",
+    "check:gates": "node scripts/test-gate-integrity.mjs",
+    "audit:comments": "node scripts/audit-comment-reliance.mjs",
+    "bump:assets": "node scripts/bump-assets.mjs",
+    "test:scripts-fast": "node scripts/test-form-token-fast.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

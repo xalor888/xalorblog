@@ -17,11 +17,48 @@
  * 用法：node scripts/test-focus-visible.mjs
  */
 import { readFileSync } from 'node:fs';
+import { stripCommentLines } from './lib/sourceText.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(resolve(here, p), 'utf8');
+// 断言用：读进来先剥注释。凡是「某写法必须出现/不许出现」的结构断言都该用它 ——
+// 这个项目里「注释让断言假红或假绿」已经发生过五次以上（见 lib/sourceText.mjs 的说明）。
+// 注意：`read` 保持原样，因为有一批断言是**故意检查注释存在**的（「删除处留了说明」等）。
+const readCode = (p) => stripCommentLines(read(p));
+
+/**
+ * 断言「这段说明必须存在」。
+ *
+ * 与 `ok()` 的区别只是**语义标注**：这类断言依赖注释，剥掉注释后会红，而那是**有意的**。
+ * 项目里有些约定只能靠注释承载 —— 比如「不要加 `Disallow: /#/`」的理由、
+ * 「--accent-fill 拿去配白字只有 2.55:1」的实测数据。删掉这些说明，
+ * 下一个人就会把被禁止的写法加回来。
+ *
+ * 用独立函数而不是在 ok 上加参数，是为了 `grep okNote` 能一次列出所有「故意检查注释」的断言 ——
+ * 这样将来做「剥注释审查」时不会把它们误判成假绿。
+ */
+function okNote(name, re, src, why) {
+  ok(name, re.test(src), why || '这条断言检查的是注释里的说明（有意依赖注释，删掉说明会红）');
+}
+
+// 焦点管理（打开移入 / Tab 首尾循环 / Esc 关闭 / 关闭还焦）已收敛到
+// src/composables/useFocusTrap.js —— 四个弹层原先各写一遍，细节互相漂移。
+// 凡是**被搬进共用实现**的机制，断言都改指向这份唯一实现；
+// 组件侧只钉「接线是否正确」（传了哪个 initialFocus / 还焦给谁 / 有没有绑面板级 keydown）。
+const focusTrapSrc = read('../src/composables/useFocusTrap.js');
+
+// 取出单文件组件的 <template> 段。
+//
+// 为什么需要它：read() 返回整份 .vue 全文，**注释与字符串都在内**。
+// 而本项目大量注释恰好会复述它们所解释的属性（「这里标了 aria-modal="true"…」），
+// 拿整文件跑 HTML 结构正则，删掉真属性后注释仍能让断言通过 —— 假绿。
+// 断言模板结构时一律先剥到这个函数，只让真实 DOM 产出参与匹配。
+const templateOf = (sfc) => {
+  const m = String(sfc).match(/<template>([\s\S]*)<\/template>/);
+  return m ? m[1] : '';
+};
 
 let pass = 0;
 let fail = 0;
@@ -70,7 +107,7 @@ function auditOutlineSuppression(src, fileLabel) {
 
 console.log('\n【全局兜底】');
 {
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   ok(
     ':focus-visible 全局规则给出可见 outline',
     /:focus-visible\s*\{[\s\S]{0,200}?outline:\s*2px solid/.test(css)
@@ -142,7 +179,7 @@ console.log('\n【关键控件逐个点名】');
 console.log('\n【局部刷新的结果变化要被播报】');
 {
   const list = read('../src/views/site/ArticleList.vue');
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
 
   // 翻页 / 切排序 / 换筛选都是局部刷新：URL 变了但页面不跳转、标题不变、
   // 焦点也不移动。没有 aria-live 的话，读屏用户按「下一页」后听不到任何变化。
@@ -271,7 +308,7 @@ console.log('\n【表单错误必须可定位、可关联】');
     );
   }
 
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   ok('.field-error 有可见样式（不只是占位）', /\.field-error\s*\{[\s\S]{0,200}?color:/.test(css));
   ok('.field-error 深色下有提亮版本（冷红对深底不够）', /\[data-theme='dark'\] \.field-error\s*\{/.test(css));
   ok('出错字段边框变红（视觉用户也能定位）', /\.form-input\.is-invalid,[\s\S]{0,120}?border-color:\s*#a8323a/.test(css));
@@ -362,7 +399,10 @@ console.log('\n【分享页也要支持 ETag 条件请求】');
   //（查库 + 拼 HTML），og 抓取器对同一 URL 会反复抓，这部分开销白付。
   ok('有 conditionalSendHtml 辅助函数', /function conditionalSendHtml/.test(share));
   ok('ETag 由响应体内容算出（与 feed.js 同一套）', /createHash\('sha1'\)\.update\(html\)/.test(share));
-  ok('命中 If-None-Match 时返回 304', /if \(req\.headers\['if-none-match'\] === etag\)/.test(share));
+  // 走共享的 etagMatches 而不是严格相等：nginx/CDN 会把强 ETag 改写成 W/"..."，
+  // 严格相等会让这些请求全部错过 304（详见 server/src/utils/etag.js）。
+  ok('命中 If-None-Match 时返回 304（弱比较，不是 ===）',
+    /if \(etagMatches\(req\.headers\['if-none-match'\], etag\)\)/.test(share));
   ok('两个模板都走条件发送', (share.match(/conditionalSendHtml\(req, res, html\)/g) || []).length >= 2);
   ok('仍保留 5 分钟公共缓存', /max-age=300/.test(share));
   // 全局 disable('etag') 必须留着（安全取舍），所以手算这条不能被「优化」掉
@@ -412,7 +452,7 @@ console.log('\n【看不见的动画也要停掉：空闲时不该有常驻合�
   ok('visible 能恢复可见', /\.route-progress\.visible[\s\S]{0,40}visibility: visible/.test(rp));
 
   // 另一个常驻动画 sg-sheen-sweep 必须尊重 prefers-reduced-motion
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   ok('扫光动画尊重减弱动效', /@media \(prefers-reduced-motion: reduce\)[\s\S]{0,200}sg-liquid/.test(css));
   // 它只动 background-position，不触发布局
   const kf = (css.match(/@keyframes sg-sheen-sweep[\s\S]{0,200}/) || [''])[0];
@@ -430,7 +470,7 @@ console.log('\n【Element Plus 的深/亮覆写要成对，不能只做一半】
   //   按钮两套都吃强调色（深 rgb(231,104,80) / 亮 rgb(228,87,61)），白字。
   // 真正冗余的是另外六个：--amber / --blue / --rose / --teal / --violet / --side-w，
   // 它们既不是 --el-* 那一族，也确实没人引用。
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   ok('深色有 --el-* 覆写', /--el-bg-color/.test(css));
   ok('亮色也有（成对出现）', (css.match(/data-theme='light'|data-theme="light"|\[data-theme=light\]/g) || []).length >= 0);
   // 表格与文字色必须在两套主题里都被覆写到，否则会出现白底白字
@@ -453,7 +493,7 @@ console.log('\n【安全区：--sal 定义了却零引用，横屏刘海在左�
   //      改成 max(16px, var(--sal/sar))：竖屏保持 16px，横屏自动加宽。
   // 验证方式：模拟器里 env() 恒为 0，所以我手动把 --sal/--sar 设成 30px，
   // 实测 .container 的 padding 变成 `0px 30px` —— 证明 max() 分支真的会走。
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   ok('四个安全区变量都已定义', /--sat:[\s\S]{0,160}--sal:/.test(css));
   // 移动端容器必须考虑左右安全区
   const mob = (css.match(/@media \(max-width: 860px\)[\s\S]{0,320}/) || [''])[0];
@@ -506,7 +546,7 @@ console.log('\n【阅读统计的缓存失效：发布/删除后要立刻反映�
   const st = read('../../server/src/routes/stats.js');
   // 注释必须与代码一致 —— 过期的「已知缺口」是误导源
   ok('不再声称是未修的缺口', !/目前没有接入 admin/.test(st), '仍在声称未接入');
-  ok('注释说明已接入', /缓存失效已接入 admin/.test(st));
+  okNote('注释说明已接入', /缓存失效已接入 admin/, st);
   // 缓存本身仍要在（不是把缓存删了来「修」注释）
   ok('缓存机制仍在', /readingCache/.test(st) && /READING_TTL/.test(st));
 }
@@ -535,8 +575,13 @@ console.log('\n【免票接口 /home/summary 的白名单，以及 social_extra 
   ok('条数上限 8', /length > 8/.test(block));
   ok('label 截断', /slice\(0, 30\)/.test(block));
   ok('URL 过 safeUrl 白名单', /safeUrl\(/.test(block));
-  // 关键：校验后**重新序列化**，否则非法项会被原样带进公开接口
-  ok('校验后重新序列化', /value = JSON\.stringify\(cleaned\)/.test(block));
+  // 关键：校验后**重新序列化**，否则非法项会被原样带进公开接口。
+  // 且必须直接入队并 continue —— 落到通用分支会被 JSON.stringify 第二次，
+  // 落库变成双编码（读回来 parse 一次得到字符串而不是数组，见 settings.js 的 JSON_VALUE_KEYS 注释）。
+  ok('校验后重新序列化', /JSON\.stringify\(cleaned\)/.test(block));
+  ok('序列化后直接入队（避免被通用分支二次序列化）',
+    /writes\.push\(\{ key, value: JSON\.stringify\(cleaned\) \}\)/.test(block)
+    && /writes\.push\(\{ key, value: JSON\.stringify\(cleaned\) \}\);\s*\n\s*continue;/.test(block));
 }
 
 console.log('\n【主页设置改完要真的出现在前台，建站天数不能算出负数或 NaN】');
@@ -649,7 +694,9 @@ console.log('\n【手记图集（notes.images）是 JSON 字符串，扫描要�
   // images 列的解析必须容错（脏值降级空数组）
   const parse = (notes.match(/function parseImages[\s\S]{0,420}/) || [''])[0];
   ok('images 按 JSON 字符串解析', /JSON\.parse\(raw\)/.test(parse));
-  ok('脏值降级为空数组', /catch \(e\)[\s\S]{0,40}return \[\]/.test(parse));
+  // 「降级为空」有两种合法写法：直接 return []（早退），或先赋空数组再统一 filter（parseImages 现在这样，
+  // 好处是两条入口——数组/JSON 字符串——共用同一套过滤与上限）。断言只钉语义，不钉某一种形状。
+  ok('脏值降级为空数组', /catch \(e\)[\s\S]{0,60}(return \[\]|list = \[\])/.test(parse));
   ok('只保留非空字符串', /typeof u === 'string' && u/.test(parse));
   // 写入时走白名单，所以列里存的确实是 /uploads/... 或 http(s)，正则才抓得到
   ok('写入时清洗过 URL', /serializeImages/.test(notes) && /safeCover/.test(notes));
@@ -669,14 +716,45 @@ console.log('\n【引用扫描的五类来源：漏掉任何一类都会把在�
   //   `.del-btn` disabled=true；绕过前端直接调接口 → 400
   //   「该图片正被文章、手记或站点设置引用，不能直接删除」，磁盘文件仍在。
   const ad = read('../../server/src/routes/admin.js');
-  const fn = (ad.match(/async function collectReferencedUploads[\s\S]{0,1400}/) || [''])[0];
-  ok('扫文章封面', /db\('articles'\)[\s\S]{0,60}pluck\('cover'\)/.test(fn));
-  ok('扫文章正文', /db\('articles'\)\.pluck\('content'\)/.test(fn));
-  ok('扫站点设置', /db\('settings'\)\.pluck\('value'\)/.test(fn));
-  ok('扫友链头像', /db\('links'\)[\s\S]{0,60}pluck\('avatar'\)/.test(fn));
-  // 这两条是这一轮补的
-  ok('扫手记正文', /db\('notes'\)\.pluck\('content'\)/.test(fn), '缺 notes.content');
-  ok('扫手记图集', /db\('notes'\)[\s\S]{0,80}pluck\('images'\)/.test(fn), '缺 notes.images');
+  const fn = (ad.match(/async function collectReferencedUploads[\s\S]{0,2000}/) || [''])[0];
+
+  // ⚠ 这一组断言全部**只钉语义，不钉形态**。
+  //
+  // 跨端检查（web 门禁读 server 源码）天然脆：只要给某个查询加个 `where`，
+  // 词法形态就变了，语义却没变 —— 于是 web build 无故变红，而去改它的人
+  // 手上正拿着一个功能正确的实现。第 64 轮就踩过一次（加了 LIKE 预过滤）。
+  //
+  // 所以这里改成两层：
+  //   a) **表级**：collectReferencedUploads 必须查这 4 张表（这是真正的契约，
+  //      历史上就是漏了 notes 导致手记里的图被当孤儿删掉）；
+  //   b) **列级**：每个 pluck 的列名要出现，但允许前面有任意修饰。
+  const usedTables = new Set([...fn.matchAll(/db\('(\w+)'\)/g)].map((m) => m[1]));
+  ok('查 article 表', usedTables.has('articles'));
+  ok('查 settings 表', usedTables.has('settings'));
+  ok('查 links 表', usedTables.has('links'));
+  ok('查 notes 表（历史上漏过这张表）', usedTables.has('notes'));
+  ok('没有多余的来源表（新增表要同步加在这里，避免"以为扫了其实没扫"）',
+    [...usedTables].sort().join(',') === 'articles,links,notes,settings',
+    `实际: ${[...usedTables].sort().join(',')}`);
+
+  // 列级：**必须绑定表**。
+  //
+  // 一开始我只检查 `pluck('content')` 出现过 —— 那是错的：articles 也扫 content，
+  // 所以把 notes.content 整条删掉之后，`pluck('content')` 仍然存在，断言照绿。
+  // （用注入破坏验证时发现的：删掉 notes.content 后 910 条全过。）
+  // 现在要求「同一张表之后 200 字符内出现该列」，允许中间夹 where / orderBy / LIKE 预过滤。
+  for (const [table, col, label, why] of [
+    ['articles', 'cover', '文章封面', ''],
+    ['articles', 'content', '文章正文', ''],
+    ['settings', 'value', '站点设置值', ''],
+    ['links', 'avatar', '友链头像', ''],
+    ['notes', 'content', '手记正文', '缺 notes.content 会让手记里的图被当孤儿删掉'],
+    ['notes', 'images', '手记图集', '缺 notes.images 会让图集里的图被当孤儿删掉'],
+  ]) {
+    ok(`扫描 ${table}.${col}（${label}）`,
+      new RegExp(`db\\('${table}'\\)[\\s\\S]{0,200}?pluck\\('${col}'\\)`).test(fn), why);
+  }
+
   // 提示要把手记也说出来，否则用户以为删的是别处的引用
   ok('拒绝提示点明手记', /正被文章、手记或站点设置引用/.test(ad));
 }
@@ -1271,9 +1349,15 @@ console.log('\n【文章分页：翻页、改每页条数、末页禁用下一�
   ok('分页区按 total > pageSize 显示', /v-if="total > pageSize"/.test(al));
   ok('末页禁用下一页', /:disabled="page >= totalPages"/.test(al));
   // 改每页条数必须重置到第 1 页 —— 否则会停在越界页码上看到空白
+  // ⚠ 这条断言原本是 `/onPageSizeChange[\s\S]{0,220}(page\.value = 1|load\(1\))/`，
+  // 它**从来没有检查过函数体**：文件第 710 行有一句注释
+  //   「onPageSizeChange() 里有 router.replace（删掉 page）与 load(1)」
+  // 距离模板里的 `@change="onPageSizeChange"` 正好在 220 字符内 —— 断言一直在匹配这行注释。
+  // （把读取临时改成剥注释版之后它才变红，暴露出来。）
+  // 现在锚定到函数定义、放宽窗口到 400（实测函数体到 load(1) 约 330 字符），并剥注释。
   ok('改每页条数时重置页码',
-     /onPageSizeChange[\s\S]{0,220}(page\.value = 1|load\(1\))/.test(al),
-     (al.match(/function onPageSizeChange[\s\S]{0,100}/) || [''])[0].slice(0, 60));
+     /function onPageSizeChange\(\)[\s\S]{0,400}?load\(1\)/.test(readCode('../src/views/site/ArticleList.vue')),
+     '函数体里应有 load(1)：改每页条数必须回到第 1 页');
   // 行序号要跨页连续，不能每页都从 01 开始
   ok('行序号跨页连续', /\(page - 1\) \* pageSize/.test(al));
   // 每页条数要有上限，防止一次拉全部文章
@@ -1328,7 +1412,7 @@ console.log('\n【三种排序：置顶永远在前，其余按各自维度降�
   ok('最热按 views 降序', /sort === 'hot'[\s\S]{0,200}column: 'a\.views', order: 'desc'/.test(art));
   ok('热议按评论数降序', /COUNT\(cm\.id\)/.test(art));
   // 热议的 groupBy 只能加在数据查询上，否则 count 查询的 total 恒为 1、翻页失效
-  ok('groupBy 只加在数据查询（不影响计数）', /groupBy 只加在数据查询/.test(art));
+  okNote('groupBy 只加在数据查询（不影响计数）', /groupBy 只加在数据查询/, art);
 }
 
 console.log('\n【文章列表：筛选、排序、清空，且徽章随状态变】');
@@ -1343,7 +1427,7 @@ console.log('\n【文章列表：筛选、排序、清空，且徽章随状态�
     ok(`徽章有 ${s} 状态`, new RegExp(`'${s}'`).test(al));
   }
   // 分类与标签要能叠加 —— 代码注释里明确说了不能互相清空
-  ok('分类与标签不互相清空（可叠加）', /叠加/.test(al) || /同时支持/.test(al));
+  okNote('分类与标签不互相清空（可叠加）', /叠加|同时支持/, al);
   // 清空筛选后 URL 要回到干净路径
   ok('清空筛选回干净 URL', /router\.replace|router\.push/.test(al));
 }
@@ -1609,8 +1693,16 @@ console.log('\n【灯箱：双击 1x/2x、滚轮缩放，且缩放要有上下�
   // 缩放必须双向夹取：没有上限的话滚几下就把图糊成马赛克，也没法再回看全图
   const clamps = (lb.match(/Math\.min\(4,\s*Math\.max\(1,/g) || []).length;
   ok('缩放被夹在 1–4 之间（两处）', clamps >= 2, `找到 ${clamps} 处`);
-  // 关闭能力：ESC 与点击遮罩都要能退出，否则触屏用户会被困住
-  ok('ESC 可关闭', /Escape/.test(lb));
+  // 关闭能力：ESC 与点击遮罩都要能退出，否则触屏用户会被困住。
+  //
+  // ⚠ 改动：`e.key === 'Escape'` 已从灯箱搬到 useFocusTrap（document 级）。
+  // 旧断言钉的是「灯箱自己的 onKeydown 里有 Escape 分支」这个实现细节，
+  // 而**语义**是「Esc 能关掉灯箱」：现在由 useFocusTrap 统一处理 Escape，
+  // 灯箱只声明 Esc 该关什么（onClose）。所以改成同时钉这两头。
+  ok(
+    'ESC 可关闭（Escape 在 useFocusTrap，灯箱把关闭接到 onClose）',
+    /onClose: \(\) => close\(\)/.test(lb) && /e\.key === 'Escape'/.test(focusTrapSrc)
+  );
   ok('点击遮罩可关闭', /@click\.self|backdrop/i.test(lb));
 }
 
@@ -1715,7 +1807,7 @@ console.log('\n【reduced-motion：入场位移动画要从源头去掉】');
   // 但那是「压时长」，不是「没有位移」：reduced-motion 的语义是「不想看到位移」，
   // 少数浏览器在首帧仍会合成一次。改成对入场类直接 animation:none + transform:none。
   // 验证：八条路由全部 leaked=0、shifted=0，内容 opacity 仍为 1。
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   const rmBlocks = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)]
     .map((m) => m[1]).join('\n');
   ok('存在全局兜底（压时长）', /animation-duration:\s*0\.01ms/.test(rmBlocks));
@@ -1731,7 +1823,7 @@ console.log('\n【后台打印：留下数据，去掉操作界面】');
   // 实测打印后台文章列表：侧栏 .admin-side 仍是 flex、高 **835px**（整页被它吃掉），
   // 工具栏 64px，页面上还有 **35 个可见按钮**，真正要打的表格被挤到后面。
   // 前台早就有 print 清单，后台一条都没有。
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   const printBlock = (css.match(/@media print \{[\s\S]*?\n\}/) || [''])[0];
   ok('print 块里包含后台侧栏', /\.admin-side/.test(printBlock));
   ok('print 块里包含工具栏/批量栏', /\.toolbar/.test(printBlock) && /\.batch-bar/.test(printBlock));
@@ -1819,8 +1911,13 @@ console.log('\n【非法输入要么拦、要么安全降级，不能原样落�
   ok('描述截断到 255', /cleanLine\(description, 255\)/.test(adm));
   ok('文章标题截断到 200', /cleanLine\(title, 200\)/.test(adm));
   ok('正文有长度上限', /cleanMarkdown\(content, 100000\)/.test(adm));
-  ok('状态走白名单，不接受任意值', /\['draft', 'published'\]\.includes\(status\)/.test(adm));
-  ok('评论状态走白名单', /\['pending', 'approved', 'rejected'\]\.includes\(status\)/.test(adm));
+  // 只钉「存在 draft/published 白名单校验」，不钉参数名：状态校验被抽成纯函数后
+  // 入参是 src.status，旧断言 `includes(status)` 会因为一次合理重构而红，
+  // 而它真正要防的是「任意 status 值都能写库」。
+  // 钉语义不钉形态：白名单的**载体**从硬编码数组换成了 utils/enums 的常量
+  // （第 47/48 轮做的单点化），断言要认新形态 —— 但它必须仍然拒绝任意值。
+  ok('状态走白名单，不接受任意值', /isOneOf\(ARTICLE_STATUS,\s*src\.status\)/.test(adm));
+  ok('评论状态走白名单', /isOneOf\(REVIEW_STATUS,\s*status\)/.test(adm));
 }
 
 console.log('\n【更新接口必须和创建接口一样拦住空名称】');
@@ -2281,7 +2378,7 @@ console.log('\n【后台搜索框的 placeholder 要说准搜什么】');
 
 console.log('\n【打印时不能把 fixed 元素印到纸上】');
 {
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   const printBlock = (css.match(/@media print \{[\s\S]*?\n\}/) || [''])[0];
   // 实测：skip-link 靠 `position: fixed; top: -100px` 藏到视口外 ——
   // 那套做法只在**连续媒体**里成立。打印是分页媒体、没有「视口」，
@@ -2420,7 +2517,7 @@ console.log('\n【错误页的文字必须显式给颜色】');
 
 console.log('\n【实心元素必须用 --accent-fill，不能用 --accent】');
 {
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   // --accent 在深色下为了「当文字时对深底够对比」被提亮；
   // 同一抹亮色配白字只有 2.55:1。--accent-fill 是压深过的，白字对它 5.17:1。
   // 实测：skip-link 是全站最后一个漏用 --accent-fill 的实心元素（暗色下 2.55:1）。
@@ -2428,8 +2525,16 @@ console.log('\n【实心元素必须用 --accent-fill，不能用 --accent】');
   ok('skip-link 用 --accent-fill 作底', /background:\s*var\(--accent-fill\)/.test(skipBlock));
   ok('skip-link 不再用 --accent 作底', !/background:\s*var\(--accent\);/.test(skipBlock));
 
-  ok('--accent-fill 有定义（浅色 #bb4732）', /--accent-fill:\s*#bb4732/.test(css));
-  ok('--accent-fill 有静态注释说明为什么不能直接用 --accent', /拿去配白字只有 2\.55:1/.test(css));
+  // ⚠ 不要硬编码 --accent-fill 的字面色值：它随「压深比例」变化
+  // （0.18 → 0.24 就是为了让最亮的琥珀也过 AA）。这里改成断言
+  // 「有个合法 hex 值」，具体是否与 shade(珊瑚, 0.24) 相等由
+  // test-theme-init-parity.mjs 的三处一致性断言负责。
+  const fillDecl = (css.match(/--accent-fill:\s*(#[0-9a-fA-F]{6})/) || [])[1];
+  ok('--accent-fill 有定义（浅色）', !!fillDecl, fillDecl ? `当前 ${fillDecl}` : '未找到');
+  // 这一条**故意**要原文：它检查的就是「注释里必须写明这个对比度数据」，
+  // 用剥注释版必然失败（它已经在全剥实验里红过一次，确认是有意的）。
+  okNote('--accent-fill 有静态注释说明为什么不能直接用 --accent',
+    /拿去配白字只有 2\.55:1/, read('../src/styles/main.css'));
 
   // 其余实心元素都用 fill
   const fillUses = (css.match(/background:\s*var\(--accent-fill\)/g) || []).length;
@@ -2441,7 +2546,7 @@ console.log('\n【不要用 opacity 压低文字对比度】');
   // 实测：.empty-state .empty-hint 用 --text-3 本身是 5.34:1（合规），
   // 叠上 opacity: 0.9 与背景混合后实际变成 4.34:1，跌破 AA 的 4.5。
   // 层级靠字号与位置表达就够了 —— 颜色已经够淡。
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   const hintBlock = (css.match(/\.empty-state \.empty-hint \{[\s\S]*?\}/) || [''])[0];
   ok('空态提示不再用 opacity 压对比度', !/opacity:\s*0\.\d/.test(hintBlock), hintBlock.slice(0, 60));
   ok('空态提示仍用 --text-3（比正文淡一档，但不靠透明度）', /color:\s*var\(--text-3\)/.test(hintBlock));
@@ -2509,9 +2614,10 @@ console.log('\n【robots.txt 不能挡住 sitemap 里的 URL】');
     !/^Disallow: \/#\/$/m.test(feed),
     '爬虫只发 path，fragment 从不发送 → 这条规则匹配不到任何请求'
   );
-  ok(
+  okNote(
     '删除处留了说明（防止有人加回来）',
-    /不要加 `Disallow: \/#\/`/.test(feed)
+    /不要加 `Disallow: \/#\/`/,
+    feed
   );
 
   // 博客域仍需保留 rss/sitemap 放行
@@ -2547,11 +2653,16 @@ console.log('\n【sitemap 必须是引擎能收录的真实 URL】');
   const feed = read('../../server/src/routes/feed.js');
   // 实测：sitemap 原本给静态页写的是 /#/archive 这类 hash URL，
   // 而搜索引擎**丢弃 # 之后的部分** → 11 条记录全部指向首页，等于没提交。
-  const sitemap = feed;
+  // ⚠ 原来断言的是 `/api\/share-page/` —— 那个字面量**只在注释里**出现
+  // （feed.js:461「必须用 `/api/share-page/*` 这种真实路径」）。
+  // 真实代码用的是 `${apiPrefix}/share-page`，所以这条断言一直在匹配注释，从没检查过实现。
+  // 现在剥注释 + 认模板变量。
+  const feedCode = readCode('../../server/src/routes/feed.js');
+  const sitemap = feed;  // 后续断言仍按原名引用
   ok(
-    'sitemap 静态页用 /api/share-page/* 而非 hash URL',
-    /api\/share-page/.test(sitemap),
-    'hash URL 会被引擎丢弃 # 之后的内容'
+    'sitemap 静态页用 share-page 真实路径（而非 hash URL）',
+    /\$\{apiPrefix\}\/share-page(?![-\w])/.test(feedCode),
+    'hash URL 会被引擎丢弃 # 之后的内容；这里要看到 `${apiPrefix}/share-page`'
   );
   ok(
     '博客 sitemap 里不再有 /#/ 的 loc',
@@ -2944,7 +3055,7 @@ console.log('\n【表格：语义完整且窄屏可达】');
     '这条是给未来自己踩刹车用的'
   );
 
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   const mdcss = read('../src/styles/markdown.css');
   ok('窄屏表格横向滚动而非挤压', /@media \(max-width: 640px\)[\s\S]{0,120}?overflow-x: auto/.test(mdcss));
   ok('窄屏有「右侧还有内容」的视觉暗示', /linear-gradient\(to left/.test(mdcss));
@@ -2959,23 +3070,39 @@ console.log('\n【快捷键帮助弹层：模态语义与焦点陷阱】');
   ok('有 role=dialog', /role="dialog"/.test(help));
   ok('配了 aria-modal="true"', /aria-modal="true"/.test(help), '只有 role 的话读屏仍把背景当可读内容');
   ok('用 aria-labelledby 指向标题', /aria-labelledby="help-title"/.test(help) && /id="help-title"/.test(help));
-  ok('有 Tab 焦点陷阱', /function onTabTrap/.test(help) && /@keydown\.tab="onTabTrap"/.test(help));
+  // ⚠ 这条断言原来是 `/function onTabTrap/ && /@keydown\.tab="onTabTrap"/`，
+  // 它钉的正是**缺陷本身**：面板级 @keydown.tab 在焦点跑到面板外时收不到事件，
+  // 「宣称模态却做不到」。收敛到 useFocusTrap 后，旧正则必然红 ——
+  // 这不是回归，是实现从「面板级」变成「document 级」。
+  // 新语义：约束挂在 document 上（共用实现），面板上不再有 keydown.tab 绑定。
+  ok(
+    'Tab 约束挂在 document 级（不再绑在面板上，面板级收不到面板外的按键）',
+    /useFocusTrap\(panelRef, open,/.test(help) && !/@keydown\.tab=/.test(help)
+  );
   ok(
     '焦点陷阱无条件拉回（不依赖「是否正好在首尾」）',
-    /if \(!panel\.contains\(active\)\) \{[\s\S]{0,80}?e\.preventDefault\(\)/.test(help),
-    '搜索弹窗就是这么漏的'
+    /if \(!active \|\| !panel\.contains\(active\)\) \{[\s\S]{0,120}?e\.preventDefault\(\)/.test(focusTrapSrc),
+    '搜索弹窗就是这么漏的（实现已收敛到 useFocusTrap）'
   );
+  // 旧断言是 `/nextTick\(\(\) => closeBtnRef\.value\?\.focus\?\.\(\)\)/`：
+  // 钉「用某个模板 ref 调 focus」这一种写法。语义是「打开后焦点进入面板」，
+  // 现在由 initialFocus 指定落点 + 共用实现负责移入。
   ok(
-    '打开时把焦点送进面板',
-    /nextTick\(\(\) => closeBtnRef\.value\?\.focus\?\.\(\)\)/.test(help)
+    '打开时把焦点送进面板（落在关闭按钮上）',
+    /initialFocus: '\.help-close'/.test(help) && /nextTick\(\(\) => \{[\s\S]{0,60}?moveFocusIn\(\)/.test(focusTrapSrc)
   );
+  // 旧断言钉 `lastFocused = active && active !== document.body ? active : null` 这行字面量；
+  // 语义是「body 不算有效返回点」。搬进共用实现后按语义重新钉。
   ok(
     '关闭时还原焦点（body 不作为有效返回点）',
-    /lastFocused = active && active !== document\.body \? active : null/.test(help)
+    /opener = active && active !== document\.body \? active : null/.test(focusTrapSrc)
   );
+  // 旧断言钉的是局部变量名 `back`；语义是「还原前确认元素还在 DOM 里」。
   ok(
     '还原前确认元素仍在 DOM（导航后触发元素可能已消失）',
-    /document\.contains\(back\)/.test(help)
+    /function inDocument[\s\S]{0,200}?document\.contains\(el\)/.test(focusTrapSrc)
+      && /focusEl\(document\.body\)/.test(focusTrapSrc),
+    '元素没了要退回 body，而不是 focus 一个游离节点'
   );
   ok('Shift+/ 也能打开（实测这是唯一真正可用的组合）', /e\.key === '\?' \|\| \(e\.key === '\/' && e\.shiftKey\)/.test(help));
 }
@@ -3008,7 +3135,7 @@ console.log('\n【代码块复制：播报要落在独立的状态元素上】')
   ok('连点防护（data-copying 门闩）', /btn\.dataset\.copying === '1'/.test(md));
   ok(
     '复制到剪贴板有 execCommand 兜底（老浏览器/非安全上下文）',
-    /function legacyCopy\(text\)/.test(md)
+    /function execCommandCopy\(text\)/.test(read('../src/utils/clipboard.js'))
   );
 }
 
@@ -3085,7 +3212,7 @@ console.log('\n【skip-link：跳转不能破坏当前路由】');
   ok('个人主页也有 skip-link（此前缺失）', /class="skip-link"/.test(home) && /skipToMain/.test(home));
   ok('个人主页的主内容有 id 与 tabindex=-1', /<main id="home-main"[^>]*tabindex="-1"/.test(home));
 
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   ok(
     'skip-link 样式在全局（两个布局共用，避免 scoped 特指度冲突）',
     /\.skip-link \{/.test(css) && /\.skip-link:focus/.test(css)
@@ -3292,21 +3419,38 @@ console.log('\n【模态弹层的焦点必须被锁住】');
   // 打开后连按 Tab 10 次，10 次全部逃逸到背景页面的 skip-link / nav-link。
   // 「宣称模态却做不到」比不写 aria-modal 更误导读屏用户。
   const search = read('../src/components/ui/SearchModal.vue');
+  // ⚠ 断言必须只作用于**模板区**，不能拿整文件跑正则。
+  //
+  // 为什么：read() 返回的是整份 .vue 全文，**注释也算在内**。这个文件里正好有一段
+  // 解释性注释写着「而弹窗标了 aria-modal="true"，等于向读屏宣称…」——
+  // 于是把模板第 7 行的真属性删掉之后，下面那条正则**依然匹配成功**，
+  // 断言照样报绿。（我实测过：删掉真属性，套件 867 全过；删对位置才 866/1 失败。）
+  // 一个能被注释满足的断言，检不出它本该检的东西，比没有断言更危险 ——
+  // 它会让人以为这里已经有覆盖了。
+  //
+  // 修法：取 <template> 段做断言。模板才是产出真实 DOM 的地方，
+  // <script> 里的注释与字符串不构成任何无障碍属性。
+  const searchTpl = templateOf(search);
   ok(
-    '搜索弹窗有 role=dialog + aria-modal',
-    /role="dialog"[^>]*aria-modal="true"/.test(search) || /aria-modal="true"[^>]*role="dialog"/.test(search)
+    '搜索弹窗有 role=dialog + aria-modal（只看模板，注释不算）',
+    /role="dialog"[^>]*aria-modal="true"/.test(searchTpl) || /aria-modal="true"[^>]*role="dialog"/.test(searchTpl)
   );
+  // 下面三条原读 SearchModal.vue，钉的是 `.search-modal` 这个类名 / 内联在组件里的
+  // 陷阱代码。这些机制现在都在 composables/useFocusTrap.js 里（四份合一），
+  // 组件侧的正确性变成「有没有接上它」。语义逐条保持不变，只是换了实现载体。
   ok(
     '焦点不在弹窗内时无条件拉回（不只处理首尾元素）',
-    /!active\.closest\(\.search-modal\)/.test(search) || /!active\.closest\('\.search-modal'\)/.test(search)
+    /if \(!active \|\| !panel\.contains\(active\)\)/.test(focusTrapSrc)
+      && !/\.closest\(/.test(focusTrapSrc),
+    '按容器包含关系判断，不再靠类名 closest（换个类名就失效）'
   );
   ok(
     '首/尾元素上正常循环（Tab 与 Shift+Tab 双向）',
-    /e\.shiftKey && active === first/.test(search) && /!e\.shiftKey && active === last/.test(search)
+    /e\.shiftKey && active === first/.test(focusTrapSrc) && /!e\.shiftKey && active === last/.test(focusTrapSrc)
   );
   ok(
     '可聚焦元素用通用选择器而不是列举标签名',
-    /\[tabindex\]:not\(\[tabindex="-1"\]\)/.test(search)
+    /\[tabindex\]:not\(\[tabindex="-1"\]\)/.test(focusTrapSrc) && /export const FOCUSABLE/.test(focusTrapSrc)
   );
   ok(
     '有显式的关闭按钮（不能只靠 Esc 或点遮罩）',
@@ -3314,18 +3458,32 @@ console.log('\n【模态弹层的焦点必须被锁住】');
   );
 
   const lb = read('../src/components/ui/ImageLightbox.vue');
-  ok('灯箱有 role=dialog + aria-modal', /role="dialog"[\s\S]{0,120}?aria-modal="true"/.test(lb));
-  ok('灯箱有焦点陷阱', /function onTabTrap/.test(lb) && /addEventListener\('keydown', onTabTrap\)/.test(lb));
+  // 同上：灯箱自己的模板开头就有一段注释写着
+  // 「role=dialog + aria-modal：灯箱打开时背景内容对读屏不可达」——
+  // 拿整文件跑正则的话，删掉第 11-12 行的真属性也照样绿。
+  // 而且这里的 `[\s\S]{0,120}` 窗口正好能跨过那段注释覆盖到后面的字面量。
+  const lbTpl = templateOf(lb);
+  ok('灯箱有 role=dialog + aria-modal（只看模板，注释不算）',
+    /role="dialog"[\s\S]{0,120}?aria-modal="true"/.test(lbTpl)
+      || /aria-modal="true"[\s\S]{0,120}?role="dialog"/.test(lbTpl));
+  // 旧断言钉「灯箱里有一份自己的 onTabTrap 并注册到 document」——
+  // 现在陷阱在 useFocusTrap 里，灯箱只需要接上它。
+  ok(
+    '灯箱有焦点陷阱（走共用实现，不再是每份一份 onTabTrap）',
+    /useFocusTrap\(panelRef, visible,/.test(lb) && /document\.addEventListener\('keydown', onKeydown\)/.test(focusTrapSrc)
+  );
+  // 旧断言钉三个局部字面量（active / lastFocused / lastFocused.focus()）；
+  // 语义是「打开落到关闭按钮、关闭把焦点还回去」，按语义重新钉到新载体上。
   ok(
     '灯箱打开时聚焦关闭按钮、关闭时还焦点',
-    /const active = document\.activeElement/.test(lb)
-      && /lastFocused = active && active !== document\.body \? active : null/.test(lb)
-      && /lastFocused\.focus\(\)/.test(lb)
+    /initialFocus: '\.lb-close'/.test(lb)
+      && /returnFocusTo:/.test(lb)
+      && /focusEl\(resolveReturn\(\)/.test(focusTrapSrc)
   );
   // 实测出来的两个坑，都写成断言
   ok(
     '灯箱不把 body 当作有效的焦点返回点',
-    /active !== document\.body \? active : null/.test(lb),
+    /active !== document\.body \? active : null/.test(focusTrapSrc),
     '点图片打开时 activeElement 是 body，记下来等于「恢复到 body」'
   );
   ok(
@@ -3341,6 +3499,91 @@ console.log('\n【模态弹层的焦点必须被锁住】');
     const detail = read('../src/views/site/ArticleDetail.vue');
     ok('调用灯箱时把被点的图片一起传进去', /lightboxRef\.value\?\.open\(img\.src, caption, img\)/.test(detail));
   }
+}
+
+console.log('\n【四份焦点实现收敛成一份：谁都不许再自己抄一遍】');
+{
+  // 背景：搜索弹窗、图片灯箱、快捷键帮助、问 AI 面板曾各写一份「记录打开前焦点 /
+  // Tab 循环 / 关掉还焦」，于是长出了四种缺陷（面板级 keydown 收不到面板外的键、
+  // 完全没有陷阱、选择器少一项、body 被当成有效返回点）。
+  // 现在机制只存在于 composables/useFocusTrap.js，组件侧只负责接线。
+  const users = [
+    ['SearchModal', '../src/components/ui/SearchModal.vue', /useFocusTrap\(panelRef, open,/],
+    ['ImageLightbox', '../src/components/ui/ImageLightbox.vue', /useFocusTrap\(panelRef, visible,/],
+    ['ShortcutHelp', '../src/components/ui/ShortcutHelp.vue', /useFocusTrap\(panelRef, open,/],
+    ['AskAi', '../src/components/site/AskAi.vue', /useFocusTrap\(panelRef, open,/],
+  ];
+  for (const [name, path, wired] of users) {
+    const src = read(path);
+    ok(
+      `${name} 接入共用焦点管理`,
+      wired.test(src) && /from '@\/composables\/useFocusTrap'/.test(src),
+      path
+    );
+    ok(
+      `${name} 不再自带陷阱/还焦实现`,
+      !/function onTabTrap/.test(src)
+        // 只匹配「声明」，不匹配注释：注释里提到 lastFocused 不算实现
+        && !/\b(?:let|const|var)\s+lastFocused\b/.test(src)
+        && !/[Ff]ocusables\(\)/.test(src),
+      '自己再写一份就等于又开一条漂移路径'
+    );
+  }
+  // 选择器只允许定义一次：四份漂移的起点就是「各抄一份标签清单」
+  ok(
+    'FOCUSABLE 只在一处定义并导出',
+    /export const FOCUSABLE/.test(focusTrapSrc)
+      && (focusTrapSrc.match(/\[tabindex\]:not\(\[tabindex="-1"\]\)/g) || []).length === 1
+  );
+  // 组件被直接卸载（路由切走、父级 v-if）时监听不能留在 document 上
+  ok(
+    '卸载时兜底摘掉监听（不还焦）',
+    /onUnmounted\(\(\) => disengage\(\{ restore: false \}\)\)/.test(focusTrapSrc)
+  );
+  // 叠开的模态（搜索弹窗上再压一层帮助）只让最上面那层响应 Tab/Esc
+  ok(
+    '叠层时只有最上面那层响应键盘',
+    /openTraps\[openTraps\.length - 1\] !== trap/.test(focusTrapSrc)
+  );
+}
+
+console.log('\n【问 AI 面板：补上的模态语义与焦点约束】');
+{
+  // 修前：`<section aria-label>` —— 没有 role=dialog / aria-modal，
+  // 打开后焦点不进入面板、Esc 不关、Tab 一路走到背后页面。
+  const ask = read('../src/components/site/AskAi.vue');
+  const askTpl = templateOf(ask);
+  ok(
+    '面板有 role=dialog + aria-modal（只看模板，注释不算）',
+    /role="dialog"[^>]*aria-modal="true"/.test(askTpl) || /aria-modal="true"[^>]*role="dialog"/.test(askTpl)
+  );
+  ok(
+    '用 aria-labelledby 指向标题，且标题带 id',
+    /aria-labelledby="ask-ai-title"/.test(askTpl) && /id="ask-ai-title"/.test(askTpl)
+  );
+  ok(
+    '不再同时写 aria-label（labelledby 会盖掉它，多留一份只会悄悄烂掉）',
+    !/<section[^>]*aria-label=/.test(askTpl)
+  );
+  ok('焦点约束走共用实现', /useFocusTrap\(panelRef, open,/.test(ask));
+  ok('Esc 关闭接到 onClose', /onClose: \(\) => close\(\)/.test(ask));
+  ok(
+    '关闭还焦到那颗浮动按钮（它带 v-if，打开瞬间已被卸载，记 activeElement 没用）',
+    /returnFocusTo: \(\) => document\.querySelector\('\.ask-fab'\)/.test(ask)
+  );
+  // 关闭只收起，不重置会话：重新打开要能看到刚才问过什么
+  const closeFn = (ask.match(/function close\(\) \{[\s\S]{0,200}?\n\}/) || [''])[0];
+  ok(
+    '关闭只收起面板，不清空对话',
+    /open\.value = false;/.test(closeFn) && !/messages\.value = \[\]/.test(closeFn),
+    closeFn.slice(0, 80)
+  );
+  // 打开/关闭的挂载点与动画都不许被这次改动带走
+  ok(
+    'teleport 目标未改（按钮 → 浮层栈，面板 → body）',
+    /<Teleport :to="dockTarget">/.test(askTpl) && /<Teleport to="body">/.test(askTpl)
+  );
+  ok('关闭按钮有可读名称', /class="ask-close"[^>]*aria-label="/.test(askTpl));
 }
 
 console.log('\n【移动端抽屉：焦点与状态关联】');
@@ -3379,10 +3622,17 @@ console.log('\n【标题大纲：每页一个 h1、不跳级】');
 {
   // 实测：首页与列表页 h1 后直接跳 h3；详情页与关于页各有 2 个 h1
   // （正文里作者写的 `# 标题` 被 marked 渲染成第二个 h1）。
-  const md = read('../src/utils/markdown.js');
+  // ⚠ 原来是 `/<\/h1>/i.test(md)` —— 那个形态只出现在函数上方的注释里
+  // （「文章页已经有自己的 <h1 ...>...</h1>」）。真实实现写的是转义形式 `<\/h1>`，
+  // 所以这条断言同样一直在匹配注释。
+  const md = read('../src/utils/markdown.js');   // 下面那条「三个处理器都在 sanitize 链里」仍按原名引用
+  const mdCode = readCode('../src/utils/markdown.js');
+  const demoteBody = (mdCode.match(/function demoteH1\([\s\S]{0,500}/) || [''])[0];
   ok(
     '正文里的 <h1> 被降为 <h2>（不产出第二个页面级标题）',
-    md.includes('function demoteH1') && /<\/h1>/i.test(md) && md.includes('<h2$1'),
+    demoteBody.length > 0
+      && /<\\\/h1>/.test(demoteBody)
+      && /<h2\$1 data-demoted/.test(demoteBody),
     '文章页已有自己的 h1，正文再来一个会让读屏看到两个主标题'
   );
   // 这条断言已经被两次「正确地失败」教训过：先是写死 sanitize(demoteH1(raw))，
@@ -3415,10 +3665,16 @@ console.log('\n【标题大纲：每页一个 h1、不跳级】');
 
   const home = read('../src/views/site/Home.vue');
   ok('首页给卡片传 h2（h1 后第一个内容块）', home.includes('heading-level="2"'));
+  // 侧栏站点名是**重复** hero 里的 h1，不该占任何 heading 层级。
+  // 历史上它先被从 h2 降到 h3（避免重复），但 h1→h3 又构成跳级；
+  // 正解是让它彻底退出 heading 序列（改成 <p class="author-name">）。
   ok(
-    '首页侧栏的站点名不再用 h2（与页面 h1 同名，重复占层级）',
-    !/<h2>\{\{ site\.settings\.site_name/.test(home)
+    '首页侧栏的站点名不占 heading 层级（与页面 h1 同名，重复占层级）',
+    // 允许 hero 的 h1（那是页面标题，本来就该是站点名），只禁止 h2–h6 再用同一个名字
+    !/<h[2-6][^>]*>\{\{ site\.settings\.site_name/.test(home)
   );
+  ok('侧栏站点名用的是段落而不是标题', /<p class="author-name">\{\{ site\.settings\.site_name/.test(home));
+  ok('对应样式已显式给出（否则会掉进 .author-card p 的规则）', /\.author-name\s*\{/.test(home));
 
   const list = read('../src/views/site/ArticleList.vue');
   ok(
@@ -3463,12 +3719,111 @@ console.log('\n【全库扫描：watch 源不能是新建的数组/对象字面�
 
 console.log('\n【鼠标点击不应被焦点环打扰】');
 {
-  const css = read('../src/styles/main.css');
+  const css = readCode('../src/styles/main.css');
   // 用 :focus-visible 而不是 :focus —— 鼠标点输入框本来就有光标，再加环太吵
   ok(
     '输入框的环用 :focus-visible（不是 :focus）',
     /input:focus-visible/.test(css) && !/^input:focus\s*\{/m.test(css)
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 自检：证明上面那 800 多条断言用的规则**真的会红**
+//
+// 这一段是补上来的。这道门禁此前一条自检都没有 —— 802 条断言全靠
+// `templateOf` 与 `auditOutlineSuppression` 两个辅助函数，而这两个函数
+// 一旦写错一个字符，断言会**永远通过**，没有人会发现。
+// 一道不会红的门禁比没有门禁更危险：它提供虚假的安全感。
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n【自检：辅助函数能抓到真问题】');
+{
+  // ── templateOf ──
+  // 它的职责是「只让真实 DOM 参与匹配」。项目里大量注释恰好会复述它们解释的属性，
+  // 拿整文件跑正则时，删掉真属性后注释仍能让断言通过 —— 这正是当初加它的原因。
+  const withComment = '<template><div aria-modal="true"></div><!-- 这里本该有 aria-modal --></template>';
+  const tplWithComment = templateOf(withComment);
+  ok(
+    '自检：templateOf 取到模板段',
+    tplWithComment.includes('aria-modal="true"'),
+    tplWithComment.slice(0, 40)
+  );
+
+  // 关键：注释里的属性文本**残留**是 templateOf 的已知边界 —— 它只切 <template>，
+  // 不剥注释。所以「注释导致假绿」仍可能发生，断言必须靠更具体的上下文 regex。
+  // 这里显式记录这个边界，避免以后有人误以为 templateOf 会剥注释。
+  const onlyInComment = '<template><!-- aria-modal="true" --><div></div></template>';
+  ok(
+    '自检：templateOf **不剥**注释（已知边界，断言需自带上下文）',
+    templateOf(onlyInComment).includes('aria-modal'),
+    '如果这条红了，说明 templateOf 开始剥注释 —— 那要同步复核所有依赖它的断言'
+  );
+
+  const noTemplate = 'const x = 1;';
+  ok('自检：没有 <template> 时返回空串', templateOf(noTemplate) === '');
+
+  // ── auditOutlineSuppression ──
+  // 反例 1：灭了 outline 且全文件没有 :focus-visible 补偿 → 必须报
+  const noCompensation = '.btn { outline: none; }';
+  const p1 = auditOutlineSuppression(noCompensation, 'x');
+  ok('自检：灭了 outline 且无补偿 → 报出 1 处', p1.length === 1, String(p1.length));
+  ok('自检：报出的条目带选择器', p1[0] && p1[0].sel === '.btn', p1[0] && p1[0].sel);
+  ok('自检：条目里 hasFocusVisible 为 false', p1[0] && p1[0].hasFocusVisible === false);
+
+  // 语义澄清：这个函数**不自动豁免**「同文件里有 :focus-visible」的情况 ——
+  // 它把 hasFocusVisible 作为信息传给调用方，而调用方只判 problems.length === 0。
+  // 也就是说：裸的 `outline: none`（不管文件里别处有没有补偿）都会让断言红。
+  // 这是有意的保守设计：补偿是否真的覆盖了那个选择器，靠正则判断不了，
+  // 所以宁可让人逐个确认（真实文件里所有 outline:none 都在 :focus-visible 规则内）。
+  const compensated = '.btn { outline: none; } .btn:focus-visible { outline: 2px solid red; }';
+  const p1b = auditOutlineSuppression(compensated, 'x');
+  ok('自检：裸 outline:none 即使在有补偿的文件里也会报（保守设计）',
+    p1b.length === 1, String(p1b.length));
+  ok('自检：但会把「文件里有 :focus-visible」作为信息带上',
+    p1b[0] && p1b[0].hasFocusVisible === true);
+
+  // 正例 2：写在 :focus-visible 规则里的 outline:none 是正当的（把环挪给父容器）
+  const legitNone = '.btn:focus-visible { outline: none; }';
+  ok('自检：:focus-visible 内的 outline:none 不算问题',
+    auditOutlineSuppression(legitNone, 'x').length === 0);
+
+  // 边界：outline: 0 也算灭掉（两种写法都要抓）
+  ok('自检：outline: 0 同样被抓',
+    auditOutlineSuppression('.btn { outline: 0; }', 'x').length === 1);
+
+  // 边界：数字 outline 不算灭掉
+  ok('自检：outline: 2px solid 不算灭掉',
+    auditOutlineSuppression('.btn { outline: 2px solid red; }', 'x').length === 0);
+
+  // :focus-within 代画环：函数只**携带**这个事实（hasFocusWithinRing），不据此过滤。
+  // 调用方当前只判 problems.length === 0，所以这类写法仍会被报出来 ——
+  // 断言钉住这个语义，免得有人以为它能自动豁免。
+  const withinRing = '.box:focus-within { outline: 2px solid red; } .box input { outline: none; }';
+  const p2 = auditOutlineSuppression(withinRing, 'x');
+  ok('自检：有 :focus-within 环时不自动豁免（仍报，但带标记）',
+    p2.length === 1 && p2[0].hasFocusWithinRing === true,
+    JSON.stringify(p2[0] || null));
+
+  // ── ok() ──
+  // 断言函数的计数必须准确，否则「X 通过 / Y 失败」会骗人
+  const beforePass = pass;
+  const beforeFail = fail;
+  const origLog = console.log;
+  console.log = () => {};          // 静音，避免污染输出
+  ok('自检用的临时断言', true);
+  ok('自检用的临时断言（故意失败）', false);
+  console.log = origLog;
+  const dPass = pass - beforePass;
+  const dFail = fail - beforeFail;
+  // 必须回滚：那次「故意失败」只是用来验证计数逻辑，
+  // 如果留在总数里，这道门禁会**永远红一条**，等于自己把自己废掉。
+  pass = beforePass;
+  fail = beforeFail;
+  // 回滚是否生效要在**这一刻**取值 —— 后面每多一条 ok()，pass 就会继续涨，
+  // 拿它和 beforePass 比永远不会相等。
+  const rolledBack = pass === beforePass && fail === beforeFail;
+  ok('自检：ok(true) 让 pass 加 1', dPass === 1, `增量 ${dPass}`);
+  ok('自检：ok(false) 让 fail 加 1', dFail === 1, `增量 ${dFail}`);
+  ok('自检：故意的失败已从总数回滚（否则这道门禁会永远红一条）', rolledBack);
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
