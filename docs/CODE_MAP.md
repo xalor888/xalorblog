@@ -21,11 +21,11 @@ Vue 3 + Vite + Pinia 前端 与 Express + Knex + MySQL 8 后端组成的**个人
 | 目录 | 文件 | 行数 | 说明 |
 |---|---:|---:|---|
 | `server/src` | 61 | 14,317 | 18 个路由 + 12 个中间件 + 26 个工具 + 迁移/种子 |
-| `server/test` | 83 | 14024 | **78 个 `*.test.js`**（68 个在离线链、17 个在集成链，**其中 7 个两条链都跑**；并集 = 77，无孤儿）+ `run.js` + `helpers/` + WAF 语料 + `run-mac.sh` |
+| `server/test` | 83 | 14024 | **80 个 `*.test.js`**（70 个在离线链、17 个在集成链，**其中 7 个两条链都跑**；并集 = 79，无孤儿）+ `run.js` + `helpers/` + WAF 语料 + `run-mac.sh` |
 | `server/scripts` | 2 | 490 | `bench-read-paths.js`（SQL 基线）+ `e2e-smoke.js`（端到端冒烟） |
 | `web/src` | 102 | 33,083 | 35 个视图 + 14 个组件 + 30 个工具 + 5 store + 2 composables + 3 个图片资源（不计行） |
 | `web/public` | 15 | 467 | `theme-init.js` / `boot-guard.js` / `anti-debug.js`（不进打包）+ 图标/manifest（8 个二进制不计行） |
-| `web/scripts` | 40 | 19,900 | **36 道构建门禁** + `check-doc-numbers.mjs` + `bump-assets.mjs` + `check-theme-parity.mjs` + `lib/sourceText.mjs` + `audit-comment-reliance.mjs`（审计工具，非门禁）+ `audit-flake.mjs`（flaky 检测工具，进 flaky 检测用途，不进 build 链）
+| `web/scripts` | 41 | 19,900 | **37 道构建门禁** + `check-doc-numbers.mjs` + `bump-assets.mjs` + `check-theme-parity.mjs` + `lib/sourceText.mjs` + `audit-comment-reliance.mjs`（审计工具，非门禁）+ `audit-flake.mjs`（flaky 检测工具，进 flaky 检测用途，不进 build 链）
 + `test-form-token-fast.mjs`（`test-form-token.mjs` 的快速变体，省略 2.1s 等待用于日常反馈，不进 build 链） |
 | **合计** | **290** | **79,957** | 另有 `deploy/`（nginx/systemd/备份）与 `blog.sql` |
 
@@ -150,7 +150,7 @@ cd web    && npm run build            # 先跑 20 道静态门禁 → vite 双�
 ```
 check-disk-space → test-gate-integrity → check-doc-numbers → bump-assets --check → check-theme-parity → check-script-order → test-script-order → test-mobile-baseline
 → test-reading-prefs → test-word-stats → test-contrast-tokens → test-theme-init-parity
-→ test-focus-visible → test-anti-debug → test-copy-guard → test-secure-storage → test-form-token → test-admin-path → test-signed-fetch → test-format → test-request-signature → test-ai-bridge → test-use-media → test-focus-trap-coverage → test-focus-trap-api → test-derived-tokens → test-a11y-interactive → test-lifecycle-cleanup
+→ test-focus-visible → test-vhtml-safety → test-anti-debug → test-copy-guard → test-secure-storage → test-form-token → test-admin-path → test-signed-fetch → test-format → test-request-signature → test-ai-bridge → test-use-media → test-focus-trap-coverage → test-focus-trap-api → test-derived-tokens → test-a11y-interactive → test-lifecycle-cleanup
 → test-markdown-cache → test-error-states → test-social-extra → test-dead-code
 → test-message-box-style → test-heading-order → test-icon-buttons → test-form-errors
 ```

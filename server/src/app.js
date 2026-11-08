@@ -46,6 +46,29 @@ app.use((req, res, next) => {
   next();
 });
 
+/**
+ * 慢请求日志：**只记那些真的慢的**，并把 requestId 带上，方便拿它去 grep 同一条链路的错误日志。
+ *
+ * 为什么需要：这个站只有一个进程，一次 2MB 响应的同步压缩或一条没走索引的查询，
+ * 表现是「别人访问变慢」，而**本地看不出任何异常**。没有慢日志时唯一的排障手段是
+ * 「猜 + 重启试试」。
+ *
+ * 阈值走环境变量（默认 500ms）：个人站正常响应都在 10ms 量级，500ms 已经是很明显的异常。
+ * 只记 `req.path`（不记 query）—— 搜索词、回调参数都可能带用户数据，日志不该成为它们的副本。
+ */
+const SLOW_REQUEST_MS = Number(process.env.SLOW_REQUEST_MS || 500);
+app.use((req, res, next) => {
+  const startedAt = process.hrtime.bigint();
+  res.on('finish', () => {
+    const ms = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    if (ms >= SLOW_REQUEST_MS) {
+      console.warn(`[slow] ${req.method} ${req.path} ${res.statusCode} ${ms.toFixed(1)}ms rid=${req.requestId}`);
+    }
+  });
+  next();
+});
+
+
 // 信任明确的反向代理地址/CIDR，使 req.ip 获取真实客户端 IP。
 // 默认只信任 loopback，禁止使用跳数，防止直连者伪造 X-Forwarded-For。
 app.set('trust proxy', config.trustProxy);

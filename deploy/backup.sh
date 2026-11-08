@@ -78,15 +78,44 @@ fi
 # 需要 PROCESS 权限，普通业务账号会报 Access denied 警告（数据本身不受影响）——
 # 博客数据无需表空间信息，显式跳过使备份对最小权限账号零告警
 DB_BACKUP="$BACKUP_DIR/xalor_db_$STAMP.sql"
-if ! "$MYSQLDUMP" -u "$DB_USER" "${DB_HOST_ARG[@]}" --single-transaction --no-tablespaces --routines --triggers "$DB_NAME" \
-  > "$DB_BACKUP"; then
-  rm -f "$DB_BACKUP"
-  echo "✗ 数据库备份失败（请检查 mysqldump 凭据）" >&2
+# 写之前先看一眼剩余空间：数据库备份是「写满盘」的最短路径之一，
+# 而磁盘满之后 mysqldump 的报错看起来像凭据问题（stderr 里是一大段无关日志）。
+# 100MB 是硬下限（远大于当前全库体积），只为把「几乎肯定失败」的情况挡在写之前。
+FREE_KB="$(df -Pk "$BACKUP_DIR" | awk 'NR==2 {print $4}')"
+if [ -n "${FREE_KB:-}" ] && [ "$FREE_KB" -lt 102400 ]; then
+  echo "✗ 备份目录所在磁盘剩余空间不足 100MB（当前 ${FREE_KB}KB）：$BACKUP_DIR" >&2
   exit 1
 fi
+DB_ERR="$(mktemp)"
+# --skip-lock-tables 不是「可选优化」：生产账号只有 SELECT/INSERT/UPDATE/DELETE/CREATE/INDEX/ALTER，
+# 没有 RELOAD / FLUSH_TABLES，而 mysqldump 默认要 `FLUSH TABLES` —— 缺了这个参数，
+# **备份对真实库 100% 失败**（报 Access denied，看起来像密码错）。配合 --single-transaction
+# 仍然是「一致性快照」（InnoDB MVCC），不需要全局读锁。--set-gtid-purged=OFF 同理，
+# 省掉需要 SUPER/GTID 权限的 SET @@GLOBAL。
+#
+# 空数组在 `set -u` 下展开会报 "unbound variable"（macOS 自带 bash 3.2 尤其明显，
+# 而这就是本机默认的 bash）—— 所以用 `${arr[@]+"${arr[@]}"}` 这个可移植写法，
+# 有元素时展开成参数、空数组时展开成空。这条坑让备份脚本在本机**从来没跑通过**。
+if ! "$MYSQLDUMP" -u "$DB_USER" ${DB_HOST_ARG[@]+"${DB_HOST_ARG[@]}"} --single-transaction --skip-lock-tables --no-tablespaces \
+  --routines --triggers --set-gtid-purged=OFF "$DB_NAME" \
+  > "$DB_BACKUP" 2>"$DB_ERR"; then
+  rm -f "$DB_BACKUP"
+  if grep -qi 'no space left on device\|ENOSPC' "$DB_ERR"; then
+    rm -f "$DB_ERR"
+    echo "✗ 数据库备份失败：**磁盘空间不足（ENOSPC）** —— 清理 $BACKUP_DIR 或扩容后重跑；半截文件已删除" >&2
+  else
+    echo "✗ 数据库备份失败（请检查 mysqldump 凭据）—— mysqldump 原始输出：" >&2
+    tail -n 3 "$DB_ERR" >&2
+    rm -f "$DB_ERR"
+  fi
+  exit 1
+fi
+rm -f "$DB_ERR"
 
-# 上传文件
-if [ -d "$UPLOAD_DIR" ]; then
+# 上传文件（SKIP_UPLOADS=1 时跳过：只备份数据库的场景，或测试里避免打包真实上传目录）
+if [ -n "${SKIP_UPLOADS:-}" ]; then
+  echo "ℹ 已按 SKIP_UPLOADS 跳过 uploads 备份"
+elif [ -d "$UPLOAD_DIR" ]; then
   UPLOAD_BACKUP="$BACKUP_DIR/xalor_uploads_$STAMP.tar.gz"
   if ! tar -czf "$UPLOAD_BACKUP" -C "$SERVER_DIR" uploads; then
     rm -f "$UPLOAD_BACKUP"
