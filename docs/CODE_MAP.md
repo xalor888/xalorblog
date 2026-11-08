@@ -709,5 +709,8 @@ test-gate-integrity      **元门禁**：每道门禁能让 build 变红、在�
 | 429 无退避信息 | 10 处 429 都没给 `Retry-After`，客户端只能立刻重试（越重试越限流） | `retryAfter()` + 10 处接线；`retryAfter.test.js` |
 | 上传总量无上限 | 单文件 5MB 管不住「一直传」；磁盘满后备份报「凭据错误」、整站 500 | `checkUploadQuota` / `dirSizeBytes` + 507 拒绝并删文件；`uploadQuota.test.js` |
 | `audit_logs` 无保留策略 | 两周 26,220 行，只随运行时长增长（后台分页/备份/导出越来越慢） | `scripts/prune-old-data.js`（默认 dry-run、`--apply` 需显式放行）；`dataLifecycle.test.js` |
+| `notifyMail` 零测试 | 未配置/收件人非法都会静默跳过；正文换行可注入 SMTP 命令；超长行被 Postfix 拒收 | `notifyMail.test.js`（17 条，假 nodemailer：TLS 强制、日志不泄漏收件人/正文、折行不切字） |
+| 健康探针语义 | `/live` 若查库，DB 抖动会引发重启循环；`/ready` 若不查库，流量会打到未就绪实例 | `health.test.js`（10 条：`/live` 断言 `db.raw` 零调用；`/ready` 503 形状） |
+| 点赞防刷并发 | `canLike` 是「读过期 → 写过期」两步，从未在并发下验证 | `likeGuard.test.js` 同步 10 连调只放行 1 次 |
 
 计数：离线套件 **79**、集成套件 **18**、构建门禁 **37**、`*.test.js` **90**。
