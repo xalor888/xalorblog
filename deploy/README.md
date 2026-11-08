@@ -109,6 +109,18 @@ sudo systemctl restart xalor-blog  # 重启
 `nginx-locations.inc` 里，两个 server 块 `include` 同一份，避免代理头漂移。
 **`proxy_set_header Host $host` 必须保留** —— 后端按 Host 派发主页版/博客版的 SEO 路由。
 
+### ⚠ `include` 的位置决定它有没有生效
+
+两份 include 文件的**上下文（context）不一样**，放错位置不会报错，只会静默失效：
+
+| 文件 | 必须放在 | 放错会怎样 |
+|---|---|---|
+| `nginx-locations.inc` | **`server { }` 块内**（每台 server 各一次） | 放在 `http { }` 里 → nginx 直接报 `location directive is not allowed here` 启动失败（这种还算好的） |
+| `nginx-realip-esa.conf` | **`http { }` 块内**（`server` 之外，全局一次） | 放进 `server { }` 里 → `set_real_ip_from` 只对该虚拟主机生效；更常见的是 `include` 被放在某个 server 内而另一个 server 没放，于是**一个域还原了真实 IP、另一个没有**，表现为「博客站封禁正常、主页站一封就全站 403」 |
+
+判断方法：`nginx -T | grep -n "real_ip_module\|set_real_ip_from"` 看它是否出现在**所有** server 之前。
+自检命令见 C 节。
+
 ```bash
 sudo cp nginx.conf.example /etc/nginx/sites-available/xalor.conf
 sudo cp nginx-locations.inc /path/to/xalorblog/deploy/    # 保持 include 路径与之一致

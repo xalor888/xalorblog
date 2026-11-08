@@ -1,5 +1,7 @@
 # Xalor 的小站
 
+> 代码的跨分区索引（模块地图、门禁清单、约定）在 [`docs/CODE_MAP.md`](docs/CODE_MAP.md)。
+
 Vue 3 + Express + MySQL 的前后端分离站点。**一套后端 + 一套后台，服务两个前端入口**：
 
 | 站点 | 入口 | 内容 |
@@ -43,9 +45,20 @@ cd web && npm install && npm run dev
 
 ```bash
 cd server
-npm test          # 不启服务的单元套件（sanitize / feed / requestGuard / likeGuard / notesCrypto / homeSummary）
-npm run test:all  # 需本机 MySQL 与已启动 API；Windows 路径见 test/run.js
+npm test          # 66 个离线套件 + WAF 模糊测试（零 DB、零端口；串行 50 秒左右）
+npm run test:all  # 16 个集成套件：需本机 MySQL 与已启动 API；⚠ 会清库
+npm run e2e       # 端到端冒烟：PoW → 票据 → X-Sig 签名 → 业务接口（只读，不碰库）
+npm run bench     # 观测：只读接口的 SQL 条数 / 耗时 / EXPLAIN（不是门禁）
 ```
+
+`npm run e2e` 自己起服务（随机端口）走完整信任链，12 条断言（含 4 条反向：
+无票据 / 伪造指纹 / 谜题重放 / 签名错误都必须被拒）。
+它覆盖的是离线链**结构上**够不到的部分 —— 票据签发、`X-Sig` 签名、CORS、PoW 难度自适应。
+连已在跑的服务用 `npm run e2e -- --port 3000`。
+
+`npm test` 是**离线链**：每个 `*.test.js` 都必须能在没有 MySQL、没有监听端口的情况下跑完。
+它们的共同前提是把 `process.env.DB_PASSWORD` 设成占位值（配置文件在 require 期就校验长度）。
+有两类东西它覆盖不到：HTTP 层（限流窗口、票据、CSP 头）与 DB 事务 —— 那些只在 `test:all` 里。
 
 `npm run test:all` 里含 `notes.test.js`：未持票访问手记被闸门拒、列表不出正文、
 详情按 `note:<id>` 分发密钥可解、点赞窗口 429、免票主页摘要字段白名单、
@@ -55,11 +68,18 @@ SEO 路由按 Host 派发（需 `.env` 配好 `HOME_SITE_HOST` 与 `ALLOWED_HOST
 cd web && npm run build   # 双入口构建，产出 dist/index.html 与 dist/home.html
 ```
 
-前端构建前会先跑 `npm run check:script-order`（`web/scripts/check-script-order.mjs`）：
-检查「顶层语句引用了后面才声明的 `const`/`let`/`class`」。这类问题 **构建期不报错**，
-只在运行时抛 `ReferenceError`（TDZ），且组件在 setup 抛错时整页会**静默渲染为空** ——
-表现和「路由没匹配上」一样，极难排查。本项目已真实踩过一次。
-该脚本会剥离注释与字符串以降低误报，并排除会变量提升的 `function`/`var`（提前引用合法）。
+前端构建前会先跑 **36 道门禁**（`npm run test:scripts` 跑同一批，去掉末尾的 `vite build`）。
+它们不是"测试套件"而是**构建门禁**：任一条失败即中断构建。全部零依赖、纯 Node、无浏览器。
+
+清单（顺序即执行顺序）见 [`docs/CODE_MAP.md` §6](docs/CODE_MAP.md) —— 元门禁 `test-gate-integrity`
+会检查它与 `package.json` 的 `build` 链**完全一致（含顺序）**，不一致就红。
+
+最早那道是 `check-script-order`：「顶层语句引用了后面才声明的 `const`/`let`/`class`」。
+这类问题 **构建期不报错**，只在运行时抛 `ReferenceError`（TDZ），且组件在 setup 抛错时
+整页会**静默渲染为空** —— 表现和「路由没匹配上」一样，极难排查。本项目已真实踩过一次。
+
+**每道门禁都要求带自检**（先证明规则能抓到真问题，再用它审代码）：
+一道不会红的门禁没有价值。元门禁会把没有自检的列出来。
 
 ## 安全边界（不要过度解读）
 
