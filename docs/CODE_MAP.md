@@ -692,3 +692,19 @@ test-gate-integrity      **元门禁**：每道门禁能让 build 变红、在�
 ### 15.5 计数现状
 
 离线套件 **74**、集成套件 **18**、构建门禁 **37**、`*.test.js` **85**。
+
+### 15.6 2026-11-08 第二轮（继续深挖）
+
+| 项 | 结论 / 改动 | 防线 |
+|---|---|---|
+| Q7 冗余索引 | `sessions.idx_sessions_jti`（被 PRIMARY 完全覆盖）、`visits.idx_visits_day`（被 `visits_day_unique` 覆盖）、`visit_uv.idx_visit_uv_day`（被 `(day,h)` **左前缀**覆盖）—— 三条都可删。更糟的是 `migrate.js` 一直在**新建**它们 | `redundantIndex.test.js`（含左前缀三例）、`migrateRun.test.js`（新库不得有这三条 + 覆盖索引列序） |
+| 基线成了门禁 | `bench-read-paths.js` 增加 BUDGET（冷/热 SQL 与体积）与 `--assert`；未登记用例即失败 | `npm run bench:assert`、`benchExplains.test.js` |
+| 基线的 SQL 是假的 | 手记那条 EXPLAIN 用的是 `order by id desc`（站点从不执行的语句），连续十几轮误报 filesort | `benchExplains.test.js` 校验 EXPLAIN 与路由排序键同形 |
+| SSRF 闸门可绕 | `2130706433` / `127.1` / `0x7f.0.0.1` / `0177.0.0.1` 全部被判成公网（URL 会归一化成 127.0.0.1） | `netGuard.test.js`【G】六种写法 + 公网对照 |
+| 出站跟随重定向 | 保存时校验过 base URL，但 `fetch` 默认 follow：公网地址 302 到 `169.254.169.254` 即可打内网 | `aiClient`×2 与 `aiModeration` 改 `redirect:'error'`；`outboundFetch.test.js` 枚举全部 7 处出站请求 |
+| `hitokoto` 降级不对称 | 只有 `catch` 回落缓存，上游非 2xx 直接 502 —— 有缓存也把引言丢掉 | `hitokoto.test.js`（12 条，含移位时钟触发过期缓存） |
+| `seed.js` 零测试 | 弱口令拒跑、口令哈希、二次运行幂等、不动既有内容 | `seedSafety.test.js`（18 条，探针 MySQL，无探针显式跳过） |
+| 备份脚本 | 保留 14 份的策略此前没验 | `backupFailure.test.js` 增至 23 条（造 17 份旧备份，断言删最旧 4 份） |
+| `asyncGuard` 扫描器 | 500 字符窗口会误报；更糟：注释里出现 `try {` 会被当成有保护 | 窗口 1200 + 剥注释 + 注释欺骗自检 |
+
+计数：离线套件 **74**、集成套件 **18**、构建门禁 **37**、`*.test.js` **85**。

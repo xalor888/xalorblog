@@ -101,6 +101,45 @@ ok('SKIP_UPLOADS=1 时跳过 uploads 打包', () => {
   assert.ok(!good.files.some((f) => f.includes('uploads')), `不该有 uploads：${good.files.join(', ')}`);
 });
 
+console.log('\n【C2. 保留策略：只留最近 14 份，且删的是最旧的】');
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bk-retain-'));
+  const dump = makeFakeDump(tmp, 'ok');
+  const backups = path.join(tmp, 'backups');
+  fs.mkdirSync(backups, { recursive: true });
+  // 造 17 份「旧备份」，时间戳从 20261001 起递增（文件名定宽，字典序 = 时间序）
+  const olds = [];
+  for (let i = 1; i <= 17; i++) {
+    const name = `xalor_db_202610${String(i).padStart(2, '0')}_120000.sql`;
+    fs.writeFileSync(path.join(backups, name), '-- old');
+    olds.push(name);
+  }
+  const r = spawnSync('bash', [SCRIPT, backups], {
+    env: { ...process.env, MYSQLDUMP: dump, DB_USER: 'u', DB_NAME: 'd', DB_PASS: '', SKIP_UPLOADS: '1' },
+    encoding: 'utf8',
+  });
+  const after = fs.readdirSync(backups).filter((f) => f.startsWith('xalor_db_') && f.endsWith('.sql')).sort();
+  ok('退出码 0', () => assert.strictEqual(r.status, 0, (r.stderr || '').slice(0, 160)));
+  ok(`总份数被截到 14（实际 ${after.length}）`, () => assert.strictEqual(after.length, 14, after.join(', ')));
+  ok('保留的是最新的：刚生成那份在', () => {
+    const newest = after.filter((f) => !olds.includes(f));
+    assert.strictEqual(newest.length, 1, `新文件数 ${newest.length}`);
+  });
+  ok('删掉的都是最旧的（前 4 份应当消失）', () => {
+    const removed = olds.filter((f) => !after.includes(f));
+    assert.deepStrictEqual(removed.sort(), olds.slice(0, 4).sort(), `实际删了 ${removed.length} 份`);
+  });
+  ok('env 备份也各留 14 份（同一套策略）', () => {
+    const envs = fs.readdirSync(backups).filter((f) => f.startsWith('env_example_'));
+    assert.ok(envs.length <= 14, `env 备份 ${envs.length} 份`);
+  });
+  ok('自检：定宽时间戳的字典序确实等于时间序', () => {
+    const names = ['xalor_db_20261001_120000.sql', 'xalor_db_20261002_120000.sql', 'xalor_db_20261017_120000.sql'];
+    assert.deepStrictEqual([...names].sort(), names);
+  });
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
 console.log('\n【D. 写盘之前的空间预检】');
 {
   const src = fs.readFileSync(SCRIPT, 'utf8');
