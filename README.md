@@ -68,7 +68,7 @@ SEO 路由按 Host 派发（需 `.env` 配好 `HOME_SITE_HOST` 与 `ALLOWED_HOST
 cd web && npm run build   # 双入口构建，产出 dist/index.html 与 dist/home.html
 ```
 
-前端构建前会先跑 **37 道门禁**（`npm run test:scripts` 跑同一批，去掉末尾的 `vite build`）。
+前端构建前会先跑 **38 道门禁**（`npm run test:scripts` 跑同一批，去掉末尾的 `vite build`）。
 它们不是"测试套件"而是**构建门禁**：任一条失败即中断构建。全部零依赖、纯 Node、无浏览器。
 
 清单（顺序即执行顺序）见 [`docs/CODE_MAP.md` §6](docs/CODE_MAP.md) —— 元门禁 `test-gate-integrity`

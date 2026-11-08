@@ -15,6 +15,47 @@ const request = axios.create({
   timeout: 20000,
 });
 
+/**
+ * 在途 GET 的取消能力。
+ *
+ * 为什么需要：切路由（或连点两个分类）时，前一个页面的请求还在路上，
+ * 它的响应回来后会**覆盖**新页面的列表状态 —— 用户看到的是上一页的内容配上新标题，
+ * 或列表闪烁两次。这类问题在慢网络/大分页时最明显，而本地开发几乎看不到。
+ *
+ * 只取消 GET：写请求一旦发出必须走完（取消会产生「服务端已写入但前端不知道」的
+ * 半成功状态，比重复提交更难处理）。
+ *
+ * 取消是**静默**的：被取消的请求不弹 toast、不重试、不触发 401 跳转。
+ */
+const inflightGets = new Map();
+let cancelSeq = 0;
+
+function registerAbort(config) {
+  const method = (config.method || 'get').toLowerCase();
+  if (method !== 'get') return;
+  if (typeof AbortController === 'undefined') return;
+  const ac = new AbortController();
+  cancelSeq += 1;
+  const key = `g${cancelSeq}`;
+  inflightGets.set(key, ac);
+  config.signal = ac.signal;
+  config._abortKey = key;
+}
+
+function releaseAbort(config) {
+  if (config && config._abortKey) inflightGets.delete(config._abortKey);
+}
+
+/** 取消所有在途 GET（路由切换 / 手动刷新列表时调用）。返回取消的数量。 */
+export function cancelInflightGets(reason = 'navigate') {
+  const n = inflightGets.size;
+  for (const ac of inflightGets.values()) {
+    try { ac.abort(reason); } catch (e) { /* 忽略：浏览器差异 */ }
+  }
+  inflightGets.clear();
+  return n;
+}
+
 /** 请求签名：X-Sig = HMAC(key=ticket, method|path|ts|bodyHash|jti|nonce)
  *  唯一实现在 utils/requestSignature.js（与 signedFetch 共用同一份，
  *  别再在本文件里抄第二份 —— 抄两份的结果是口径悄悄分叉、整站 403）。
@@ -30,6 +71,7 @@ function signRequest(config) {
 
 // 请求拦截：附加票据 + 指纹 + JWT + 时间戳 + 签名
 request.interceptors.request.use(async (config) => {
+  registerAbort(config);
   await ensurePass();
   const fp = await getFingerprint();
   config.headers['X-Fp'] = fp;
@@ -114,6 +156,7 @@ function toastOnce(kind, message) {
 
 request.interceptors.response.use(
   async (response) => {
+    releaseAbort(response.config);
     const res = response.data;
     if (res.code !== 0) {
       if (!response.config?.silent) toastOnce('error', res.message || '请求失败');
@@ -144,6 +187,14 @@ request.interceptors.response.use(
     return data;
   },
   async (error) => {
+    releaseAbort(error.config);
+    // 被主动取消的 GET：静默失败（不 toast、不重试、不跳转）。
+    // 用 code 判断而非 message —— 各浏览器取消原因文案不同。
+    if (error.code === 'ERR_CANCELED' || error.name === 'CanceledError') {
+      const canceled = new Error('请求已取消');
+      canceled.canceled = true;
+      return Promise.reject(canceled);
+    }
     const status = error.response?.status;
     const message = error.response?.data?.message || error.message || '网络错误';
     const isGateError = status === 403 && /通行证|访问被拒绝|安全通道|请求来源不匹配|通行证校验失败|需要重新验证/.test(message);

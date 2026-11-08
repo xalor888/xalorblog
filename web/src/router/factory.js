@@ -11,6 +11,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
 import { getAdminPath, getCachedAdminPath, refreshAdminPath } from '@/utils/adminPath';
 import { getAuthToken } from '@/utils/authSession';
+import { cancelInflightGets } from '@/api';
 
 export function createAppRouter({ routes, siteName, notFoundName }) {
   const router = createRouter({
@@ -45,6 +46,11 @@ export function createAppRouter({ routes, siteName, notFoundName }) {
   });
 
   router.beforeEach(async (to) => {
+    // 切路由的第一件事：取消上一个页面还在路上的 GET。
+    // 否则旧响应回来会覆盖新页面的状态（列表闪一下旧内容、标题与内容对不上）。
+    // 只取消 GET —— 写请求必须走完，详见 api/index.js 里 cancelInflightGets 的说明。
+    cancelInflightGets('navigate');
+
     const adminKey = to.params.adminKey;
     if (!adminKey) {
       document.title = to.meta.title ? `${to.meta.title} · ${siteName}` : siteName;
