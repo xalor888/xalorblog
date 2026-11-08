@@ -2068,6 +2068,25 @@ router.post('/upload', (req, res, next) => {
       }
       // 释放引用，避免 Buffer 跟着请求对象在后续中间件里多活一会儿
       req.file.rawBytes = null;
+
+      // 总量配额：单文件 5MB 只管单次，管不住「一直传」—— 磁盘写满之后备份失败、
+      // 数据库写不进去、整站 500，而报错现象会把人引向「凭据」这种错误方向。
+      // 配额默认 1024MB，可用 UPLOAD_QUOTA_MB 调整；超限时**删掉刚写入的文件**再拒绝。
+      try {
+        const quotaBytes = Number(process.env.UPLOAD_QUOTA_MB || 1024) * 1024 * 1024;
+        const { checkUploadQuota, dirSizeBytes } = require('../utils/uploads');
+        const justWritten = fs.statSync(req.file.path).size;
+        const usedBefore = Math.max(0, dirSizeBytes(config.uploadDir) - justWritten);
+        const verdict = checkUploadQuota(usedBefore, quotaBytes, justWritten);
+        if (!verdict.allowed) {
+          fs.unlinkSync(req.file.path);
+          return fail(res, `上传空间已满（已用 ${(verdict.used / 1048576).toFixed(0)}MB / 上限 ${(quotaBytes / 1048576).toFixed(0)}MB），请先清理图片`, 507);
+        }
+      } catch (e) {
+        // 配额检查本身出错不阻断上传（宁可能写满，也不要把正常上传全拒掉）
+        console.warn('[upload] 配额检查失败，已跳过：', e && e.message);
+      }
+
       return ok(res, { url: `/uploads/${req.file.filename}`, filename: req.file.filename }, '上传成功');
     });
   });

@@ -108,6 +108,61 @@ function extractUploadRefs(text, into) {
  */
 const UPLOAD_REF_SQL_LIKE = '%/uploads/%';
 
+/**
+ * 域名配额判定（纯函数，不读盘）：`used` 是目录当前占用，`quota` 是上限（字节）。
+ *
+ * 为什么需要：上传是唯一「用户能把磁盘写满」的入口 —— 单文件 5MB 上限只管单次，
+ * 管不了总量。磁盘写满之后：备份脚本失败、数据库无法写入、整个站点 500，
+ * 而现象（「备份失败：请检查凭据」）会把人引到完全错误的方向。
+ *
+ * 返回 { allowed, used, quota, remaining } —— `allowed` false 时调用方应删掉刚写入的文件。
+ * 边界：配额 0 或负数视为「未设置」（不限制）；刚好等于配额允许（不因为多一个字节就全拒）。
+ */
+function checkUploadQuota(used, quota, incoming = 0) {
+  const q = Number(quota) || 0;
+  const u = Number(used) || 0;
+  const inc = Number(incoming) || 0;
+  if (q <= 0) return { allowed: true, used: u, quota: 0, remaining: Infinity };
+  const remaining = q - u - inc;
+  return { allowed: remaining >= 0, used: u, quota: q, remaining };
+}
+
+/** 目录占用（字节，只统计顶层与一层子目录里的普通文件；不跟随符号链接） */
+function dirSizeBytes(dir, maxEntries = 20000) {
+  let total = 0;
+  let entries = 0;
+  const statSafe = (p) => {
+    try {
+      const st = fs.lstatSync(p);
+      return st.isFile() ? st.size : 0;
+    } catch (e) {
+      return 0;
+    }
+  };
+  let top;
+  try {
+    top = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (e) {
+    return 0;
+  }
+  for (const e of top) {
+    if (++entries > maxEntries) break;
+    const p = path.join(dir, e.name);
+    if (e.isFile()) { total += statSafe(p); continue; }
+    if (!e.isDirectory()) continue;
+    let sub;
+    try {
+      sub = fs.readdirSync(p, { withFileTypes: true });
+    } catch (err) { continue; }
+    for (const s of sub) {
+      if (++entries > maxEntries) break;
+      if (s.isFile()) total += statSafe(path.join(p, s.name));
+    }
+  }
+  return total;
+}
+
 module.exports = {
   resolveUploadPath, listUploadFiles, extractUploadRefs, UPLOAD_REF_SQL_LIKE,
+  checkUploadQuota, dirSizeBytes,
 };

@@ -44,7 +44,10 @@ function fetchSites() {
     lines.forEach((line, i) => {
       if (!/await fetch\(|= fetch\(/.test(line)) return;
       const window = lines.slice(i, i + 16).join('\n');
-      sites.push({ file: path.relative(SRC, file), line: i + 1, window, urlLine: line.trim() });
+      // 用「文件 + 目标表达式」作为身份，而不是行号 —— 行号会随无关改动漂移，
+      // 那种漂移会让门禁在完全无关的提交里变红（它只是想说「新增了出站请求」）。
+      const expr = (line.split('fetch(')[1] || '').replace(/^\s*/, '').split(/[,\n]/)[0].replace(/`/g, '').trim().slice(0, 46);
+      sites.push({ file: path.relative(SRC, file), line: i + 1, window, urlLine: line.trim(), id: `${path.relative(SRC, file)}|${expr}` });
     });
   }
   return sites;
@@ -86,22 +89,27 @@ console.log('\n【B. 固定地址：允许，但必须写死成 https:// 字面�
 
 console.log('\n【C. 清单与扫描结果一致（新增出站请求必须显式登记）】');
 {
-  const KNOWN = [
-    'utils/aiClient.js:172',
-    'utils/aiClient.js:254',
-    'utils/aiModeration.js:209',
-    'utils/webSearch.js:46',
-    'routes/admin.js:2759',
-    'routes/admin.js:2842',
-    'routes/hitokoto.js:34',
+  // 用「文件 + 目标表达式前缀」标识，而不是行号或完整字符串：
+  //   行号会随无关改动漂移；完整字符串里带引号/模板串，写进清单反而脆。
+  const KNOWN_TARGETS = [
+    'utils/aiClient.js|${ai.baseUrl}',
+    'utils/aiModeration.js|${ai.baseUrl',
+    "utils/webSearch.js|'https",
+    'routes/admin.js|https://commons',
+    'routes/admin.js|raw',
+    'routes/hitokoto.js|UPSTREAM',
   ];
-  const actual = sites.map((s) => `${s.file}:${s.line}`);
-  ok(`出站请求总数仍是 ${KNOWN.length}（新增/删除请同步本文件）`, () => {
-    assert.strictEqual(actual.length, KNOWN.length, `实际 ${actual.length} 处：${actual.join(', ')}`);
+  const ids = sites.map((s) => s.id);
+  ok(`出站请求总数仍是 ${sites.length}（新增/删除请同步本文件）`, () => {
+    assert.strictEqual(sites.length, 7, `实际 ${sites.length} 处：${ids.join(', ')}`);
   });
-  ok('每一处都在已知清单里', () => {
-    const unknown = actual.filter((a) => !KNOWN.includes(a));
+  ok('每一处目标都登记过（按「文件 + 目标表达式」比对，不按行号）', () => {
+    const unknown = ids.filter((id) => !KNOWN_TARGETS.some((k) => id.startsWith(k)));
     assert.deepStrictEqual(unknown, [], `未登记的出站请求：${unknown.join(', ')}`);
+  });
+  ok('清单里每个目标都能在源码里找到对应调用（防止清单变成化石）', () => {
+    const missing = KNOWN_TARGETS.filter((k) => !ids.some((id) => id.startsWith(k)));
+    assert.deepStrictEqual(missing, [], `清单里这些目标已经不存在：${missing.join(', ')}`);
   });
 }
 
