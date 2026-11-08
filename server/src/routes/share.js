@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const { etagMatches } = require('../utils/etag');
 const db = require('../db');
 const config = require('../config');
 const { getAllSettings } = require('../utils/settings');
@@ -39,7 +40,9 @@ function conditionalSendHtml(req, res, html) {
    * set 会把它覆盖掉（feed.js 的注释里也记过这一条）。
    */
   res.append('Vary', 'Host');
-  if (req.headers['if-none-match'] === etag) {
+  // 弱比较 + 多值 + `*`：nginx/CDN 常把强 ETag 改写成 `W/"..."`，
+  // 严格相等会让这些请求全部错过 304（订阅器每次轮询都白重建整页）。详见 utils/etag.js。
+  if (etagMatches(req.headers['if-none-match'], etag)) {
     return res.status(304).end();
   }
   res.set('Content-Type', 'text/html; charset=utf-8');
@@ -120,7 +123,11 @@ router.get('/share/:slug', async (req, res) => {
       || toAbs(settings.og_image)
       || toAbs(settings.avatar)
       || siteUrl + '/og-image.png';
-    const siteName = esc(settings.site_name || 'Xalor的小站');
+    // ⚠ 两份站点名必须分开：siteName 已转义，只能**直接插进 HTML**；
+    // 任何需要再拼接后再 esc 的地方必须用 rawSiteName，否则 & 会变成 &amp;amp;
+    // （转义两次的经典症状：页面显示 "A &amp; B" 而不是 "A & B"）。
+    const rawSiteName = settings.site_name || 'Xalor的小站';
+    const siteName = esc(rawSiteName);
 
     // 结构化数据（BlogPosting：富摘要/知识图谱收录；JSON.stringify 保证标题等特殊字符安全嵌入）
     const authorName = settings.author || settings.nickname || settings.site_name || 'Xalor的小站';
@@ -209,22 +216,64 @@ router.get('/share/:slug', async (req, res) => {
  * 这里给静态页同样提供一个**服务端可渲染、有完整 meta 的真实地址**，
  * sitemap 改指向它，搜索引擎才拿得到不同内容。
  */
+// `list` 表示这一页应该在正文里列出真实条目。
+//
+// 为什么需要：这个分享页原本 body 里只有一句描述 —— 对搜索引擎来说是**薄内容 + 0 秒跳转**，
+// 通常被当成 doorway page 不给排名。而 sitemap 里 11 条静态页全指着它，
+// 等于 sitemap 交了但一条都收不进去。
+// 现在 articles / archive 两页会列出最近 30 篇文章的**标题 + 真实 URL**（`/api/share/:slug`），
+// 搜索抓取器至少能读到实际内容。
+//
+// notes / tags 两页**故意不列**：手记没有 `/share/:slug` 这类可抓取的真实地址，
+// 给 hash URL 等于把「丢 # 之后」的老问题换个地方重演。这两页继续只靠 meta。
 const STATIC_PAGES = {
-  '': { title: '首页', desc: '记录技术、生活与思考的个人博客' },
-  archive: { title: '归档', desc: '按时间浏览全部文章' },
+  '': { title: '首页', desc: '记录技术、生活与思考的个人博客', list: 'articles' },
+  archive: { title: '归档', desc: '按时间浏览全部文章', list: 'archive' },
   tags: { title: '标签云', desc: '全部标签，按文章数量排序' },
   about: { title: '关于', desc: '关于我，以及这个站点' },
   bookmarks: { title: '我的收藏', desc: '我在本站收藏的文章' },
   links: { title: '友情链接', desc: '友链与申请方式' },
   messages: { title: '留言板', desc: '欢迎在这里留言' },
-  articles: { title: '全部文章', desc: '按分类、标签或关键词筛选的博客文章列表' },
+  articles: { title: '全部文章', desc: '按分类、标签或关键词筛选的博客文章列表', list: 'articles' },
   notes: { title: '手记', desc: '短一点的记录与想法' },
 };
+
+/**
+ * 分享页要列的条目（只服务抓取器，所以字段极少：标题 + 相对路径）。
+ * 60 秒模块级缓存：og 抓取器会对同一 URL 反复抓，没必要每次都查库。
+ */
+const LIST_TTL = 60 * 1000;
+const listCache = new Map(); // kind -> { at, items }
+
+async function fetchList(kind) {
+  const hit = listCache.get(kind);
+  if (hit && Date.now() - hit.at < LIST_TTL) return hit.items;
+  let items = [];
+  if (kind === 'articles' || kind === 'archive') {
+    const rows = await db('articles')
+      .where('status', 'published')
+      .orderBy([{ column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }])
+      .limit(30)
+      .select('title', 'slug');
+    items = rows.map((r) => ({ title: String(r.title || ''), path: `/share/${encodeURIComponent(r.slug)}` }));
+  }
+  listCache.set(kind, { at: Date.now(), items });
+  return items;
+}
 
 router.get('/share-page/:page?', async (req, res) => {
   try {
     const key = String(req.params.page || '').replace(/\/$/, '');
-    const page = STATIC_PAGES[key];
+    // ⚠ 必须用 hasOwnProperty 而不是直接索引。
+    //
+    // `STATIC_PAGES` 是对象字面量，它继承 Object.prototype —— 于是
+    // `STATIC_PAGES['constructor']`、`['toString']`、`['__proto__']`、`['valueOf']`
+    // 全都返回**真值**（原型链上的函数），`if (!page)` 不会触发 404。
+    // 实测 `/api/share-page/constructor` 返回 200，页面标题渲染成 "undefined - 站点名"，
+    // 描述也是 undefined，还带着指向自己的 canonical —— 搜索引擎完全可能把这个垃圾页收进索引。
+    //
+    // 这类页面数量有限但可枚举（原型链上所有非空属性名），而且每个都是一条低质收录页。
+    const page = Object.prototype.hasOwnProperty.call(STATIC_PAGES, key) ? STATIC_PAGES[key] : null;
     if (!page) {
       // 与文章分享页的 404 保持一致：完整 HTML + noindex + h1。
       // 原来这里只 send('页面不存在') —— 裸文本，
@@ -241,18 +290,42 @@ router.get('/share-page/:page?', async (req, res) => {
     const siteUrl = settings.site_url
       ? String(settings.site_url).replace(/\/+$/, '')
       : `${req.protocol}://${req.get('host')}`;
-    const siteName = esc(settings.site_name || 'Xalor的小站');
+    // 与文章分享页同一约定：rawSiteName 给「还要再 esc 一次」的拼接用
+    const rawSiteName = settings.site_name || 'Xalor的小站';
+    const siteName = esc(rawSiteName);
     const toAbs = (p) => (!p ? '' : (String(p).startsWith('http') ? String(p) : siteUrl + String(p)));
     // 与文章分享页同一条回退链，避免两处配图不一致
     const image = toAbs(settings.og_image) || toAbs(settings.avatar) || `${siteUrl}/og-image.png`;
 
     // 带 query 的规范地址：分类页各自是不同内容，不能全都指向同一个 URL
     //（否则 4 个分类在 sitemap 里是 1 条重复记录）
+    //
+    // 前缀必须走 config.apiPrefix 而不是写死 `/api`：API_PREFIX 是部署项，
+    // 一改成随机串（config.js 注释里就建议生产改成随机值），写死的 `/api`
+    // 会让 canonical / og:url 全部指向 404 —— 搜索引擎会把整份 sitemap 判为死链。
+    // feed.js 里所有对外 URL 早已用 apiPrefix，这里是漏网的一处。
     const qs = req.query.category ? `?category=${encodeURIComponent(String(req.query.category))}` : '';
-    const selfUrl = `${siteUrl}/api/share-page${key ? '/' + key : ''}${qs}`;
+    const selfUrl = `${siteUrl}${config.apiPrefix}/share-page${key ? '/' + key : ''}${qs}`;
     const spaUrl = `${siteUrl}/#/${key}`;
-    const catLabel = req.query.category ? ` · ${String(req.query.category)}` : '';
-    const fullTitle = `${page.title}${catLabel} - ${siteName}`;
+    // ⚠ category 来自 query 串，是**读者可控**的。它曾经未经 esc() 直接拼进
+    // `<title>` / og:title / `<h1>` —— 实测 `?category=%22` 会原样产出
+    // `content="全部文章 · " - 小站"`，一个双引号就能闭合属性。
+    // WAF 目前会拦 `<script`，但那是**第二道**防线，不能当转义用：
+    // 换一种不含正则特征的载荷（或调高了 WAF 阈值）就直接穿透。
+    // 这里同时保留一份已转义的值用于任何输出位置。
+    const rawCatLabel = req.query.category ? ` · ${String(req.query.category)}` : '';
+    const catLabel = esc(rawCatLabel);
+    // 这里必须用 rawSiteName：siteName 已经 esc 过，再 esc 一次会让 `&` → `&amp;amp;`
+    // （实测站点名写成「A & B」时，无分类的分享页标题会显示成 "A &amp; B - A & B 的小站"）。
+    const fullTitle = esc(`${page.title}${rawCatLabel} - ${rawSiteName}`);
+
+    // 正文列表：给抓取器的真实内容。空列表时不留空 <ul>。
+    const listItems = page.list ? await fetchList(page.list) : [];
+    const listHtml = listItems.length
+      ? '<ul style="margin:0 0 1.5rem;padding-left:1.1rem;color:#4a463f">\n'
+        + listItems.map((it) => `    <li><a href="${esc(siteUrl + config.apiPrefix + it.path)}" style="color:#8a3b28">${esc(it.title)}</a></li>`).join('\n')
+        + '\n  </ul>'
+      : '';
 
     const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -280,8 +353,9 @@ router.get('/share-page/:page?', async (req, res) => {
      禁 JS / 拦 refresh / 慢网络时，这里就是用户唯一能看到的东西。 -->
 <main style="max-width:40rem;margin:12vh auto;padding:0 1.25rem;font:16px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#1a1814;background:#fff">
   <p style="font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:#6b6456;margin:0 0 .5rem">${siteName}</p>
-  <h1 style="font-size:1.6rem;line-height:1.3;margin:0 0 .75rem">${esc(page.title)}${esc(catLabel)}</h1>
+  <h1 style="font-size:1.6rem;line-height:1.3;margin:0 0 .75rem">${esc(page.title)}${catLabel}</h1>
   <p style="color:#4a463f;margin:0 0 1.5rem">${esc(page.desc)}</p>
+${listHtml}
   <p style="margin:0">
     <a href="${spaUrl}" style="display:inline-block;padding:.6rem 1.1rem;border-radius:8px;background:#bb4732;color:#fff;text-decoration:none;font-weight:600">进入站点</a>
   </p>
@@ -298,5 +372,21 @@ router.get('/share-page/:page?', async (req, res) => {
     return res.status(500).send('生成分享页失败');
   }
 });
+
+// 供基准脚本在每轮测量前清掉列表缓存（否则「冷路径」测到的是缓存命中）
+router.clearShareListCache = () => listCache.clear();
+
+/**
+ * 静态页的 key 清单（给 sitemap 用）。
+ *
+ * 为什么导出而不是让 feed.js 再写一遍：那两个地方原本各有一份硬编码列表，
+ * 而 share.js 有 9 项、feed.js 只有 7 项 —— **`articles` 从来没进过 sitemap**。
+ * 分类变体 `?category=xxx` 都列了，偏偏无分类的列表页没列，而它覆盖的文章最全。
+ * 导出后两边不可能再漂移（有断言钉着）。
+ *
+ * `notes` 也在这里，但 feed.js 需要特殊处理它（有独立的 lastmod 逻辑且只在
+ * 有已发布手记时才输出），所以调用方要显式排除。
+ */
+router.STATIC_PAGE_KEYS = Object.freeze(Object.keys(STATIC_PAGES));
 
 module.exports = router;

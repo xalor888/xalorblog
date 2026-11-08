@@ -170,6 +170,9 @@ const RULE_GROUPS = {
   MISC: MISC_PATTERNS,
 };
 
+// ⚠ 不要硬编码完整分组列表！新增组会被漏在豁免之外。
+const ALL_GROUPS = Object.freeze(Object.keys(RULE_GROUPS));
+
 /** 规则索引（安全中心展示/禁用 + 测试器） */
 const RULE_INDEX = {};
 for (const [group, rules] of Object.entries(RULE_GROUPS)) {
@@ -182,25 +185,18 @@ for (const [group, rules] of Object.entries(RULE_GROUPS)) {
  * 保留 TRAVERSAL 检测只需要从这里删掉 'TRAVERSAL'，不用改引擎。
  * 嵌套子对象不受豁免影响（防把载荷塞进豁免键的嵌套对象绕过）。 */
 const PARAM_EXEMPT_GROUPS = {
-  content: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  about_content: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  title: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  summary: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  description: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  name: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  site_name: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  site_desc: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  announcement: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  footer: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  social_github: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  social_weibo: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  social_email: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  avatar: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  // 分类主题色（管理端专用，前端 hex 校验；值形如 #123456）
-  color: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  // 安全中心解封目标 IP（管理端专用；IPv6 回环 ::1 会被 SSRF 模式误伤）
-  ip: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
-  form_token: ['SQL', 'XSS', 'TRAVERSAL', 'CMD', 'SSRF', 'MISC'],
+  content: ALL_GROUPS,
+  about_content: ALL_GROUPS,
+  title: ALL_GROUPS,
+  summary: ALL_GROUPS,
+  description: ALL_GROUPS,
+  name: ALL_GROUPS,
+  site_name: ALL_GROUPS,
+  site_desc: ALL_GROUPS,
+  announcement: ALL_GROUPS,
+  footer: ALL_GROUPS,
+  social_github: ALL_GROUPS,
+  social_weibo: ALL_GROUPS,
 };
 
 /** body 中视为「URL 形态」的字段名（SSRF 规则只对这些字段在 body 面生效） */
@@ -258,6 +254,7 @@ const HONEYPOT_PATHS = [
 module.exports = {
   SEVERITY_SCORE,
   RULE_GROUPS,
+  ALL_GROUPS,
   RULE_INDEX,
   PARAM_EXEMPT_GROUPS,
   URL_FIELD_RE,

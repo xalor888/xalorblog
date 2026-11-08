@@ -13,6 +13,7 @@
  *
  * 用法：node test/cacheInvalidation.test.js
  */
+const { stripCommentLines } = require('./helpers/sourceText');
 const fs = require('fs');
 const path = require('path');
 
@@ -30,8 +31,8 @@ function assert(name, cond, extra = '') {
   }
 }
 
-const adminSrc = fs.readFileSync(path.join(__dirname, '../src/routes/admin.js'), 'utf8');
-const statsSrc = fs.readFileSync(path.join(__dirname, '../src/routes/stats.js'), 'utf8');
+const adminSrc = stripCommentLines(fs.readFileSync(path.join(__dirname, '../src/routes/admin.js'), 'utf8'));
+const statsSrc = stripCommentLines(fs.readFileSync(path.join(__dirname, '../src/routes/stats.js'), 'utf8'));
 
 console.log('=== stats.js：提供失效入口 ===');
 assert('导出了 invalidateReadingCache', /module\.exports\.invalidateReadingCache\s*=/.test(statsSrc));

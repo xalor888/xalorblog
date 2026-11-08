@@ -32,6 +32,17 @@ function sessionUnavailableError() {
 async function signToken(user, req) {
   const jti = require('crypto').randomBytes(12).toString('hex');
   const fp = String(req.headers['x-fp'] || '').slice(0, 128);
+  /**
+   * 指纹是 token 的强绑定维度（authRequired 每次请求都要求与签发时一致）。
+   * 签发时若为空或格式不对，签出来的 token 在**下一个请求**就会被判
+   * 「登录设备发生变化」——用户拿到的是一个必然失效的凭证，而错误现场已经跑远。
+   * 这里提前失败，把问题留在登录这一步暴露。
+   */
+  if (!/^[a-f0-9]{64}$/i.test(fp)) {
+    const err = new Error('设备指纹缺失或不合法');
+    err.code = 'FP_INVALID';
+    throw err;
+  }
   const expiresIn = config.jwt.expiresIn;
   const token = jwt.sign(
     {

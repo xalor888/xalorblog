@@ -16,6 +16,7 @@
 
 const config = require('../config');
 const { getAllSettings } = require('./settings');
+const { isPrivateUrl } = require('./netGuard');
 
 const FALLBACK_BASE = 'https://api.openai.com/v1';
 const FALLBACK_MODEL = 'gpt-4o-mini';
@@ -23,12 +24,38 @@ const FALLBACK_MODEL = 'gpt-4o-mini';
 const TIMEOUT_MS = 90000;
 
 /** 地址可用性：生产只允许 https（密钥与正文都不走明文，也杜绝指向内网的 SSRF 链）；
- *  非生产额外放行本机 http —— 本地对接本地模型网关（如自建的 OpenAI 兼容网关）调试用。 */
+ *  非生产额外放行**本机** http —— 本地对接本地模型网关（如自建的 OpenAI 兼容网关）调试用。
+ *
+ * ⚠ 这里的白名单是**逐字面匹配**，不是「私有网段一律放行」：
+ *   `192.168.x.x` / `10.x.x.x` / `172.16-31.x.x` 即使在开发环境也不放行。
+ *   理由：base URL 来自后台设置表，一旦允许内网地址，被改表就等于拿到一个
+ *   「由服务器发起、可打内网」的请求通道（SSRF）—— 而这条链路的响应会被写进
+ *   文章预览，攻击者能直接读到内网服务的内容。
+ *
+ * 本机回环的三种写法都要认：`127.0.0.1` / `localhost` / `[::1]`。
+ * 漏掉 IPv6 回环的话，本地网关监听在 `::1` 时（很多容器/新系统的默认）会连不上，
+ * 而错误信息只会是「AI 不可用」，排查方向完全不指向这里。
+ */
 function isUsableBase(url) {
-  if (/^https:\/\//i.test(url)) return true;
-  if (process.env.NODE_ENV !== 'production' && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(url)) {
+  const u = String(url || '').trim();
+  if (!u) return false;
+
+  // ① 开发环境的**本机回环**白名单：http/https 都放行，方便对接本地模型网关。
+  //    必须排在 ② 之前 —— 127.0.0.1 本身是私有地址，顺序反了就永远进不来。
+  const isDev = process.env.NODE_ENV !== 'production';
+  if (isDev && /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/i.test(u)) {
     return true;
   }
+
+  // ② 私有/保留 IP 字面量：**不论协议**一律拒绝。
+  //    这是 SSRF 的正面防线 —— 只校验「必须是 https」是不够的，
+  //    `https://192.168.1.10/v1` 协议完全合法，但它指向内网。
+  //    域名形式（internal.corp.local）不解析，靠网络层隔离兜（见 utils/netGuard.js 的说明）。
+  if (isPrivateUrl(u)) return false;
+
+  // ③ 其余 https 放行
+  if (/^https:\/\//i.test(u)) return true;
+
   return false;
 }
 
@@ -248,4 +275,4 @@ async function chatOnce({ messages, maxTokens = 512 }) {
   }
 }
 
-module.exports = { getAiConfig, streamChat, chatOnce };
+module.exports = { getAiConfig, streamChat, chatOnce, isUsableBase };

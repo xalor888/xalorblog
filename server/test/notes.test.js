@@ -166,8 +166,13 @@ async function suite() {
   if (homeMap.status === 403) {
     console.log('  ~ 跳过派发断言：本机 ALLOWED_HOSTS 未包含 xalor.cn（见 server/.env.example）');
   } else {
-    assert('主页域 sitemap 出手记', homeMap.status === 200 && homeMap.raw.includes('#/notes'), `status=${homeMap.status}`);
-    assert('博客域 sitemap 不出手记', blogMap.status === 200 && !blogMap.raw.includes('#/notes'), `status=${blogMap.status}`);
+    // 断言用真实分享路径，不是 `#/notes`。
+    // sitemap 原先给静态页写的是 hash URL（`/#/notes`），而搜索引擎会丢弃 `#` 之后的部分，
+    // 整份 sitemap 于是全部指向首页。commit 3648177 把它换成了服务端可渲染的
+    // `/api/share-page/notes`，但这条断言没跟着改，之后一直红着 ——
+    // 它锁的不是「手记有没有进 sitemap」，而是「URL 是不是 hash 形式」，正好锁反了。
+    assert('主页域 sitemap 出手记', homeMap.status === 200 && homeMap.raw.includes('/share-page/notes'), `status=${homeMap.status}`);
+    assert('博客域 sitemap 不出手记', blogMap.status === 200 && !blogMap.raw.includes('/share-page/notes'), `status=${blogMap.status}`);
     const homeRobots = await c.req('GET', '/robots.txt', { headers: { Host: 'xalor.cn' }, silent: true });
     assert('主页域 robots 是主页版', homeRobots.raw.includes('个人主页'), homeRobots.raw.slice(0, 40));
     // 同一 URL 两个域返回不同内容 → 必须 Vary: Host，否则共享 CDN 会把主页版喂给博客域

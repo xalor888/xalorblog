@@ -1,8 +1,14 @@
 /**
  * 接口防直调中间件
  * 1. refererRequired：要求写请求携带同源 Referer/Origin（防跨站/脚本直调）
- * 2. timestampRequired：要求请求头 X-Timestamp 在 ±5 分钟窗口内（防重放）
+ * 2. timestampRequired：要求请求头 X-Timestamp 在窗口内（防重放）
  * 注：这层是纵深防御，与 UA 过滤、限流、签名令牌配合使用。
+ *
+ * ⚠ 当前装配下这两条在**生产路径上几乎不生效**，这是有意的，不要误以为它们是主防线：
+ * - `app.js:303` 只对「写请求且不在 GATE_SKIP」调用本中间件，而这些请求在 `app.js:291`
+ *   已经过 `gateWriteRequired` 验签成功 → `req.sigVerified === true` → 47 行直接放行。
+ * - 也就是说真正拦写请求的是票据 + HMAC 签名（含时间戳与一次性 nonce），本文件是
+ *   给「将来新增的、可能绕过闸门的挂载点」留的兜底，不是当下的主力。
  */
 
 const config = require('../config');
@@ -70,7 +76,10 @@ function refererRequired(req, res, next) {
   next();
 }
 
-/** X-Timestamp 防重放：请求头时间戳必须在 ±5 分钟窗口内 */
+/** X-Timestamp 防重放：请求头时间戳必须在 ±30 分钟窗口内。
+ * 比 `gate.js` 的签名窗口（`security.sigWindow` = 5 分钟）宽松得多：
+ * 两者校验的是同一个请求头，签名那条才是有效约束，这里只防「明显过期/未来的裸请求」。
+ * 不要把这里的 30 分钟当成实际防重放强度 —— 实际强度由 nonce 一次性消费决定。 */
 function timestampRequired(req, res, next) {
   const ts = Number(req.headers['x-timestamp']);
   if (!Number.isFinite(ts)) {

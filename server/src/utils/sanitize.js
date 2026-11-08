@@ -4,6 +4,24 @@ const sanitizeHtml = require('sanitize-html');
  * 输入清洗工具：防御存储型 XSS 与注入
  * 规则：允许基本文本与换行，剔除一切 HTML/脚本标签
  */
+/**
+ * 按 UTF-16 码元截断，但不切断代理对。
+ *
+ * String.prototype.slice 按码元计数，一个 emoji（如 😀 = D83D DE00）占 2 个码元。
+ * 恰好在中间截断会留下**孤立的高位代理**：这个值 JSON 能序列化、Node 能持有，
+ * 但 Buffer.from(v,'utf8') 会把孤立代理悄悄换成 U+FFFD，于是
+ * 「页面上显示的长度」与「库里存的字符」不一致，且该字符永远无法还原。
+ * 昵称/标题（cleanLine maxLen=100）只要第 100 个码元落在 emoji 中间就会中招。
+ * 向前退一个码元即可，代价最多 1 个字符。
+ */
+function sliceSafe(s, maxLen) {
+  if (s.length <= maxLen) return s;
+  let cut = s.slice(0, maxLen);
+  // 末尾是被劈开的代理对（高位代理结尾）→ 丢掉它
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return cut;
+}
+
 function cleanText(input, maxLen = 2000) {
   if (typeof input !== 'string') return '';
   const cleaned = sanitizeHtml(input, {
@@ -11,7 +29,7 @@ function cleanText(input, maxLen = 2000) {
     allowedAttributes: {},
     disallowedTagsMode: 'discard',
   });
-  return cleaned.trim().slice(0, maxLen);
+  return sliceSafe(cleaned.trim(), maxLen);
 }
 
 /** 清洗单行文本（去掉换行，用于昵称/标题等） */
@@ -20,8 +38,8 @@ function cleanLine(input, maxLen = 100) {
 }
 
 /**
- * 校验 URL 是否安全（仅 http/https，且拒绝内网/回环/保留地址）
- * 内网地址黑名单：防「友链塞内网地址」的社工/追踪场景；
+ * 校验 URL 是否安全（仅 http/https，且拒绝一切 IP 字面量与内网主机名）
+ * 用途：防「友链塞内网地址」的社工/追踪场景；
  * 同时为未来可能引入的服务端抓取（如缩略图预取）预留 SSRF 防线
  */
 function safeUrl(input, maxLen = 500) {
@@ -40,24 +58,17 @@ function safeUrl(input, maxLen = 500) {
     if (rebindDomains.some((d) => host === d || host.endsWith('.' + d))) return '';
     // IPv6 字面量：不做解析级校验，直接拒绝（保留/链路本地地址无法廉价区分）
     if (host.includes(':')) return '';
-    // 纯数字/十六进制 IP 简写（2130706433、0x7f000001、127.1）可能解析到回环地址
+    // IPv4 字面量（含 2130706433、0x7f000001、127.1 这类简写——WHATWG 解析器会
+    // 把它们补零/还原成点分十进制）一律拒绝，不做「按保留段放行」。
+    //
+    // 为什么不做段级判断：IP 目标的风险与「哪一段」无关。站点里指向 IP 的友链
+    // 极罕见（正常站点都有域名），而 IP 直链正是 SSRF 与跨站追踪的常用手法
+    // （127/8 回环、169.254.169.254 云元数据、100.64/10 CGNAT、172.16/12 内网
+    // 全在同一套语法里，且公网 IP 同样可用于绕过域名黑名单做追踪/探测）。
+    // 段表既要随云环境变化维护，又永远漏得掉新段；一条「只认域名」的规则
+    // 可验证、无状态，也不会因为漏写某段而留后门。
     if (/^[\d.]+$/.test(host) || /^0x[0-9a-f]+$/i.test(host)) return '';
     if (host.includes('%')) return '';
-    // IPv4 保留/内网段拒绝：0/8 · 10/8 · 127/8 · 169.254/16 · 172.16/12 ·
-    // 192.168/16 · 100.64/10（CGNAT）· 224+（组播/保留）
-    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
-      // 八进制/前导零 IP 变体（0177.0.0.1）在部分解析器中会还原为回环地址
-      if (host.split('.').some((s) => s.length > 1 && s.startsWith('0'))) return '';
-      const parts = host.split('.').map(Number);
-      if (parts.some((p) => p > 255)) return '';
-      const [a, b] = parts;
-      if (a === 0 || a === 10 || a === 127) return '';
-      if (a === 169 && b === 254) return '';
-      if (a === 172 && b >= 16 && b <= 31) return '';
-      if (a === 192 && b === 168) return '';
-      if (a === 100 && b >= 64 && b <= 127) return '';
-      if (a >= 224) return '';
-    }
     return trimmed;
   } catch (e) {
     return '';
@@ -80,7 +91,33 @@ function escapeLike(input) {
 }
 
 /**
- * 封面/头像站内路径白名单：默认 logo 或 /uploads/ 下的服务端随机文件名。
+ * 上传目录内的相对路径（`x.png` 或 `ai/x.png`）白名单校验，返回规范化 rel，非法返回 ''。
+ *
+ * 为什么允许一层子目录：AI 转存图落在 `/uploads/ai/`（admin.js 的 /ai/save-image）。
+ * 旧白名单只认单段，于是这类图既**当不了封面**（safeCover 判非法 → 静默置空，
+ * 前端表现为"选了图但封面没变"），也**被孤儿清理漏掉**（磁盘只增不减）。
+ * 为什么限制两段：每多一层，引用扫描、孤儿清理、删除校验都要多一套边界，
+ * 而当前没有第三层的生产者 —— 先把真实存在的层级覆盖掉，不为假想需求放开。
+ *
+ * 段规则：`[A-Za-z0-9_-]` 开头 + `[A-Za-z0-9._-]`（服务端随机名/带点扩展名），
+ * 显式拒绝 `.` 与 `..` —— 后者能被旧正则 `[A-Za-z0-9._-]+` 匹配，
+ * 于是 `/uploads/..` 一直能通过白名单（做 <img src> 无害，但一旦被删除接口复用就是路径穿越）。
+ */
+function safeUploadRel(input) {
+  if (typeof input !== 'string') return '';
+  const rel = input.replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!rel) return '';
+  const segs = rel.split('/');
+  if (segs.length > 2) return '';
+  for (const seg of segs) {
+    if (seg === '.' || seg === '..') return '';
+    if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]{0,200}$/.test(seg)) return '';
+  }
+  return segs.join('/');
+}
+
+/**
+ * 封面/头像站内路径白名单：默认 logo 或 /uploads/ 下的服务端生成文件名（可含一层子目录）。
  * 任意站内路径会把 javascript 风格或 CSS 注入带进 <img src>。
  */
 function safeCover(input) {
@@ -88,7 +125,10 @@ function safeCover(input) {
   const v = input.trim().replace(/[\r\n]+/g, '').slice(0, 500);
   if (!v) return '';
   if (v === '/logo.png') return v;
-  if (/^\/uploads\/[A-Za-z0-9._-]+$/.test(v)) return v;
+  if (v.startsWith('/uploads/')) {
+    const rel = safeUploadRel(v.slice('/uploads/'.length));
+    return rel ? `/uploads/${rel}` : '';
+  }
   return safeUrl(v, 500);
 }
 
@@ -115,7 +155,18 @@ function cleanMarkdown(input, maxLen = 100000) {
     allowVulnerableTags: true,
     exclusiveFilter: (frame) => MARKDOWN_BAD_TAGS.includes(frame.tag),
   });
-  return cleaned.trim().slice(0, maxLen);
+  // 与 cleanText 同一套截断规则：正文 10 万码元处若正好劈开 emoji，
+  // 会留下入库即损坏的孤立代理（JSON 能存、渲染成 U+FFFD 且永远无法还原）。
+  return sliceSafe(cleaned.trim(), maxLen);
 }
 
-module.exports = { cleanText, cleanLine, cleanMarkdown, safeUrl, safeEmail, escapeLike, safeCover };
+module.exports = {
+  cleanText,
+  cleanLine,
+  cleanMarkdown,
+  safeUrl,
+  safeEmail,
+  escapeLike,
+  safeCover,
+  safeUploadRel,
+};

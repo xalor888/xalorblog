@@ -2,6 +2,23 @@
  * 数据库建表脚本：确保所有表存在（幂等，可重复执行）
  */
 const db = require('./db');
+const { classifyRedundantIndex } = require('./utils/indexAnalysis');
+
+/** 删除被唯一索引完全覆盖的冗余索引（不满足条件时只记一条说明，不动数据库） */
+async function dropRedundantIndex(table, indexName, keeperName) {
+  const exists = await db.schema.hasTable(table);
+  if (!exists) return;
+  const rows = await db.raw(`SHOW INDEX FROM \`${table}\``).then(([r]) => r);
+  const verdict = classifyRedundantIndex(rows, indexName, keeperName);
+  if (!verdict.drop) {
+    if (verdict.reason !== '目标索引不存在（无需处理）') {
+      console.log(`[migrate] 跳过删除 ${table}.${indexName}：${verdict.reason}`);
+    }
+    return;
+  }
+  await db.raw(`ALTER TABLE \`${table}\` DROP INDEX \`${indexName}\``);
+  console.log(`[migrate] ${table}.${indexName} 已删除（${verdict.reason}，省一次写放大）`);
+}
 
 async function migrate() {
   // ---------- 分类 ----------
@@ -416,8 +433,11 @@ async function migrate() {
 
   await ensureIndex('articles', 'idx_articles_status_published_at', ['status', 'published_at']);
   await ensureIndex('articles', 'idx_articles_category_id', ['category_id']);
-  // 详情页按 slug 查询（高频读路径）
-  await ensureIndex('articles', 'idx_articles_slug', ['slug']);
+  // 详情页按 slug 查询（高频读路径）。
+  // 这里原来调 ensureIndex 建 idx_articles_slug，但建表时 `.unique()` 已经产出了
+  // articles_slug_unique —— 同列两条索引，每次写入维护两棵树，读却只用一条。
+  // 改成「若被唯一索引完全覆盖就删掉」，老库会自愈，新库本来就没有这条。
+  await dropRedundantIndex('articles', 'idx_articles_slug', 'articles_slug_unique');
   await ensureIndex('comments', 'idx_comments_article_status', ['article_id', 'status']);
   await ensureIndex('article_tags', 'idx_article_tags_tag_id', ['tag_id']);
   // 文章标签反查（列表/详情聚合）
@@ -450,4 +470,6 @@ if (require.main === module) {
       process.exit(1);
     });
 }
-module.exports = { migrate };
+// classifyRedundantIndex 已迁到 utils/indexAnalysis（纯函数，不依赖 db）。
+// 这里继续导出是为了不破坏既有调用方；新代码请直接 require utils/indexAnalysis。
+module.exports = { classifyRedundantIndex, migrate };

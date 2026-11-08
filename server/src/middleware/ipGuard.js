@@ -91,6 +91,14 @@ function logEvent(type, ip, path, detail = '') {
  * 批量 flush 避免高频攻击时每事件一条 INSERT 拖垮 DB。 */
 const PERSIST_BATCH_MAX = 100;   // 累计 100 条立即 flush
 const PERSIST_INTERVAL = 30 * 1000; // 或每 30 秒 flush 一次
+/* 失败回填后的队列硬上限：故意大于 PERSIST_BATCH_MAX。
+ * 为什么允许超过批次上限：落库失败时队列里装的是**尚未取证**的攻击事件，
+ * 取证价值高于内存占用 —— 上限只用来兜住「数据库长时间不可用」这种病态情况，
+ * 正常一次性重试（≤100 条）根本碰不到它。超限时丢弃最旧的并显式告警条数。 */
+const PERSIST_QUEUE_MAX = 500;
+/* 失败重试间隔：原实现失败后不再排定时器，没有新流量就永不重试
+ * （低频攻击站点上取证数据会一直躺在内存里直到进程重启）。60 秒自愈。 */
+const PERSIST_RETRY_MS = 60 * 1000;
 let persistQueue = [];
 let persistTimer = null;
 
@@ -119,18 +127,49 @@ function flushPersist() {
   if (!persistQueue.length) return;
   const batch = persistQueue;
   persistQueue = [];
-  db('audit_logs').insert(batch).catch(() => {
-    // 落库失败：回填队列尾部（不无限重试，仅保留最近一批防内存膨胀）
-    persistQueue = persistQueue.concat(batch).slice(-PERSIST_BATCH_MAX);
+  db('audit_logs').insert(batch).catch((e) => {
+    /* 落库失败：失败批次按原始事件时间顺序放回**队首**。
+     * 原实现 persistQueue.concat(batch).slice(-PERSIST_BATCH_MAX) 有两个静默丢数据的后果：
+     *   1) 失败批次被排到新事件**之后**，再被 slice 从头部截断 —— 正在涌入的新流量
+     *      会把较旧（且更早发生、更该留证）的失败批次挤出队列直接丢弃；
+     *   2) 截断后没有重排定时器，无新流量时队列永不重试。
+     * 现在：波次连续、不跨批交错，只有真的超过 PERSIST_QUEUE_MAX 才丢最旧的并告警。 */
+    persistQueue = batch.concat(persistQueue);
+    if (persistQueue.length > PERSIST_QUEUE_MAX) {
+      const dropped = persistQueue.length - PERSIST_QUEUE_MAX;
+      persistQueue = persistQueue.slice(-PERSIST_QUEUE_MAX);
+      console.warn(
+        `[ipGuard] 攻击事件落库持续失败（${e && e.message ? e.message : 'unknown'}），`
+        + `取证队列超过 ${PERSIST_QUEUE_MAX} 条，已丢弃最旧 ${dropped} 条`
+      );
+    }
+    // 自愈：失败后重排一次重试定时器（unref：不阻止进程退出）
+    if (!persistTimer) {
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        flushPersist();
+      }, PERSIST_RETRY_MS);
+      persistTimer.unref?.();
+    }
   });
 }
 
-/** loopback 地址（127.x / ::1 / ::ffff:127.x）：只可能来自本机（测试、探活、本地开发）。
- * 封 loopback 有内存内生效即可（如测试断言 403），持久化只有副作用——
- * 测试套件触发后封禁落库，测试结束/重启服务都救不回来，本地站整站 403。 */
+/** loopback 地址（127.x / ::1 / ::ffff:127.x / 以及它们的 /64 规范键）：只可能来自本机
+ *  （测试、探活、本地开发）。封 loopback 有内存内生效即可（如测试断言 403），
+ *  持久化只有副作用——测试套件触发后封禁落库，测试结束/重启服务都救不回来，本地站整站 403。
+ *
+ *  必须同时认规范键形态：本文件传给这里的是 reputationKey() 的输出，而它会把 IPv6
+ *  折算成 /64 并剥掉后缀，于是 ::1 变成 "::"（ipKeyGenerator('::1',64) === '::/64'）。
+ *  旧实现只比对字面 '::1'，所以 IPv6 回环**没有被识别成 loopback**：
+ *  任一次 WAF 命中就把 ip_bans 里写下 ip='::' 的持久封禁，
+ *  重启后 loadPersistedBans 又把它恢复成整段 IPv6 的封禁（/64 聚合），
+ *  本机与同 /64 内所有 IPv6 客户端从此 403 且无法自愈。
+ *  '::' 是未指定地址，与 ::1 同属回环网段，一律走同一处理。 */
 function isLoopbackIp(ip) {
-  const s = String(ip || '').toLowerCase();
-  return s === '::1' || s.startsWith('127.') || s.startsWith('::ffff:127.');
+  const s = String(ip || '').trim().toLowerCase();
+  return s === '::1' || s === '::' || s === '127.0.0.1'
+    || s.startsWith('127.')
+    || s.startsWith('::ffff:127.');
 }
 
 /** 封禁持久化（异步，失败静默 —— 内存仍是权威） */
@@ -162,10 +201,9 @@ function deletePersistedBan(ip) {
   return db('ip_bans').whereIn('ip', [...candidates].filter(Boolean)).del().catch(() => {});
 }
 
-/** 启动时从数据库恢复有效封禁（异步一次） */
+/** 启动时从数据库恢复有效封禁（可重复调用：成功一次后短路） */
 async function loadPersistedBans() {
   if (dbLoaded) return;
-  dbLoaded = true;
   try {
     const rows = await db('ip_bans')
       .where('banned_until', '>', db.fn.now())
@@ -243,8 +281,17 @@ async function loadPersistedBans() {
       console.warn(`[ipGuard] 持久化封禁达到恢复上限 ${REPUTATION_MAX}，更早封禁暂未加载`);
     }
     if (rows.length) console.log(`[ipGuard] 已恢复 ${aggregated.size} 个持久化封禁范围`);
+    // 只有真正加载成功才置位：dbLoaded 在 try 之外无条件置位时，数据库尚未就绪
+    // （启动竞态 / 表还在迁移）会让封禁恢复在该进程生命周期内**永不重试**，
+    // 重启前持久化的封禁全部失效 —— 攻击者只要卡在这个窗口里就一直是未封禁状态。
+    dbLoaded = true;
   } catch (e) {
-    // 表不存在或数据库不可用：静默降级为纯内存模式
+    // 保持 dbLoaded=false，下次调用会重新尝试（调用点只有 server.js 启动一次，
+    // 所以这里不额外做惰性重试；失败不抛出，启动流程继续以纯内存模式运行）
+    console.warn(
+      '[ipGuard] 持久化封禁加载失败，暂以纯内存模式运行（下次调用会重试）:',
+      e && e.message ? e.message : 'unknown'
+    );
   }
 }
 
@@ -411,13 +458,21 @@ async function securityStats() {
       });
     }
   }
-  // 攻击类型分布（内存实时 + DB 近 7 天真实计数合并 —— 此前仅统计最近 100 条却展示为总数）
+  // 攻击类型分布（以 DB 近 7 天真实计数为基，内存里**尚未落库**的部分再叠加）
+  //
+  // 为什么不能两边直接相加：内存环形缓冲和 audit_logs 记的是同一批事件的两个阶段。
+  // logEvent 先 push 内存、再由 queuePersist 批量 flush 落库，因此任何已 flush 的事件
+  // 同时在两边存在。原实现 `typeCounts` 先数完内存 300 条，再把 DB 7 天计数整个加上，
+  // 于是同一批事件被算两遍 —— 实测 3 条 waf 事件落库后，面板报 event_total=6。
+  // 频次越高的攻击（正是站长最需要看清的那种）虚高越严重，且每次刷新都变。
+  //
+  // 正确口径：DB 是已落库事件的权威计数，内存只补「还在队列里、尚未 flush」的那些。
+  // persistQueue 在 flush 成功的瞬间被清空，所以它就是未落库的精确集合。
   const typeCounts = {};
   const countType = (type) => {
     const key = type === 'ban' || type === 'unban' ? 'ban' : type;
     typeCounts[key] = (typeCounts[key] || 0) + 1;
   };
-  for (const e of events) countType(e.type);
   let persisted = [];
   let dbCounts = {};
   try {
@@ -441,6 +496,11 @@ async function securityStats() {
       dbCounts[key] = (dbCounts[key] || 0) + Number(r.cnt);
     }
   } catch (e) { /* 表不可用忽略 */ }
+  // 内存里尚未落库的那部分（flush 成功即从 persistQueue 移除）
+  for (const item of persistQueue) {
+    const type = String(item.action || '').replace('SEC-EVENT ', '') || 'event';
+    countType(type);
+  }
   const persistedEvents = persisted.map((p) => ({
     t: new Date(p.created_at).getTime(),
     type: String(p.action).replace('SEC-EVENT ', '') || 'event',

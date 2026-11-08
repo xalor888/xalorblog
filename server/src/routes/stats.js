@@ -47,8 +47,19 @@ function cleanUvSeen() {
 
 /* ============ 阅读统计（整站字数 / 阅读时长） ============ */
 
-/** 阅读速度：350 字/分钟（中文技术阅读的常用估值） */
-const WORDS_PER_MINUTE = 350;
+/**
+ * 阅读速度：中文 350 字/分钟、英文 250 词/分钟。
+ *
+ * 为什么必须分开：中英文的信息密度与阅读速度不同，混用单一除数会让同一篇文章
+ * 在「详情页的 N 分钟」与「全站累计阅读时长」报出两个不同数字 —— 700 词纯英文
+ * 按 350 算得 2 分钟、按词速算得 3 分钟，读者会同时看到这两个数。
+ * 前端 `utils/wordStats.js` 的 readingMinutes/aggregateReading 已按 cn/en 折算，
+ * 服务端必须用同一套公式（`web/scripts/test-word-stats.mjs` 有跨仓一致性断言）。
+ */
+const CN_WPM = 350;
+const EN_WPM = 250;
+/** 兼容旧导出：中文阅读速度。不要再把它当「通用字数速度」用于英文文本。 */
+const WORDS_PER_MINUTE = CN_WPM;
 
 /**
  * 统计口径：CJK 逐字 + 拉丁/数字按词串。
@@ -72,14 +83,27 @@ const WORDS_PER_MINUTE = 350;
 // 前后端必须用同一组区段，scripts/test-word-stats.mjs 有一致性断言锁住。
 const CJK_PATTERN = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g;
 
-function countWords(md) {
+/**
+ * 逐字/逐词统计（CJK 逐字 + 拉丁/数字按词串）。
+ * 返回细分是为了让阅读时长能按 cn/en 各自的语速折算 —— 只给总数就无法区分
+ * 「350 个汉字」和「350 个英文单词」，而这两者的阅读时间差 40%。
+ *
+ * @param {string} md Markdown 原文
+ * @returns {{cjk:number, latin:number, total:number}}
+ */
+function countWordsDetail(md) {
   const text = plainText(md);
-  if (!text) return 0;
-  // 正则字面量写在函数体内：每次求值都是新对象，不会有两个调用共享 lastIndex
+  if (!text) return { cjk: 0, latin: 0, total: 0 };
+  // 正则字面量带 /g：String.match / replace 都会忽略并重置 lastIndex，不存在跨调用污染
   const cjk = (text.match(CJK_PATTERN) || []).length;
   // 先把 CJK 抹成空格，避免 `Vue3使用` 被当成 2 个词（应为 Vue3 + 使 + 用 = 3）
   const latin = (text.replace(CJK_PATTERN, ' ').match(/[a-zA-Z0-9]+/g) || []).length;
-  return cjk + latin;
+  return { cjk, latin, total: cjk + latin };
+}
+
+/** 兼容旧调用：只要总字数 */
+function countWords(md) {
+  return countWordsDetail(md).total;
 }
 
 /**
@@ -101,13 +125,17 @@ function buildReadingStats(rows) {
   );
 
   let totalWords = 0;
+  let totalCjk = 0;
+  let totalLatin = 0;
   let longest = null;
   for (const row of list) {
-    const words = countWords(row.content);
-    totalWords += words;
+    const d = countWordsDetail(row.content);
+    totalWords += d.total;
+    totalCjk += d.cjk;
+    totalLatin += d.latin;
     // 严格大于：并列时保留先出现的那篇（SQL 按 published_at desc 排序 → 并列取较新的一篇）
-    if (!longest || words > longest.words) {
-      longest = { title: row.title, slug: row.slug, words };
+    if (!longest || d.total > longest.words) {
+      longest = { title: row.title, slug: row.slug, words: d.total };
     }
   }
 
@@ -119,8 +147,12 @@ function buildReadingStats(rows) {
     avg_words: totalArticles ? Math.round(totalWords / totalArticles) : 0,
     longest,
     // 对「总量」一次性向上取整，而不是逐篇 ceil 后相加：
-    // 逐篇取整在短文章多的库里会系统性高估（100 篇各 10 字 → 报 100 分钟，实际 3 分钟）
-    total_reading_minutes: Math.ceil(totalWords / WORDS_PER_MINUTE),
+    // 逐篇取整在短文章多的库里会系统性高估（100 篇各 10 字 → 报 100 分钟，实际 3 分钟）。
+    // 中文与英文分别按各自语速折算后再相加 —— 与前端 aggregateReading 同一公式，
+    // 否则同一份数据会在「详情页」与「全站统计」给出两个分钟数。
+    total_reading_minutes: totalWords === 0
+      ? 0
+      : Math.ceil(totalCjk / CN_WPM + totalLatin / EN_WPM),
   };
 }
 
@@ -264,7 +296,10 @@ module.exports = router;
 // 供 test/readingStats.test.js 直接驱动（纯函数，无 DB / 无服务）
 module.exports.buildReadingStats = buildReadingStats;
 module.exports.countWords = countWords;
+module.exports.countWordsDetail = countWordsDetail;
 module.exports.invalidateReadingCache = invalidateReadingCache;
 module.exports.WORDS_PER_MINUTE = WORDS_PER_MINUTE;
+module.exports.CN_WPM = CN_WPM;
+module.exports.EN_WPM = EN_WPM;
 module.exports.READING_TTL = READING_TTL;
 module.exports.READING_FIELDS = READING_FIELDS;

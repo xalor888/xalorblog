@@ -5,8 +5,10 @@
  * - 未发送（旧浏览器）放行，由签名/令牌兜底
  */
 
+const { isWriteMethod } = require('../utils/httpMethods');
+
 function fetchMetaGuard(req, res, next) {
-  if (!['POST', 'PUT', 'DELETE'].includes(req.method)) return next();
+  if (!isWriteMethod(req.method)) return next();
   const site = String(req.headers['sec-fetch-site'] || '').toLowerCase();
   if (!site) return next(); // 旧浏览器/脚本，签名兜底
   if (site === 'same-origin' || site === 'same-site' || site === 'none') return next();

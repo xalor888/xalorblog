@@ -4,6 +4,7 @@
  * 轻量设计：非侵入，仅记录方法、路径与关键字段摘要
  */
 
+const { isWriteMethod } = require('../utils/httpMethods');
 const db = require('../db');
 
 const SENSITIVE_FIELDS = new Set(['password', 'oldPassword', 'newPassword', 'form_token']);
@@ -24,7 +25,7 @@ function summarize(body = {}) {
 
 /** 审计中间件：响应完成后检查（此时认证已执行，req.user 已就绪） */
 function audit(req, res, next) {
-  const isWrite = ['POST', 'PUT', 'DELETE'].includes(req.method);
+  const isWrite = isWriteMethod(req.method);
   if (!isWrite) return next();
 
   res.on('finish', () => {
@@ -61,4 +62,6 @@ function logSystemAction(action, detail = '', ip = '', username = 'system') {
     .catch(() => {});
 }
 
-module.exports = { audit, logSystemAction };
+// summarize 导出供测试驱动：它负责「哪些字段可以进审计日志」，
+// 敏感字段排除是安全边界（写反了密码就会落库），必须有断言盯着。
+module.exports = { audit, logSystemAction, summarize, SENSITIVE_FIELDS };

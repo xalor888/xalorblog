@@ -32,6 +32,7 @@ const { gateRequired, gateWriteRequired, isSearchBot, verifyCrawlerIp } = requir
 const { ipGuard, report } = require('./middleware/ipGuard');
 const { audit } = require('./middleware/audit');
 const { fetchMetaGuard } = require('./middleware/fetchMeta');
+const { createGzipMiddleware } = require('./middleware/compress');
 const { robotsTxt } = require('./routes/feed');
 
 const app = express();
@@ -50,31 +51,10 @@ app.use((req, res, next) => {
 app.set('trust proxy', config.trustProxy);
 
 // ---------- 响应压缩（gzip，Node 自带 zlib 实现，无新增依赖） ----------
-// 仅压缩文本类响应（JSON/XML/RSS/分享页 HTML），跳过 304/HEAD 与小响应；
-// 正文为 AES-GCM 加密 + 无反射输入，BREACH 攻击不适用
-const zlib = require('zlib');
-app.use((req, res, next) => {
-  // 追加而非覆盖：CORS 会写 Vary: Origin，覆盖后中间代理可能按编码复用跨域响应
-  res.append('Vary', 'Accept-Encoding');
-  if (req.method === 'HEAD' || !/gzip/.test(req.headers['accept-encoding'] || '')) return next();
-  const send = res.send.bind(res);
-  res.send = (body) => {
-    if (res.headersSent || res.statusCode === 304 || typeof body !== 'string' || body.length < 1024) {
-      return send(body);
-    }
-    try {
-      const buf = Buffer.from(body, 'utf8');
-      const zipped = zlib.gzipSync(buf);
-      if (zipped.length >= buf.length) return send(body);
-      res.set('Content-Encoding', 'gzip');
-      res.set('Content-Length', String(zipped.length));
-      return send(zipped);
-    } catch (e) {
-      return send(body);
-    }
-  };
-  next();
-});
+// 实现抽到 middleware/compress.js：那里用**异步** zlib.gzip 而不是 gzipSync ——
+// 2MB JSON 的同步压缩会占住事件循环 20-40ms，在单进程部署下会放大成尾延迟。
+// 详见该文件头注释；这里只负责挂载。
+app.use(createGzipMiddleware());
 
 // ---------- 基础安全 ----------
 app.disable('x-powered-by');
@@ -111,7 +91,9 @@ app.use((req, res, next) => {
 });
 
 // HTTP 方法白名单（其余一律 405）
-const ALLOWED_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'];
+// 清单在 utils/httpMethods 里单点定义：它同时被 audit / fetchMeta 和下面的写请求防护使用，
+// 分头写会造成「加了 PATCH 但某处防护漏了」这类静默失效。
+const { ALLOWED_METHODS, isWriteMethod } = require('./utils/httpMethods');
 app.use((req, res, next) => {
   if (!ALLOWED_METHODS.includes(req.method)) {
     res.set('Allow', ALLOWED_METHODS.join(', '));
@@ -301,7 +283,7 @@ app.use(api, audit);
 // 写请求统一防护：Referer 校验（防跨站直调）+ 时间戳防重放
 // （/anti 为引导接口，隐私模式浏览器可能无 Referer，由限流+签名令牌兜底）
 app.use(api, (req, res, next) => {
-  if (['POST', 'PUT', 'DELETE'].includes(req.method) && !GATE_SKIP.some((p) => req.path.startsWith(p))) {
+  if (isWriteMethod(req.method) && !GATE_SKIP.some((p) => req.path.startsWith(p))) {
     return refererRequired(req, res, () => timestampRequired(req, res, next));
   }
   next();
@@ -323,10 +305,25 @@ app.get('/robots.txt', async (req, res) => {
 });
 
 // sitemap.xml 与 rss.xml 根路径代理（搜索引擎与外部订阅器标准位置）
-app.get(['/sitemap.xml', '/rss.xml'], (req, res, next) => {
-  req.url = `${api}${req.path}`;
-  app._router.handle(req, res, next);
-});
+//
+// ⚠ 这里**不能**用 `app._router.handle()` 重入路由器。
+// 那样做不是「转发到另一个路由」，而是把**整条全局中间件链从头再跑一遍** ——
+// 实测 query/expressInit/requestId/gzip/helmet/安全头/方法白名单/Host 校验/
+// 超时保护/CORS/body parser/WAF/ipGuard 全部执行两次，`Vary` 头因此变成
+// `Vary: Accept-Encoding, Origin, Accept-Encoding, Host`（重复一项）。
+// 唯一的正解是让请求**就地**继续沿链往下走，只把 `req.url` 改写成带前缀的形式：
+// express 的路由匹配读 `req.url`，改写后后面的 `app.use(api, feedRouter)` 自然命中，
+// 而前面已执行过的中间件不会重跑。
+//
+// 另外这个改写还堵掉了一个致命边界：`API_PREFIX` 若被配成空串或 `/`
+// （config.js 会把结尾斜杠剥掉，`/` 于是变成 `''`），旧写法 `api + req.path`
+// 得到的就是原路径本身 → 这条路由再次命中自己 → **无限自递归**直到底层栈溢出。
+function rewriteToApiPrefix(req, res, next) {
+  // req.path 不含查询串，切片补回 `?a=1` 部分，只改路径不动参数
+  req.url = `${api}${req.path}${req.url.slice(req.path.length)}`;
+  next();
+}
+app.get(['/sitemap.xml', '/rss.xml'], rewriteToApiPrefix);
 
 // security.txt（安全研究人员联系信息，行业标准位置）
 app.get('/.well-known/security.txt', async (req, res) => {

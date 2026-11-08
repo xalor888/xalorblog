@@ -1,9 +1,16 @@
 /**
  * 反爬闸门
  * 1. PoW：SHA-256 前导零；信誉分越高越难，生产默认 20 bit
- * 2. 票据与 IP + 指纹 + UA 绑定；jti 登记（内存 L1 + 落库，重启可恢复）
+ * 2. 票据绑定「设备指纹 + UA + 签发时间 + jti」，jti 登记（内存 L1 + 落库，重启可恢复）
  * 3. 读/写请求都要 X-Sig（HMAC 票据 + nonce），裸票 GET 不再够用
  * 4. 续期有上限，防一次 PoW 无限滑动抓站
+ *
+ * ⚠ 票据**刻意不绑 IP**：Cloudflare / Happy Eyeballs 会在 IPv4 与 IPv6 之间切换，
+ * 按出口地址绑死会把正常读者打成 403（票据 10 分钟有效期内浏览器换栈是常态）。
+ * 代价是同一张票可以在另一个 IP 上继续用 —— 这件事交给 ipGuard 的信誉分与
+ * 「指纹跨多 IP」检测（trackFpIp）去做，而不是在签名里假装绑住了。
+ * 同理，puzzles 里也不存 IP：挑战是一次性、60 秒过期、绑定指纹与 UA 的，
+ * 存了却不校验只会让后来者误以为存在 IP 维度。
  */
 
 const crypto = require('crypto');
@@ -139,7 +146,6 @@ function issuePuzzle(req) {
   puzzles.set(id, {
     ts: Date.now(),
     prefix,
-    ip: clientIp(req),
     fp,
     ua: normUa(req.headers['user-agent']),
     diff: isFpFlagged(fp) ? POW_DIFF_MAX : adaptiveDifficulty(req.ip),
@@ -191,8 +197,9 @@ function verifyPow(req, body) {
 }
 
 /** 签发票据 token = ts.jti.sig（签名含版本号）
- * renews 继承自旧票据（续期链延续计数，防换新 jti 重置上限） */
-function issueTicket(ip, fp, ua, renews = 0, persist = false) {
+ * renews 继承自旧票据（续期链延续计数，防换新 jti 重置上限）
+ * 不接受 ip 形参：签名与校验都不涉及 IP（见文件头），传进来只会造成「绑了 IP」的错觉 */
+function issueTicket(fp, ua, renews = 0, persist = false) {
   const jti = crypto.randomBytes(9).toString('hex');
   const ts = Date.now();
   const sig = hmac([VERSION, fp, ua, ts, jti].join('|'));
@@ -382,7 +389,7 @@ function renewTicket(req) {
     }
   }
   const fp = String(req.headers['x-fp'] || '').slice(0, 128);
-  const issued2 = issueTicket(clientIp(req), fp, normUa(req.headers['user-agent']), renews, true);
+  const issued2 = issueTicket(fp, normUa(req.headers['user-agent']), renews, true);
   return { ok: true, token: issued2.token };
 }
 
@@ -433,11 +440,21 @@ function normalizeHostname(hostname) {
   return String(hostname || '').trim().toLowerCase().replace(/\.+$/, '');
 }
 
-/** exact 或点边界子域；evil-googlebot.com / googlebot.com.evil 均不会命中。 */
+/**
+ * exact 或点边界子域；`evil-googlebot.com` / `googlebot.com.evil` 均不会命中。
+ *
+ * ⚠ 前导点必须单独拒掉：`'.googlebot.com'.endsWith('.googlebot.com')` 是 **true**，
+ * 于是一个畸形的 PTR（以点开头）会被判为落在官方域内。攻击者如果能把自己的
+ * PTR 设成 `.googlebot.com`，PTR 这一关就过了 —— 虽然随后的正向解析会失败
+ * （`.googlebot.com` 不是合法域名），FCrDNS 仍会拒绝，但这一层不该靠下一层兜。
+ */
 function hostnameInOfficialDomain(hostname, officialDomain) {
   const host = normalizeHostname(hostname);
   const domain = normalizeHostname(officialDomain).replace(/^\.+/, '');
-  return !!host && !!domain && (host === domain || host.endsWith(`.${domain}`));
+  if (!host || !domain) return false;
+  // 畸形 host：前导点、含空白、含斜杠 —— 都不是合法主机名
+  if (host.startsWith('.') || /[\s/]/.test(host)) return false;
+  return host === domain || host.endsWith(`.${domain}`);
 }
 
 // 仅纳入存在稳定、可 FCrDNS 核验官方域的爬虫；其余搜索 UA 仍会被识别，
@@ -505,10 +522,20 @@ async function verifyCrawlerIp(ip, ua) {
     cacheCrawlerResult(cacheKey, ok);
     return { ok, checked: true };
   } catch (e) {
-    // DNS 查询失败/超时：fail-open 放行 —— DNS 抖动不再误拒真爬虫；
-    // 攻击者伪装爬虫 UA 的收益本就有限（放行的只是 GET 只读接口，另有读限流兜底）
-    console.warn(`[gate] 爬虫 DNS 核验失败，fail-open 放行: ${normalizedIp}`);
-    return { ok: true, checked: false, degraded: true };
+    // 无法完成核验（无 PTR、DNS 超时、解析器故障）：fail-closed 拒绝。
+    //
+    // 这里曾经是 fail-open（返回 ok:true 直接放行），理由写的是「DNS 抖动不再误拒真爬虫」。
+    // 但实测这条路径是**零成本绕过**：对一个没有 PTR 的 IP 发一句
+    //   GET /<api>/articles  User-Agent: Googlebot/2.1
+    // dns.reverse 立刻 ENOTFOUND，3ms 内返回 { ok:true, degraded:true }，
+    // 于是匿名请求免掉了 PoW 票据闸门 —— 任何人改一个 UA 就能白拿全部只读接口。
+    // 「没有 PTR」不是 DNS 抖动，是绝大多数非搜索引擎 IP 的常态，不能算放行理由。
+    // 与文件头声明的「无法核验的 UA 与 DNS 查询失败一律 fail-closed」一致，
+    // 也与其他搜索 UA（无官方域可核验）走的拒绝路径同构。
+    // 真爬虫的 PTR 是可核验的（Google/Bing/Baidu 全部有），且结果会缓存 1 小时，
+    // 只有 DNS 基础���施整体不可用时才会误伤——那种情况下拒绝是更安全的一侧。
+    console.warn(`[gate] 爬虫 DNS 核验无法完成，按 fail-closed 拒绝: ${normalizedIp}`);
+    return { ok: false, checked: false, degraded: true };
   }
 }
 
@@ -525,6 +552,12 @@ module.exports = {
   isValidFp,
   adaptiveDifficulty,
   verifyCrawlerIp,
+  // 以下三个是 FCrDNS 核验的纯逻辑，导出**仅供测试驱动**（不是公开 API）：
+  // 域名边界判定是防伪造的核心，一条 `endsWith` 写错就等于白名单可被任意域名冒充。
+  hostnameInOfficialDomain,
+  normalizeHostname,
+  normalizeIpAddress,
+  CRAWLER_RULES,
   trackFpIp,
   isFpFlagged,
   loadPersistedTickets,

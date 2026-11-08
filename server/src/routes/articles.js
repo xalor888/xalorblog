@@ -245,26 +245,30 @@ router.get('/neighbors/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
-    const cur = await db('articles').where('id', id).where('status', 'published').select('published_at').first();
+    const cur = await db('articles').where('id', id).where('status', 'published').select('published_at', 'created_at').first();
     if (!cur) return notFound(res, '文章不存在');
+    // published_at 可能为 NULL（后台「导入备份」允许该字段留空），而 SQL 里
+    // `published_at < NULL` / `= NULL` 恒为 UNKNOWN —— 直接用会让本篇既无上一篇也无下一篇，
+    // 返回空对象。归档与列表已按 created_at 兜底，这里取同一条时间轴，三处口径才一致。
+    const curAt = cur.published_at || cur.created_at;
     const [prev, next] = await Promise.all([
-      // 上一篇：比当前更早（published_at < cur 或 published_at == cur 且 id < cur）
+      // 上一篇：比当前更早（时间轴 < cur 或时间轴 == cur 且 id < cur）
       db('articles')
         .where('status', 'published')
         .where((b) => {
-          b.where('published_at', '<', cur.published_at)
-            .orWhere((b2) => b2.where('published_at', cur.published_at).where('id', '<', id));
+          b.whereRaw('COALESCE(published_at, created_at) < ?', [curAt])
+            .orWhere((b2) => b2.whereRaw('COALESCE(published_at, created_at) = ?', [curAt]).where('id', '<', id));
         })
-        .orderBy([{ column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }])
+        .orderBy([{ column: db.raw('COALESCE(published_at, created_at)'), order: 'desc' }, { column: 'id', order: 'desc' }])
         .select('id', 'title', 'slug').first(),
-      // 下一篇：比当前更新（published_at > cur 或 published_at == cur 且 id > cur）
+      // 下一篇：比当前更新（时间轴 > cur 或时间轴 == cur 且 id > cur）
       db('articles')
         .where('status', 'published')
         .where((b) => {
-          b.where('published_at', '>', cur.published_at)
-            .orWhere((b2) => b2.where('published_at', cur.published_at).where('id', '>', id));
+          b.whereRaw('COALESCE(published_at, created_at) > ?', [curAt])
+            .orWhere((b2) => b2.whereRaw('COALESCE(published_at, created_at) = ?', [curAt]).where('id', '>', id));
         })
-        .orderBy([{ column: 'published_at', order: 'asc' }, { column: 'id', order: 'asc' }])
+        .orderBy([{ column: db.raw('COALESCE(published_at, created_at)'), order: 'asc' }, { column: 'id', order: 'asc' }])
         .select('id', 'title', 'slug').first(),
     ]);
     return ok(res, { prev, next });
@@ -379,22 +383,68 @@ router.get('/random', async (req, res) => {
 });
 
 /** 归档：按年月分组 */
+/**
+ * 归档分组（**纯函数**，便于单测）。
+ *
+ * 兜底到建库时间：后台「导入备份」允许 published_at 为空（isValidDateTime 失败即写 null），
+ * 于是已发布文章的 published_at 可能真的是 NULL。原实现 String(null) 得到 "null"，
+ * 归档页因此多出一个 month:"null"、day:"" 的伪分组 —— 列表/详情按 published_at 排序时
+ * 这类文章也排在最后，与已发布语义不符，所以用 created_at 兜底。
+ *
+ * @param {Array<{id,title,slug,published_at,created_at,views}>} rows 已按时间倒序的行
+ * @returns {Array<{month:string,count:number,items:Array}>}
+ */
+function buildArchiveGroups(rows) {
+  const groups = {};
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const dayStr = String((r && (r.published_at || r.created_at)) || '').slice(0, 10);
+    if (!dayStr) continue; // 两者皆空的行无法归入任何年月，跳过而非造伪分组
+    const key = dayStr.slice(0, 7); // YYYY-MM
+    (groups[key] = groups[key] || []).push({
+      id: r.id, title: r.title, slug: r.slug, views: r.views,
+      day: dayStr.slice(8, 10),
+    });
+  }
+  return Object.entries(groups).map(([month, items]) => ({ month, count: items.length, items }));
+}
+
+/**
+ * 归档缓存：`/archive` 一次把**全部**已发布文章拉进内存再分组，无分页、无上限、无缓存 ——
+ * 文章量上来后它是全站最贵的读接口之一，而内容变化频率极低（一天几篇）。
+ * 60 秒 TTL 与 stats.js 的 summaryCache 同一取舍：宁可让新文章最多晚 60 秒进归档，
+ * 也不要每次请求都做一次「全表读 + 全量分组」。不接主动失效是刻意的 ——
+ * 那需要 admin.js 的 8 处写操作各接一条，漏一处就是长期脏缓存。
+ */
+const ARCHIVE_TTL = 60 * 1000;
+const ARCHIVE_MAX_ROWS = 5000; // 单次读的硬上限：超过说明该换成分页，先兜住内存
+let archiveCache = null;
+let archiveCacheAt = 0;
+let archiveOverflowWarned = false;
+
+/** 测试与运维用：手动清缓存（不接自动失效，仅在需要立刻看到新文章时调用） */
+function invalidateArchiveCache() {
+  archiveCache = null;
+  archiveCacheAt = 0;
+}
+
 router.get('/archive', async (req, res) => {
   try {
+    const now = Date.now();
+    if (archiveCache && now - archiveCacheAt < ARCHIVE_TTL) {
+      return ok(res, archiveCache);
+    }
     const rows = await db('articles')
       .where('status', 'published')
       .orderBy([{ column: 'published_at', order: 'desc' }, { column: 'id', order: 'desc' }])
-      .select('id', 'title', 'slug', 'published_at', 'views');
-    const groups = {};
-    for (const r of rows) {
-      const dayStr = String(r.published_at).slice(0, 10); // YYYY-MM-DD（dateStrings 直接返回）
-      const key = dayStr.slice(0, 7); // YYYY-MM
-      (groups[key] = groups[key] || []).push({
-        id: r.id, title: r.title, slug: r.slug, views: r.views,
-        day: dayStr.slice(8, 10),
-      });
+      .limit(ARCHIVE_MAX_ROWS)
+      .select('id', 'title', 'slug', 'published_at', 'created_at', 'views');
+    if (rows.length >= ARCHIVE_MAX_ROWS && !archiveOverflowWarned) {
+      archiveOverflowWarned = true;
+      console.warn(`[archive] 已发布文章达到读上限 ${ARCHIVE_MAX_ROWS} 条，归档页可能不完整，需要改成分页`);
     }
-    const list = Object.entries(groups).map(([month, items]) => ({ month, count: items.length, items }));
+    const list = buildArchiveGroups(rows);
+    archiveCache = list;
+    archiveCacheAt = now;
     return ok(res, list);
   } catch (e) {
     return fail(res, '获取归档失败', 500);
@@ -425,3 +475,5 @@ module.exports = router;
 module.exports.canLike = canLike;
 module.exports.LIKE_WINDOW = LIKE_WINDOW;
 module.exports.shouldCountView = shouldCountView;
+module.exports.buildArchiveGroups = buildArchiveGroups;
+module.exports.invalidateArchiveCache = invalidateArchiveCache;

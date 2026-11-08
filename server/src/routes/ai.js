@@ -13,8 +13,11 @@
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const asyncGuard = require('../utils/asyncGuard');
 const db = require('../db');
 const { streamChat } = require('../utils/aiClient');
+const { escapeLike } = require('../utils/sanitize');
+const { ok } = require('../utils/response');
 
 const router = express.Router();
 
@@ -99,7 +102,10 @@ async function execAskTool(name, args, settings) {
   if (name === 'search_site_articles') {
     const q = String(args?.query || '').trim().slice(0, 100);
     if (!q) return { ok: false, note: '缺少检索词' };
-    const like = `%${q}%`;
+    // 通配符必须转义：读者（或模型）传 "_" / "%" 时未转义的 LIKE 会退化成全表匹配，
+    // 检索结果于是变成「最近 5 篇」而不是「匹配 5 篇」—— 模型据此回答等于被喂了噪音。
+    // 与其他检索入口（articles.js / admin.js）保持一致，统一走 escapeLike。
+    const like = `%${escapeLike(q)}%`;
     const rows = await db('articles')
       .where('status', 'published')
       .andWhere((b) => b.where('title', 'like', like).orWhere('summary', 'like', like))
@@ -239,10 +245,12 @@ router.post('/ask', askLimiter, async (req, res) => {
 });
 
 /** 前台据此决定是否显示「问 AI」入口（未配模型时不显示，避免点了报错） */
-router.get('/status', async (req, res) => {
+router.get('/status', asyncGuard(async (req, res) => {
   const { getAiConfig } = require('../utils/aiClient');
   const ai = await getAiConfig().catch(() => ({ ready: false }));
-  return res.json({ code: 0, message: 'ok', data: { ready: ai.ready === true } });
-});
+  // 走统一 helper 而不是手写 res.json：全站响应形状必须由 response.js 单点决定，
+  // 否则将来在里面加字段（比如 requestId / 统一时间戳）时，这一处会被漏掉。
+  return ok(res, { ready: ai.ready === true });
+}));
 
 module.exports = router;

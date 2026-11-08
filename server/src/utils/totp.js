@@ -97,6 +97,17 @@ function verifyCode(secret, code, replayGuard, guardKey) {
   if (secretBuffer.length === 0) return false;
   const step = currentStep();
   for (let offset = -WINDOW; offset <= WINDOW; offset++) {
+    // ⚠ 跳过负计数器。
+    //
+    // `hotp()` 用 `buf.writeBigUInt64BE(BigInt(counter))`，而无符号 64 位**不接受负数** → 抛 RangeError。
+    // 时间步 0 时 offset=-1 就会走到 counter=-1，于是 verifyCode 抛异常而不是返回 false，
+    // 违反它自己「返回 boolean」的契约。
+    //
+    // 生产环境不可达（Date.now() 永远远大于 30s），但两件事让它值得修：
+    //   1. 契约应当成立 —— 调用方（登录处理器）不会为「验证码校验」包 try/catch
+    //   2. 一旦有人把 currentStep 改成可注入的（为了测试或支持历史数据），
+    //      这条就从「不可达」变成「真的 500」
+    if (step + offset < 0) continue;
     const candidate = hotp(secretBuffer, step + offset);
     if (candidate === code.trim()) {
       // 防重放：同一步成功过则拒绝

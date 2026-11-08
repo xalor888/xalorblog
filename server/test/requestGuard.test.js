@@ -132,7 +132,8 @@ async function suite() {
 
   console.log('=== E. gateWriteRequired 写入 sigVerified 标记（签名链路闭环） ===');
   // 构造合法票据 + 签名（与 client.js 签名格式一致）
-  const t = gate.issueTicket('1.2.3.4', FP, UA);
+  // issueTicket(fp, ua, renews, persist)：ip 形参已移除（它从未参与签名）
+  const t = gate.issueTicket(FP, UA);
   const ts = Date.now();
   const nonce = 'testnonce123456';
   const bodyHash = c.sha256hex('{}');
@@ -170,7 +171,7 @@ async function suite() {
 
   console.log('=== F. gateRequired：读请求也要签名 ===');
   {
-    const t2 = gate.issueTicket('1.2.3.4', FP, UA);
+    const t2 = gate.issueTicket(FP, UA);
     const ts2 = Date.now();
     const nonce2 = 'getnonce12345678';
     const bodyHash2 = c.sha256hex('{}');

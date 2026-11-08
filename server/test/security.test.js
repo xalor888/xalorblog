@@ -37,8 +37,14 @@ async function suite() {
   assert('伪造签名被拒', r.status === 403);
 
   // 合法签名 + 表单令牌（formPost 内部完成 seed → 2s 间隔 → 签名提交）
-  r = await c.formPost('/api/comments', { nickname: '测试', content: '你好世界', article_id: 1, email: '' }, ticket);
-  assert('合法签名+表单令牌写请求通过（评论接口返回 200/4xx 而非 403 签名拒绝）', r.status !== 403, `status=${r.status}`);
+  // 内容带一次性后缀：comments 有「同 IP 30 分钟内完全相同内容」判重（429），
+  // 不带后缀时单独重跑本套件（不经 run.js 清库）会因判重变红，掩盖真实回归
+  r = await c.formPost('/api/comments', { nickname: '测试', content: `你好世界 ${Date.now()}`, article_id: 1, email: '' }, ticket);
+  assert(
+    '签名 + 表单令牌正确的写请求必须成功（HTTP 200 且 code=0）',
+    r.status === 200 && r.body && r.body.code === 0,
+    `status=${r.status} code=${r.body && r.body.code} ${r.body && r.body.message}`
+  );
 
   // 重放 nonce
   console.log('\n=== 4. 重放防护（同 nonce 二次请求被拒） ===');
@@ -87,7 +93,7 @@ async function suite() {
       headers: { 'x-fp': fp, 'user-agent': ua, ...(xpass ? { 'x-pass': xpass } : {}) },
     });
     const IP = '127.0.0.1', FP = 'f'.repeat(64), UA = 'Mozilla/5.0 RenewTest';
-    let chain = gate.issueTicket(IP, FP, UA, 0).token;
+    let chain = gate.issueTicket(FP, UA, 0).token;
     let okRenews = 0, rejected = null;
     for (let i = 1; i <= 12; i++) {
       const r = gate.renewTicket(mkReq(IP, FP, UA, chain));
@@ -97,7 +103,7 @@ async function suite() {
     assert('续期链成功 10 次', okRenews === 10, `实际 ${okRenews}`);
     assert('第 11 次续期强制重新 PoW', !!rejected && rejected.at === 11 && rejected.reason === '需要重新验证', JSON.stringify(rejected));
     // 新票据链计数独立（不全局污染）
-    let chain2 = gate.issueTicket(IP, FP, UA, 0).token;
+    let chain2 = gate.issueTicket(FP, UA, 0).token;
     let c2 = 0;
     for (let i = 0; i < 11; i++) {
       const r = gate.renewTicket(mkReq(IP, FP, UA, chain2));
@@ -194,20 +200,47 @@ async function suite() {
       rotateAllOk = false;
       rotateFailInfo = `UA#${i} → ${rRot.status} ${rRot.body && rRot.body.message || ''}`;
     }
-    if (i === 5) sixthUaStatus = rRot.status; // 第 6 个 UA：可能 200 或 403（检测已触发）
+    if (i === 5) sixthUaStatus = rRot.status; // 第 6 个 UA：跨过 UA_DIFF_THRESHOLD 的那一次
     lastRotateTicket = tRot;
     await new Promise((r2) => setTimeout(r2, 2300));
   }
   assert('5 个不同浏览器 UA（常规轮换）均可正常访问', rotateAllOk, rotateFailInfo);
-  assert('第 6 个 UA 请求不报 5xx（200 或 403 均属检测生效）', sixthUaStatus !== null && sixthUaStatus < 500, `第 6 个 UA → ${sixthUaStatus}`);
-  // 第 6 个 UA 已触发检测并开始计分；复用第 6 张票（同 UA）继续请求 → 积分累计触发封禁
+  // 第 6 个 UA 让该 IP 的 UA 集合跨过 UA_DIFF_THRESHOLD(=6)：
+  // waf.js 的 trackUaRotation 只做「记一次积分」（rate 权重 2 < banScore 10），
+  // 记分后请求照常放行 —— 所以精确期望是 200，而不是「200 或 403 都算过」。
+  // 若这里变成 403，说明轮换检测被当成了阻断条件，NAT/校园网出口的真实访客会被
+  // 一起打死，那是回归而不是「检测生效」的另一种合理形态。
+  assert(
+    '第 6 个 UA 仍正常返回 200（轮换检测只记分、不阻断）',
+    sixthUaStatus === 200,
+    `第 6 个 UA → ${sixthUaStatus}（期望 200）`
+  );
+  // 第 6 个 UA 已触发检测。
+  //
+  // ⚠ 这里曾经断言「同 UA 继续请求 → 积分累计到自动封禁」。
+  // 那条期望本身就是缺陷：跨过 UA_DIFF_THRESHOLD 之后，**窗口内每一次请求**
+  // 都会 report 一次（waf 权重 3 / banScore 10），于是第 6 个 UA 之后的第 2 个
+  // 请求就触发封禁。而 UA 轮换在真实世界里最典型的来源是 NAT 出口 ——
+  // 公司/校园/运营商 CGNAT 后面几台设备的浏览器 UA 凑满 6 个是常态，
+  // 结果是该出口上**所有**真实访客被一起封 15 分钟，且每次重犯翻倍。
+  //
+  // 现在的语义是「跨阈值瞬间只记一次分」（waf.js 的 markUaReportedOnce，
+  // 与 gate.js 的 trackFpIp 同一原则）：检测照常触发、证据照常留痕，
+  // 但不会因为持续轮换而无限累加。所以这里断言的是「分数有涨，但不因此封禁」。
+  //
+  // 要验证封禁仍然有效，看下一组「扫描器 / AI 爬虫 UA」—— 那些是明确的
+  // 单一恶意指纹，每次命中都该计分。
   let sawReject = false;
   for (let k = 0; k < 8; k++) {
     const rRot = await c.req('GET', '/api/articles?page=1', { ticket: lastRotateTicket, silent: true, ua: rotateUas[5], headers: rotationHeaders });
     if (rRot.status === 403) { sawReject = true; break; }
     await new Promise((r2) => setTimeout(r2, 1000));
   }
-  assert('UA 轮换计分后同 UA 请求被拒绝（自动封禁）', sawReject, '未观察到 403');
+  assert(
+    'UA 轮换跨阈值只记一次分，不因持续轮换把 NAT 出口封死',
+    !sawReject,
+    '跨阈值后每请求重复计分会让 NAT/校园网出口的全部真实访客被一起封禁'
+  );
 
   console.log('\n=== 11. 扫描器 / AI 爬虫 UA 拦截（+3 积分/次，累计封禁） ===');
   // 通用客户端（python-requests/curl/空 UA）已不再被 WAF 拦截计分：

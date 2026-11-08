@@ -53,7 +53,13 @@ function runningDays(sinceDate) {
 /** 额外社交链接（JSON 字符串）→ 数组；脏值降级为空数组 */
 function parseSocialExtra(raw) {
   try {
-    const list = JSON.parse(String(raw || '[]'));
+    // 两种形态都要吃：
+    //   - 新写入：settings 表里是单编码 JSON 字符串，getAllSettings 解析后是**数组**
+    //   - 旧数据：历史上被双重序列化过，解析后是**字符串**（还要再 parse 一次）
+    // 不兼容旧值的话，升级后老站的社交链接会集体消失。
+    let list = raw;
+    if (typeof list === 'string') list = JSON.parse(list || '[]');
+    else if (list == null) list = [];
     if (!Array.isArray(list)) return [];
     return list
       // 协议再校验一次：这些 URL 会直接进客户端的 <a href>，
@@ -121,8 +127,32 @@ function buildSummary({ settings, links, articleCount, noteCount, posts }) {
   };
 }
 
+/**
+ * 摘要缓存：这个接口**免票**（个人主页首屏，访客还没拿到 PoW 票据就要看到内容），
+ * 因此它是全站最容易被直接打的读接口之一 —— 每次请求 1 次设置查询 + 4 条聚合/列表 SQL。
+ *
+ * 与 stats.js 的 summaryCache 同一取舍：内容变化频率极低（文章/友链一天几篇），
+ * 60 秒 TTL 换掉每次 5 条 SQL。不做主动失效的理由同 archive：admin.js 有十几处写点，
+ * 各接一条失效调用漏一处就是长期脏缓存，而且没法测。
+ *
+ * ⚠ 必须放在限流（summaryLimiter）**之后**：缓存是给正常访客省成本的，
+ * 不能让攻击者靠"打不中缓存不花钱"绕过限流 —— 限流按请求数算，与是否命中缓存无关。
+ */
+const SUMMARY_TTL = 60 * 1000;
+let summaryCache = null;
+let summaryCacheAt = 0;
+
+/** 仅供测试与运维：手动清摘要缓存 */
+function invalidateSummaryCache() {
+  summaryCache = null;
+  summaryCacheAt = 0;
+}
+
 router.get('/summary', summaryLimiter, antiBot, async (req, res) => {
   try {
+    if (summaryCache && Date.now() - summaryCacheAt < SUMMARY_TTL) {
+      return ok(res, summaryCache);
+    }
     const settings = await getAllSettings();
 
     const [linkRows, articleCount, noteCount, posts] = await Promise.all([
@@ -140,19 +170,24 @@ router.get('/summary', summaryLimiter, antiBot, async (req, res) => {
         .select('id', 'title', 'slug', 'summary', 'cover', 'published_at'),
     ]);
 
-    return ok(res, buildSummary({
+    const payload = buildSummary({
       settings,
       links: linkRows,
       articleCount: articleCount?.cnt,
       noteCount: noteCount?.cnt,
       posts,
-    }));
+    });
+    summaryCache = payload;
+    summaryCacheAt = Date.now();
+    return ok(res, payload);
   } catch (e) {
     return fail(res, '获取主页信息失败', 500);
   }
 });
 
 module.exports = router;
+module.exports.invalidateSummaryCache = invalidateSummaryCache;
+module.exports.SUMMARY_TTL = SUMMARY_TTL;
 module.exports.buildSummary = buildSummary;
 module.exports.parseSocialExtra = parseSocialExtra;
 module.exports.runningDays = runningDays;

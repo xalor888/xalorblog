@@ -98,10 +98,19 @@ function checkLock(key) {
   return 0;
 }
 
+/**
+ * 记录一次失败尝试。
+ *
+ * @returns {boolean} 本次是否**跨过**了锁定阈值（count 达到 MAX_FAILS 的整数倍）。
+ *   调用方据此决定要不要计 IP 信誉分 —— 见下方 reserveLoginAttempt 的注释：
+ *   「每次失败都计分」会让 429 锁定永远来不及出现。
+ */
 function recordFail(key) {
   const rec = loginFails.get(key) || { count: 0, lockedUntil: 0 };
   rec.count += 1;
   rec.lastAt = Date.now();
+  // 每跨过一个阈值周期（5 次）算一次「新的锁定」，用于信誉升级与锁定时长倍增
+  const reachedLock = rec.count % MAX_FAILS === 0;
   if (rec.count >= MAX_FAILS) {
     rec.lockedUntil = Date.now() + LOCK_MS * (rec.count >= 2 * MAX_FAILS ? 2 : 1);
   }
@@ -120,6 +129,7 @@ function recordFail(key) {
       loginFails.delete(oldest);
     }
   }
+  return reachedLock;
 }
 
 /** 在一个无 await 的临界区内检查并预占 IP/账号尝试，堵住 bcrypt 并发 TOCTOU。 */
@@ -128,9 +138,10 @@ function reserveLoginAttempt(ipFailKey, accountFailKey) {
   if (ipRemain) return { ok: false, scope: 'ip', remain: ipRemain };
   const accountRemain = checkLock(accountFailKey);
   if (accountRemain) return { ok: false, scope: 'account', remain: accountRemain };
-  recordFail(ipFailKey);
+  // 预占（而非事后记账）：并发请求不能同时通过 checkLock
+  const ipReachedLock = recordFail(ipFailKey);
   recordFail(accountFailKey);
-  return { ok: true };
+  return { ok: true, ipReachedLock };
 }
 
 /**
@@ -181,7 +192,10 @@ router.post('/login', async (req, res) => {
     // 检查与预占在同一个同步临界区完成，随后才进入异步 bcrypt。
     const reservation = reserveLoginAttempt(ipFailKey, accountFailKey);
     if (!reservation.ok && reservation.scope === 'ip') {
-      report(ip, 'auth', 'POST /auth/login');
+      // 锁定期内不记 IP 信誉分：429 + 剩余秒数本身就是惩罚，而且它不可被"无视"——
+      // 真正无休止的爆破会在每个锁定周期（5 次失败）各记一次分，最终仍会被 ipGuard 封禁。
+      // 若在这里也记分，第 4 次被 429 打回的请求就会升级成 403 封禁，
+      // 把「等 5 分钟可自愈」变成「等 15 分钟且翻倍」，与分级的初衷相反。
       return res.status(429).json({ code: 1, message: `登录失败过多，请 ${reservation.remain} 秒后再试` });
     }
     if (!reservation.ok) {
@@ -194,7 +208,24 @@ router.post('/login', async (req, res) => {
       ? await bcrypt.compare(password, user.password)
       : await bcrypt.compare(password, FAKE_HASH);
     if (!matched) {
-      report(ip, 'auth', 'POST /auth/login');
+      /**
+       * 只在「本次尝试让 IP 维度跨过锁定阈值」时计 IP 信誉分。
+       *
+       * 原实现每次密码错误都 `report(ip,'auth')`（权重 3），而 `banScore` 是 10 ——
+       * 第 4 次错误就把 IP 封禁 15 分钟。用户看到的因此是 403「访问被拒绝」，
+       * 而本文件苦心设计的 429「登录失败过多，请 N 秒后再试」（带剩余时间、可恢复）
+       * 永远来不及出现：风控最需要**可解释性**的那一层被更粗暴的一层抢走了。
+       * 更糟的是它把「打错四次密码」等同于「持续爆破」，家庭/办公出口后面
+       * 几个人各错一次就会互相封禁。
+       *
+       * 现在分级是：
+       *   1-4 次错误 → 401（不记分，正常打字错误）
+       *   第 5 次    → 401 + 一次信誉分（本次置锁，下个请求才进锁定态）
+       *   锁定期内   → 429 + 剩余秒数（不记分：429 本身就是惩罚，且不会被"无视"绕过）
+       *   每 4 个锁定周期（20 次错误）→ 封禁（ipGuard 兜底真正无休止的爆破）
+       * 2FA 失败仍然每次都记分：那是「密码已经对了」之后的绕过尝试，性质不同。
+       */
+      if (reservation.ipReachedLock) report(ip, 'auth', 'POST /auth/login (locked)');
       logAuditEvent(cleanUser, 'LOGIN_FAIL', '用户名或密码错误', ip, req.headers['x-fp']);
       return fail(res, '用户名或密码错误', 401);
     }
@@ -225,6 +256,9 @@ router.post('/login', async (req, res) => {
       user: { id: user.id, username: user.username, nickname: user.nickname, avatar: user.avatar, role: user.role },
     }, '登录成功');
   } catch (e) {
+    // signToken 的指纹前置校验：登录入口已挡过格式，这里是防将来新增的签发路径漏检。
+    // 用 400 而不是 500 —— 这是客户端环境问题（隐私模式/脚本直连），不是服务端故障。
+    if (e && e.code === 'FP_INVALID') return fail(res, '设备指纹缺失，请刷新页面后重试', 400);
     return fail(res, '登录失败', 500);
   }
 });

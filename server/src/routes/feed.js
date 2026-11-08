@@ -1,5 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
+const asyncGuard = require('../utils/asyncGuard');
+const { etagMatches } = require('../utils/etag');
 const db = require('../db');
 const config = require('../config');
 const { getAllSettings } = require('../utils/settings');
@@ -27,7 +29,9 @@ function conditionalSend(req, res, content, type) {
   // 版本喂给另一个域。用 append 而不是 set —— 全局 gzip 中间件已写入
   // Vary: Accept-Encoding，set 会把它覆盖掉。
   res.append('Vary', 'Host');
-  if (req.headers['if-none-match'] === etag) {
+  // 弱比较 + 多值 + `*`：nginx/CDN 常把强 ETag 改写成 `W/"..."`，
+  // 严格相等会让这些请求全部错过 304（订阅器每次轮询都白重建整页）。详见 utils/etag.js。
+  if (etagMatches(req.headers['if-none-match'], etag)) {
     return res.status(304).end();
   }
   res.set('Content-Type', type);
@@ -48,6 +52,34 @@ function cached(key, gen) {
     cache[key + 'At'] = now;
     return value;
   });
+}
+
+/**
+ * 规范化成 W3C Datetime 的日期部分（`YYYY-MM-DD`），**无法规范化时返回空串**。
+ *
+ * 为什么必须有这一步：`String(a.updated_at || a.published_at).slice(0, 10)` 在两个字段
+ * 都是 NULL 时会得到字符串 `"null"`（String(null) 不是空串！），于是 sitemap 里出现
+ * `<lastmod>null</lastmod>`；而 `String(c.updated_at || '')` 在 NULL 时得到 `""`，
+ * 产出的是**空元素** `<lastmod></lastmod>`。
+ * 两种都不是合法 W3C Datetime —— 搜索引擎要么忽略该字段，要么把整条 URL 判为格式错误。
+ *
+ * 数据库允许 published_at 为 NULL（后台「导入备份」路径会写入 null），所以这不是理论问题。
+ *
+ * @param {*} value 日期字符串 / Date / null
+ * @returns {string} `YYYY-MM-DD` 或 `''`
+ */
+function w3cDate(value) {
+  if (!value) return '';
+  // Date 实例不能走 String() —— 那会得到 "Sun Mar 15 2026 ..."，截前 10 位是星期几
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    // 按**本地**时区格式化，与数据库里存的 localDateTimeStr 同一口径
+    // （用 toISOString 会在 UTC+8 把「凌晨」的日期算成前一天）
+    const p = (n) => String(n).padStart(2, '0');
+    return `${value.getFullYear()}-${p(value.getMonth() + 1)}-${p(value.getDate())}`;
+  }
+  const s = String(value).trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
 }
 
 /** XML 转义 */
@@ -233,12 +265,12 @@ Sitemap: ${siteUrl}${apiPrefix}/sitemap.xml
 }
 
 /** robots.txt（/api 下也提供，根路径由 app.js 挂载） */
-router.get('/robots.txt', async (req, res) => {
+router.get('/robots.txt', asyncGuard(async (req, res) => {
   res.set('Content-Type', 'text/plain; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=3600');
   res.append('Vary', 'Host'); // 同上：按 Host 分派主页版/博客版
   return res.send(await robotsTxt(req));
-});
+}));
 
 /**
  * 个人主页版 RSS：只出「手记」摘要（正文仍受闸门 + AES-GCM 保护，不进订阅源）。
@@ -259,7 +291,7 @@ async function homeRssXml(req) {
       // 指向手记列表的分享页（真实路径）。
       // hash URL 在 RSS 里还能被点开，但搜索引擎收录时 # 之后会被丢弃，
       // 与新 sitemap 的口径保持一致更好排查。
-      const link = `${esc(siteUrl)}/api/share-page/notes`;
+      const link = `${esc(siteUrl)}${apiPrefix}/share-page/notes`;
       const date = String(s.published_at || s.created_at || '').slice(0, 10);
       return `    <item>
       <title>${esc(`手记 · ${date}`)}</title>
@@ -297,7 +329,10 @@ router.get('/rss.xml', async (req, res) => {
         .where('status', 'published')
         .orderBy('published_at', 'desc')
         .limit(20)
-        .select('id', 'title', 'slug', 'summary', 'content', 'cover', 'published_at');
+        // created_at 必须一起取：published_at 允许为 NULL（后台「导入备份」路径），
+        // 而 RSS 的 pubDate 是必填元素 —— 没有兜底就只能用「当前时间」，
+        // 结果是一条 2019 年的旧文每次被轮询都显示"刚刚发布"，订阅器会当成新文章推送。
+        .select('id', 'title', 'slug', 'summary', 'content', 'cover', 'published_at', 'created_at');
 
       // 标签聚合：文章 id → 标签名数组（RSS <category> 富化订阅端分类展示）
       const tagRows = await db('article_tags as at')
@@ -315,7 +350,9 @@ router.get('/rss.xml', async (req, res) => {
           // 全文：mdToHtml 做 XML 转义 + URL 绝对化，sanitizeRssHtml 再做白名单清洗
           const full = demoteH1(sanitizeRssHtml(mdToHtml(a.content, siteUrl)));
           const link = `${esc(siteUrl)}${apiPrefix}/share/${a.slug}`;
-          const pubDate = toRfc822(a.published_at);
+          // 兜底到 created_at：与 sitemap 的 lastmod、list/archive 的排序时间轴口径一致
+          //（三处都按 `published_at || created_at` 处理，否则同一篇文章在不同出口显示不同日期）
+          const pubDate = toRfc822(a.published_at || a.created_at);
           const cats = (tagsByArticle[a.id] || [])
             .map((t) => `      <category>${esc(t)}</category>`)
             .join('\n');
@@ -374,17 +411,20 @@ async function homeSitemapXml(req) {
     { path: 'notes', priority: '0.8' },
   ]
     .map((p) => `  <url>
-    <loc>${esc(siteUrl)}/api/share-page${p.path ? '/' + p.path : ''}</loc>
+    <loc>${esc(siteUrl)}${apiPrefix}/share-page${p.path ? '/' + p.path : ''}</loc>
     <priority>${p.priority}</priority>
   </url>`)
     .join('\n');
 
   // 手记：暂无独立分享页，指向手记列表的分享页。
   // 用 hash URL 的话搜索引擎只会看到首页，等于没提交。
+  // lastmod 只在有合法日期时输出：手记允许 published_at/updated_at 均为 NULL，
+  // 原写法 `String(... || '').slice(0,10)` 会产出空元素 `<lastmod></lastmod>`，
+  // 那不是合法 W3C Datetime（同 blog sitemap 里的 `"null"` 问题，见 w3cDate 注释）。
+  const notesLm = notes.length ? w3cDate(notes[0].updated_at || notes[0].published_at) : '';
   const noteUrls = notes.length
     ? `  <url>
-    <loc>${esc(siteUrl)}/api/share-page/notes</loc>
-    <lastmod>${String(notes[0].updated_at || notes[0].published_at || '').slice(0, 10)}</lastmod>
+    <loc>${esc(siteUrl)}${apiPrefix}/share-page/notes</loc>${notesLm ? `\n    <lastmod>${notesLm}</lastmod>` : ''}
     <priority>0.6</priority>
   </url>`
     : '';
@@ -421,28 +461,36 @@ router.get('/sitemap.xml', async (req, res) => {
       // ⚠ 必须用 `/api/share-page/*` 这种**真实路径**，不能用 `/#/xxx`：
       // 搜索引擎会丢弃 `#` 之后的部分，hash URL 等于全部指向首页，
       // 整份 sitemap 形同虚设（实测 11 条记录全部无效）。
-      const staticPages = ['', 'archive', 'tags', 'about', 'bookmarks', 'links', 'messages']
+      // 从 share.js 的 STATIC_PAGES 派生，而不是再写一份硬编码 ——
+      // 原来这里是 7 项，而 share.js 有 9 项：`articles` 页从来没进过 sitemap
+      // （分类变体都列了，无分类的列表页反而没列，而它覆盖的文章最全）。
+      // `notes` 排除：它有独立的 lastmod 逻辑，见下面的 noteUrls。
+      const staticPageKeys = require('./share').STATIC_PAGE_KEYS.filter((k) => k !== 'notes');
+      const staticPages = staticPageKeys
         .map((p) => `  <url>
-    <loc>${esc(siteUrl)}/api/share-page${p ? '/' + p : ''}</loc>
+    <loc>${esc(siteUrl)}${apiPrefix}/share-page${p ? '/' + p : ''}</loc>
     <priority>${p ? '0.4' : '1.0'}</priority>
   </url>`)
         .join('\n');
 
       const catUrls = categories
-        .map((c) => `  <url>
-    <loc>${esc(siteUrl)}/api/share-page/articles?category=${encodeURIComponent(c.slug)}</loc>
-    <lastmod>${String(c.updated_at || '').slice(0, 10)}</lastmod>
+        .map((c) => {
+          const lm = w3cDate(c.updated_at);
+          // 无合法日期时整条省略 lastmod，而不是输出空元素
+          return `  <url>
+    <loc>${esc(siteUrl)}${apiPrefix}/share-page/articles?category=${encodeURIComponent(c.slug)}</loc>${lm ? `\n    <lastmod>${lm}</lastmod>` : ''}
     <priority>0.5</priority>
-  </url>`)
+  </url>`;
+        })
         .join('\n');
 
       const postUrls = articles
         .map((a) => {
-          // lastmod 优先文章更新时间（内容修改后搜索引擎应重新抓取）
-          const lastmod = String(a.updated_at || a.published_at).slice(0, 10);
+          // lastmod 优先文章更新时间（内容修改后搜索引擎应重新抓取）。
+          // 两者都为 NULL 时 w3cDate 返回空串 → 省略该元素（不能写字面量 "null"）。
+          const lastmod = w3cDate(a.updated_at || a.published_at);
           return `  <url>
-    <loc>${esc(siteUrl)}${apiPrefix}/share/${a.slug}</loc>
-    <lastmod>${lastmod}</lastmod>
+    <loc>${esc(siteUrl)}${apiPrefix}/share/${a.slug}</loc>${lastmod ? `\n    <lastmod>${lastmod}</lastmod>` : ''}
     <priority>0.6</priority>
   </url>`;
         })
@@ -465,5 +513,6 @@ ${postUrls}
 
 module.exports = router;
 module.exports.robotsTxt = robotsTxt;
+module.exports.w3cDate = w3cDate;
 module.exports.sanitizeRssHtml = sanitizeRssHtml;
 module.exports.mdToHtml = mdToHtml;

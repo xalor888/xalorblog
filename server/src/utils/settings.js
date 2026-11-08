@@ -1,5 +1,6 @@
 const db = require('../db');
 const { safeUrl, safeCover } = require('./sanitize');
+const { isPrivateUrl } = require('./netGuard');
 
 const DEFAULT_SETTINGS = {
   site_name: 'Xalor的小站',
@@ -9,6 +10,15 @@ const DEFAULT_SETTINGS = {
   about_content: '# 关于我\n\n这里是关于页内容，可以在后台修改。',
   // 默认头像/LOGO：站点图标（未在后台手动上传头像时，About 页、OG 分享图回退均使用此图）
   avatar: '/logo.png',
+  // 站点专用分享图（1200×630 宽幅）：社交卡片优先用它，其次才回退 avatar。
+  //
+  // ⚠ 这个键必须是 DEFAULT_SETTINGS 的成员，否则整条链路是死的：
+  // saveSettings 只接受 ALLOWED_KEYS（= Object.keys(DEFAULT_SETTINGS)）里的键，
+  // 不在其中就 `continue` **静默丢弃**。而 share.js / feed.js / pageMeta.js /
+  // ArticleDetail.vue 四处都在读它 —— 后台那个输入框填了永远存不进去，
+  // 分享卡片永远回落到正方形的头像（被裁成 1.91:1 会很难看）。
+  // 这正是「界面有、文档有、消费方有，唯独存储白名单里没有」的典型死字段。
+  og_image: '',
   // 站点完整 URL（如 https://blog.example.com）：RSS/Sitemap/分享页链接优先使用，
   // 避免 Nginx 终止 TLS 时 req.protocol 推导出 http 链接
   site_url: '',
@@ -90,6 +100,21 @@ const BOOL_KEYS = new Set([
   'websearch_enabled',
 ]);
 
+/**
+ * 结构化（数组/对象）值的键。
+ *
+ * 为什么需要单独一组：`saveSettings` 的通用分支只接受 `typeof value === 'string'`，
+ * 结构化数据必须先序列化成字符串；而 `getAllSettings` 的通用分支又会对
+ * 「解析出来不是字符串」的值做 `String(v)` —— 数组会被拼成 "[object Object]"。
+ *
+ * 原来的 `home_social_extra` 分支清洗完数组后赋值给 `value` 却没 `continue`，
+ * 于是落到通用分支被 **JSON.stringify 了第二次**，落库是双编码：
+ *   '[{"label":"GitHub","url":"..."}]'  ← 外面还裹一层引号
+ * 读回来 `JSON.parse` 一次得到的是**字符串**而不是数组，只能靠消费方再 parse 一次兜住。
+ * 功能上是通的，但语义混乱：任何人直接写 `settings.home_social_extra.map(...)` 都会崩。
+ */
+const JSON_VALUE_KEYS = new Set(['home_social_extra']);
+
 // 设置缓存：读多写少，保存时失效
 let settingsCache = null;
 let cacheAt = 0;
@@ -108,6 +133,10 @@ async function getAllSettings() {
       let v = JSON.parse(r.value);
       if (BOOL_KEYS.has(r.key)) {
         v = v === true || v === 'true' || v === 1 || v === '1';
+      } else if (JSON_VALUE_KEYS.has(r.key)) {
+        // 结构化的键原样保留数组；非法形态（字符串/数字）统一降级为空数组，
+        // 消费方就不用各自再写一遍 try/catch
+        v = Array.isArray(v) ? v : [];
       } else if (typeof v !== 'string') {
         v = String(v ?? '').slice(0, 5000);
       }
@@ -127,6 +156,21 @@ async function getAllSettings() {
 async function saveSettings(entries) {
   const writes = []; // 待执行的 upsert
   const clears = []; // 待执行的删除（密钥 __CLEAR__）
+  /**
+   * 被校验拒绝的键。
+   *
+   * 这个函数的每个 `continue` 都是**静默丢弃** —— 不报错、不提示，调用方
+   * 只看到「保存成功」。对某些字段这是合理的（密钥留空 = 不修改），
+   * 但对用户主动填写的字段（`site_url` 带了 query、`ai_base_url` 指向内网 IP），
+   * 「提示已保存但值没变」会让用户以为配置生效了，然后去排查别的地方。
+   *
+   * 所以把拒绝原因收集起来交给调用方，由它决定怎么提示。
+   */
+  const rejected = [];
+
+  /** 记一笔「这个键被拒了」并附上原因，交给调用方提示 */
+  const reject = (key, reason) => rejected.push({ key, reason });
+
   for (let [key, value] of Object.entries(entries)) {
     if (!ALLOWED_KEYS.has(key)) continue; // 忽略未知键
     // null 视为「清空」而不是「忽略」：el-date-picker 等控件清空后提交的是 null，
@@ -139,22 +183,25 @@ async function saveSettings(entries) {
     // 展示链路（<a href> / <img src> / OG 分享图 / RSS 链接）
     if (key === 'site_url' && value) {
       const parsed = safeUrl(raw, 500);
-      if (!parsed) continue;
+      if (!parsed) { reject(key, 'URL 需要是 http(s) 绝对地址'); continue; }
       const u = new URL(parsed);
-      if (u.search || u.hash) continue;
+      if (u.search || u.hash) { reject(key, '站点 URL 不能带查询参数或锚点'); continue; }
     }
     // 主页站点 URL：与 site_url 同一套约束（协议白名单 + 拒带 query/hash）
     if (key === 'home_site_url' && value) {
       const parsed = safeUrl(raw, 500);
-      if (!parsed) continue;
+      if (!parsed) { reject(key, 'URL 需要是 http(s) 绝对地址'); continue; }
       const u = new URL(parsed);
-      if (u.search || u.hash) continue;
+      if (u.search || u.hash) { reject(key, '站点 URL 不能带查询参数或锚点'); continue; }
     }
     // 主页在线状态：枚举钳制，非法值丢弃（保持原值）
-    if (key === 'home_status' && !['online', 'busy', 'away', 'offline'].includes(String(raw).trim())) continue;
+    if (key === 'home_status' && !['online', 'busy', 'away', 'offline'].includes(String(raw).trim())) {
+      reject(key, '在线状态只能是 online / busy / away / offline');
+      continue;
+    }
     // 起始日期：严格 YYYY-MM-DD，否则丢弃（前端用 new Date() 解析，脏值会产生 NaN 天数）
     if (key === 'home_since_date' && raw) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) continue;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) { reject(key, '日期格式必须是 YYYY-MM-DD'); continue; }
     }
     // 额外社交链接：必须是 JSON 数组，逐项校验 label 与 http(s) URL，最多 8 条。
     // 校验后重新序列化，避免把非法项原样带进公开接口。
@@ -175,19 +222,43 @@ async function saveSettings(entries) {
         if (!label || !u) continue;
         cleaned.push({ label, url: u });
       }
-      value = JSON.stringify(cleaned);
-      // 落到下面的通用分支继续走长度截断与写库
+      // 直接入队并跳出：**不能再落到通用分支**，否则会被 JSON.stringify 第二次，
+      // 落库变成双编码（外面裹一层引号），读回来 parse 一次得到字符串而不是数组。
+      writes.push({ key, value: JSON.stringify(cleaned) });
+      continue;
     }
     // avatar 与封面同一白名单：/logo.png、/uploads/<随机文件名> 或 http(s)
     if (key === 'avatar' && value) {
-      if (!safeCover(raw)) continue;
+      if (!safeCover(raw)) { reject(key, '头像只接受站内路径（/logo.png、/uploads/<文件名>）或 http(s) 地址'); continue; }
     }
-    if ((key === 'social_github' || key === 'social_weibo') && value && !/^https?:\/\/[^\s]+$/i.test(raw)) continue;
+    // 分享图：后台提示写明「必须是绝对 URL 或站内绝对路径」，示例就是 /og-image.png。
+    // 所以不能直接复用 safeCover —— 那个函数只认 `/logo.png` 与 `/uploads/<随机名>`
+    // 两种字面形态（它服务的是「上传产物」），把 /og-image.png 这种**站内真实存在**
+    // 的构建产物路径判为非法，会让这个字段「能存但不认自己文档里举的例子」。
+    // 判据：站内绝对路径（`/` 开头，无协议、无 ..、无空白）或经 safeUrl 的绝对 http(s)。
+    if (key === 'og_image' && value) {
+      const isSitePath = /^\/(?!\/)[^\s\\]*$/.test(raw) && !raw.includes('..');
+      if (!isSitePath && !safeUrl(raw, 500)) { reject(key, '分享图只接受站内绝对路径或 http(s) 地址'); continue; }
+    }
+    if ((key === 'social_github' || key === 'social_weibo') && value && !/^https?:\/\/[^\s]+$/i.test(raw)) {
+      reject(key, '社交链接需要是 http(s) 绝对地址');
+      continue;
+    }
     // 联系邮箱用于 security.txt / mailto 链接，拒绝空格/换行/角括号等异常值
-    if (key === 'social_email' && value && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(raw)) continue;
-    // AI 接口地址：必须是 https（内容与密钥不能走明文，也不允许指向内网成为 SSRF 链）
+    if (key === 'social_email' && value && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(raw)) {
+      reject(key, '邮箱格式不正确');
+      continue;
+    }
+    // AI 接口地址：必须是 https，且**不能是私有/保留 IP 字面量**。
+    // 保存时就挡住（而不是只在运行时判 ready）：后台填完点保存如果能成功，
+    // 用户会认为配置没问题，然后在调用时看到「AI 不可用」，两处说法不一致。
+    // 需要生产环境对接自建网关时，用主机名（如 ai-gw.local 指向 127.0.0.1）而不是 IP 字面量。
     if (key === 'ai_base_url' && raw) {
-      if (!/^https:\/\/[^\s]+$/i.test(raw)) continue;
+      if (!/^https:\/\/[^\s]+$/i.test(raw)) { reject(key, 'AI 接口地址必须是 https'); continue; }
+      if (isPrivateUrl(raw)) {
+        reject(key, 'AI 接口地址不能指向内网/保留地址（需要连本地网关请用主机名而不是 IP）');
+        continue;
+      }
     }
     // AI 密钥：后台不回显明文，所以「空值」表示"不修改"而不是"清空"。
     // 要清除请提交单独的删除标记。
@@ -202,13 +273,13 @@ async function saveSettings(entries) {
     // AI 生成参数：数值范围钳制（温度 0-2，输出上限 256-8192）
     if (key === 'ai_temperature' && raw) {
       const t = Number(raw);
-      if (!Number.isFinite(t) || t < 0 || t > 2) continue;
+      if (!Number.isFinite(t) || t < 0 || t > 2) { reject(key, 'temperature 需要在 0–2 之间'); continue; }
     }
     if (key === 'ai_max_tokens' && raw) {
       const n = parseInt(raw, 10);
-      if (!Number.isFinite(n) || n < 256 || n > 8192) continue;
+      if (!Number.isFinite(n) || n < 256 || n > 8192) { reject(key, 'max tokens 需要在 256–8192 之间'); continue; }
     }
-    if (key === 'ai_system_prompt' && raw.length > 3000) continue;
+    if (key === 'ai_system_prompt' && raw.length > 3000) { reject(key, '人设最多 3000 字'); continue; }
     // 网页搜索密钥：与 ai_api_key 同一套「空值=不修改、__CLEAR__=删除」的约定
     if (key === 'websearch_api_key') {
       if (!raw || /^\*+$/.test(raw)) continue;
@@ -218,16 +289,19 @@ async function saveSettings(entries) {
       }
       if (raw.length < 8 || raw.length > 300) continue;
     }
-    if (key === 'websearch_provider' && !['tavily'].includes(String(raw).trim())) continue;
+    if (key === 'websearch_provider' && !['tavily'].includes(String(raw).trim())) {
+      reject(key, '搜索服务商目前只支持 tavily');
+      continue;
+    }
     // AI 上下文参数：正文 1000-100000 字、历史 6-200 轮。
     // 上限对齐现代长上下文模型（百万 token 级）：10 万中文字 ≈ 5-10 万 token，占比个位数。
     if (key === 'ai_ctx_chars' && raw) {
       const n = parseInt(raw, 10);
-      if (!Number.isFinite(n) || n < 1000 || n > 100000) continue;
+      if (!Number.isFinite(n) || n < 1000 || n > 100000) { reject(key, '上下文字数需要在 1000–100000 之间'); continue; }
     }
     if (key === 'ai_ctx_turns' && raw) {
       const n = parseInt(raw, 10);
-      if (!Number.isFinite(n) || n < 6 || n > 200) continue;
+      if (!Number.isFinite(n) || n < 6 || n > 200) { reject(key, '上下文轮数需要在 6–200 之间'); continue; }
     }
     let safeValue;
     if (BOOL_KEYS.has(key)) {
@@ -254,7 +328,13 @@ async function saveSettings(entries) {
     });
   }
   settingsCache = null; // 失效缓存
-  return getAllSettings();
+  return { settings: await getAllSettings(), rejected };
 }
 
-module.exports = { DEFAULT_SETTINGS, ALLOWED_KEYS, getAllSettings, saveSettings };
+/** 手动失效设置缓存（测试用；运维在需要立刻看到后台改动时也可调） */
+function clearSettingsCache() {
+  settingsCache = null;
+  cacheAt = 0;
+}
+
+module.exports = { DEFAULT_SETTINGS, ALLOWED_KEYS, getAllSettings, saveSettings, clearSettingsCache };

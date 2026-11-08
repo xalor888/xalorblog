@@ -58,7 +58,7 @@ router.post('/ticket', issueLimiter, (req, res) => {
     }
     const result = verifyPow(req, req.body);
     if (!result.ok) return fail(res, result.reason, 403);
-    const issued = issueTicket(req.ip || 'unknown', fp, String(req.headers['user-agent'] || '').slice(0, 120), 0, true);
+    const issued = issueTicket(fp, String(req.headers['user-agent'] || '').slice(0, 120), 0, true);
     return ok(res, {
       token: issued.token,
       ttl: 600000,

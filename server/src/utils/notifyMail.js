@@ -36,14 +36,41 @@ function validRecipient(to) {
   return typeof to === 'string' && /^[^\s@<>]{1,64}@[^\s@<>]+\.[^\s@<>]{2,}$/.test(to);
 }
 
+/**
+ * 按 UTF-8 **字节**折行到 maxBytes 以内（遇到多字节字符整字前移，不切半个字符）。
+ * 为什么不能按字符折行：RFC 5322 的 998 是**字节**上限（octets），
+ * 而中文 UTF-8 一个字符占 3 字节 —— 按字符每 990 断行，
+ * 一行 990 个汉字就是 2970 字节，Postfix 等 MTA 会直接回 500 Line too long，
+ * 评论/留言通知邮件整封投递失败。实测 360 个汉字的正文折完仍是一行 1080 字节。
+ */
+const SMTP_LINE_BYTES = 990; // 留 8 字节余量给 CRLF 与编码开销
+
+function foldByBytes(text, maxBytes = SMTP_LINE_BYTES) {
+  const out = [];
+  let line = '';
+  let bytes = 0;
+  for (const ch of text) {
+    const n = Buffer.byteLength(ch, 'utf8');
+    if (bytes + n > maxBytes && line) {
+      out.push(line);
+      line = '';
+      bytes = 0;
+    }
+    line += ch;
+    bytes += n;
+  }
+  if (line) out.push(line);
+  return out.join('\n');
+}
+
 /** SMTP 协议清洗：剥离 CR/LF，防评论/留言内容注入 SMTP 命令或伪造邮件 */
 function sanitizeForSmtp(s) {
   // 清洗 CR/LF：防 SMTP 命令注入与 DATA 终止序列（正则须单行，\r \n 为转义序列）
   const flat = String(s).replace(/[\r\n]+/g, ' ').trim();
-  // 折叠超长行：RFC 5322 要求行 ≤ 998 字符（含 CRLF），Postfix 等服务器
+  // 折叠超长行：RFC 5322 要求行 ≤ 998 字节（含 CRLF），Postfix 等服务器
   // 直接拒绝超长行 → 邮件投递失败（此前防注入把换行压平后单行可达 2000 字符）。
-  // 在 990 处断行（DATA 段内换行合法，语义无损）
-  return flat.replace(/(.{990})/g, '$1\n').replace(/\n\s*/g, '\n').trim();
+  // 按 UTF-8 字节折行，中文一行 330 字以内（≈990 字节），ASCII 仍是 990 字符。
+  return foldByBytes(flat).replace(/\n\s*/g, '\n').trim();
 }
 
 /**
@@ -61,6 +88,11 @@ function safeSubject(s) {
   return cut;
 }
 
+/** 未配置 SMTP 时的「跳过」提示只记一次（模块级标记），避免每次评论都刷日志 */
+let loggedNotConfigured = false;
+/** 配置了 SMTP 但收件人不可用同样只记一次（配置错误，不是运行时噪声） */
+let loggedBadRecipient = false;
+
 /**
  * 发送邮件：强制 TLS/STARTTLS（默认），避免 SMTP 凭据与内容明文传输。
  * @param {string} subject 主题（自动清洗 + 截断）
@@ -69,11 +101,27 @@ function safeSubject(s) {
  */
 function send(subject, text, to) {
   return new Promise((resolve) => {
-    if (!smtpReady()) return resolve(false);
+    if (!smtpReady()) {
+      // 「未配置 SMTP 而跳过」是正常部署形态（本地开发 / 未启用通知），用 debug 级
+      // 且只记一次：与下面「配置了但发送失败」的 warn 在级别和措辞上都能区分开，
+      // 既不刷屏，也不会再让「根本没配」和「配了发不出去」在日志里长得一样。
+      if (!loggedNotConfigured) {
+        loggedNotConfigured = true;
+        console.debug('[mail] SMTP 未配置，通知邮件已跳过（本进程仅提示一次）');
+      }
+      return resolve(false);
+    }
     // 收件人：优先自定义（须通过格式校验），其次站长邮箱，最后回退 SMTP 用户名
     let recipient = validRecipient(to) ? to : cfg.to;
     if (!validRecipient(recipient) && validRecipient(cfg.user)) recipient = cfg.user;
-    if (!validRecipient(recipient)) return resolve(false);
+    if (!validRecipient(recipient)) {
+      // 配了 SMTP 却没有一个合法收件人：静默 false 会让「通知从来没发出过」无从察觉
+      if (!loggedBadRecipient) {
+        loggedBadRecipient = true;
+        console.warn('[mail] 收件人地址无效（NOTIFY_EMAIL / SMTP_USER），通知邮件已跳过；本进程仅提示一次');
+      }
+      return resolve(false);
+    }
 
     const transporter = nodemailer.createTransport({
       host: cfg.host,
@@ -97,8 +145,12 @@ function send(subject, text, to) {
         transporter.close();
         resolve(true);
       })
-      .catch(() => {
+      .catch((err) => {
         transporter.close();
+        // 发送失败必须可观测：原来 catch 里只 resolve(false)，SMTP 认证失败 / 被拒信 /
+        // 超时在业务层全部表现为「没收到邮件」，线上完全无法定位。
+        // 只记错误信息（类别 + 原因），**不打印收件人与正文** —— 日志会外泄隐私。
+        console.warn('[mail] 发送失败:', err && err.message);
         resolve(false);
       });
   });

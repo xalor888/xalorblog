@@ -22,6 +22,12 @@ const { canLike } = require('./articles');
 const router = express.Router();
 
 const MAX_PAGE_SIZE = 20;
+/**
+ * 列表接口允许从 content 读取的最大字符数（仅用于生成摘要）。
+ * 必须明显大于 utils/notes.js 的 EXCERPT_LEN(200)：plainText() 剥离 Markdown 后
+ * 长度会缩水，留 10 倍余量才能保证摘要仍能凑满。改小它会静默让摘要变短。
+ */
+const SUMMARY_CONTENT_CHARS = 2000;
 const DEFAULT_PAGE_SIZE = 10;
 
 /** 手记详情的内容密钥标识：note:<id>，与文章的 slug 命名空间隔离 */
@@ -52,8 +58,19 @@ router.get('/', async (req, res) => {
     const rows = await base
       .clone()
       .select(
-        'id', 'content', 'images', 'excerpt', 'mood', 'location',
-        'likes', 'is_pinned', 'status', 'published_at', 'created_at', 'updated_at'
+        'id', 'images', 'excerpt', 'mood', 'location',
+        'likes', 'is_pinned', 'status', 'published_at', 'created_at', 'updated_at',
+        // 正文只取**前 N 个字符**，不整列拉出来。
+        //
+        // 原来这里 select('content') —— content 是 mediumtext，而列表每页最多 20 条：
+        // 一篇长手记 20 万字，一页就是 400 万字进内存，只为算出「前 200 字摘要」。
+        // 手记是朋友圈式短文，但接口不该依赖「作者不会写长」这个前提。
+        //
+        // 为什么是 2000 而不是 200：buildExcerpt 会先过 plainText() 剥离 Markdown
+        // 标记（井号标题、星号加粗、链接语法、代码块），剥完的长度明显小于原文。
+        // 取 2000 字符能保证剥离后仍能凑满 200 字摘要；取 200 会让带格式的手记
+        // 摘要变短甚至为空。20 条 × 2000 字符 ≈ 40KB，对比原实现的量级降了两个数量级。
+        db.raw('LEFT(content, ?) AS content', [SUMMARY_CONTENT_CHARS])
       )
       .orderBy([
         { column: 'is_pinned', order: 'desc' },
@@ -137,3 +154,4 @@ router.post('/:id/like', async (req, res) => {
 
 module.exports = router;
 module.exports.noteContentKey = noteContentKey;
+module.exports.SUMMARY_CONTENT_CHARS = SUMMARY_CONTENT_CHARS;

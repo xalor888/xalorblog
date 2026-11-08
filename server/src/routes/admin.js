@@ -5,11 +5,14 @@
  * 所有路由统一要求 JWT + 指纹 + 服务端会话三重认证。
  */
 
+const { REVIEW_STATUS, REVIEW_STATUS_ZH, ARTICLE_STATUS, isOneOf } = require('../utils/enums');
 const express = require('express');
+const { extractUploadRefs, UPLOAD_REF_SQL_LIKE } = require('../utils/uploads');
+const asyncGuard = require('../utils/asyncGuard');
 const db = require('../db');
 const config = require('../config');
 const { ok, fail, notFound } = require('../utils/response');
-const { slugify } = require('../utils/slugify');
+const { slugify, uniqueSlug } = require('../utils/slugify');
 const { authRequired } = require('../middleware/auth');
 const { localDateTimeStr } = require('../utils/datetime');
 const { plainText } = require('../utils/markdownText');
@@ -194,8 +197,21 @@ router.post('/articles', async (req, res) => {
       if (!cat) return fail(res, '所选分类不存在，请刷新页面后重试');
     }
 
-    const slug = slugify(req.body.slug || cleanTitle, await db('articles').pluck('slug'));
-    const published_at = cleanStatus === 'published' ? localDateTimeStr() : null;
+    const slug = await uniqueSlug('articles', req.body.slug || cleanTitle);
+    /**
+     * 发布时间：与 PUT 同一口径（合法的显式时间优先），否则「发布取当前、草稿置 NULL」。
+     *
+     * 原来这里**完全忽略** body.published_at，于是新建文章时在右侧填的「发布时间」
+     * 会被静默丢弃 —— 同一个表单，新建与编辑两种结果，用户只会觉得「有时候不生效」。
+     * 注意 null/'' 不覆盖默认值：新建草稿本来就该是 NULL、新建发布本来就该是当前时间，
+     * 只有「显式给了合法时间」才用它（想清空请走 PUT，那里有明确的 null 契约）。
+     */
+    let published_at = cleanStatus === 'published' ? localDateTimeStr() : null;
+    const rawPublishedAt = req.body.published_at;
+    if (rawPublishedAt !== undefined && rawPublishedAt !== null && String(rawPublishedAt).trim() !== '') {
+      if (!isValidDateTime(rawPublishedAt)) return fail(res, '发布时间不是有效日期');
+      published_at = String(rawPublishedAt);
+    }
 
     // 事务：文章正文与标签关联原子落库（标签中途失败整体回滚，杜绝半成品文章）
     const trx = await db.transaction();
@@ -217,7 +233,7 @@ router.post('/articles', async (req, res) => {
         if (existing) {
           tagId = existing.id;
         } else {
-          [tagId] = await trx('tags').insert({ name: t, slug: slugify(t, await trx('tags').pluck('slug')) });
+          [tagId] = await trx('tags').insert({ name: t, slug: await uniqueSlug('tags', t, { conn: trx }) });
         }
         await trx('article_tags').insert({ article_id: id, tag_id: tagId }).onConflict(['article_id', 'tag_id']).ignore();
       }
@@ -237,6 +253,119 @@ router.post('/articles', async (req, res) => {
   }
 });
 
+/* ---------- PUT /articles/:id 的「清空语义」解析（纯函数） ----------
+ *
+ * 缺陷背景：`published_at` 与 `slug` 原来都写成「有值才改」——
+ *   - `published_at: ''` 被 `typeof === 'string' && published_at` 挡掉 → 旧时间纹丝不动；
+ *   - `slug: ''` 被 `if (slug)` 挡掉 → 旧地址纹丝不动，占位文案「留空自动生成」
+ *     只在新建时成立。
+ * 结果就是「清空」这个动作在前端看起来成功了（200 + 写库成功），实际什么都没发生。
+ *
+ * 两端契约（前端 ArticleEdit.vue 与本函数必须一致）：
+ *
+ * | 前端传值                                  | 行为                                   |
+ * |-------------------------------------------|----------------------------------------|
+ * | 字段**不出现**（undefined / 无该 key）     | 保持库里的原值（老语义，不能破坏）      |
+ * | `published_at: null` 或 `''`（含纯空白）   | 置为 NULL（草稿 / 未排期）              |
+ * | `published_at: 'YYYY-MM-DD HH:mm:ss'`      | 合法则写入；非法字符串 → 400 + debug 日志 |
+ * | `published_at`: 数字/布尔/对象等非字符串    | 忽略 + 保持原值 + debug 日志（老语义）   |
+ * | `slug: ''` / 纯空白 / `null`               | 按标题重新生成（slugify + 去重）        |
+ * | `slug: 'xxx'`                              | slugify 归一化 + 去重后写入（老语义）    |
+ * | `slug`: 数字/布尔/对象等非字符串            | 忽略 + 保持原值 + debug 日志            |
+ *
+ * 有一处刻意不按「非法值一律忽略」：**非空但格式非法的日期字符串**仍然 400。
+ * 那是既有校验，前端靠这条提示让用户改日期；改成静默忽略会让「我明明填了日期，
+ * 保存后却消失了」这个更糟的现象出现 —— 与本次要修的 bug 同型。
+ *
+ * 为什么抽成纯函数：这段失败方式是「静默不生效」（HTTP 200、落库成功、值不变），
+ * 只有真实 MySQL + 三重认证的登录态才能驱动 PUT 路由，离线套件跑不起那套栈。
+ * 抽出来后用真实调用钉住每条语义（test/articlePatchContract.test.js），
+ * 路由只负责「取行 → 交给它 → 落库 → 回传结果值」。
+ *
+ * @param {object} body    请求体（未清洗；非对象按空对象处理）
+ * @param {object} current 库里当前行（用到 title / slug / status / published_at）
+ * @param {object} opts    { existingSlugs, now, log }
+ *        existingSlugs 必须**已排除本文自身** —— 老语义里自己的 slug 不与自己冲突。
+ * @returns {{ patch: object, changed: object, error: string|null }}
+ *        changed 只记录真正接受的改动：{ slug?: string, published_at?: 'set'|'cleared', status?: string }
+ */
+function resolveArticlePatch(body, current = {}, opts = {}) {
+  const src = body && typeof body === 'object' ? body : {};
+  const cur = current && typeof current === 'object' ? current : {};
+  const existingSlugs = Array.isArray(opts.existingSlugs) ? opts.existingSlugs : [];
+  const nowStr = typeof opts.now === 'string' && opts.now ? opts.now : localDateTimeStr();
+  const log = typeof opts.log === 'function' ? opts.log : defaultArticlePatchLog;
+
+  const patch = {};
+  const changed = {};
+  // 必须用 hasOwnProperty：`=== undefined` 无法区分「没传这个字段」与「显式传了 null」——
+  // 而这两个在本次契约里语义正好相反（不动 vs 清空）。
+  const has = (key) => Object.prototype.hasOwnProperty.call(src, key);
+
+  // ---- status：发布状态（含「首次发布补当前时间」的老语义） ----
+  if (has('status') && src.status !== undefined) {
+    if (!isOneOf(ARTICLE_STATUS, src.status)) {
+      return { patch, changed, error: '非法状态' };
+    }
+    if (src.status !== cur.status) {
+      patch.status = src.status;
+      changed.status = src.status;
+      if (src.status === 'published' && !cur.published_at) {
+        patch.published_at = nowStr;
+        changed.published_at = 'set';
+      }
+    }
+  }
+
+  // ---- published_at：手动排期 / 清空排期 ----
+  // 放在 status 之后：用户显式清空时，必须压掉上面「首次发布补当前时间」的结果。
+  if (has('published_at') && src.published_at !== undefined) {
+    const v = src.published_at;
+    if (v === null || (typeof v === 'string' && v.trim() === '')) {
+      patch.published_at = null;
+      changed.published_at = 'cleared';
+    } else if (typeof v === 'string') {
+      if (!isValidDateTime(v)) {
+        log(`published_at 不是有效日期，已拒绝并保持原值：${JSON.stringify(v)}`);
+        return { patch, changed, error: '发布时间不是有效日期' };
+      }
+      patch.published_at = v;
+      changed.published_at = 'set';
+    } else {
+      log(`published_at 类型不支持（${typeof v}），已忽略并保持原值`);
+    }
+  }
+
+  // ---- slug：自定义地址 / 清空后按标题重生成 ----
+  if (has('slug') && src.slug !== undefined) {
+    const v = src.slug;
+    const cleared = v === null || (typeof v === 'string' && v.trim() === '');
+    if (cleared) {
+      // 排序：标题也可能在同一次请求里被改，优先用新标题
+      const newTitle = has('title') ? cleanLine(src.title, 200) : '';
+      const base = newTitle || String(cur.title || '');
+      const next = slugify(base, existingSlugs);
+      patch.slug = next;
+      changed.slug = next;
+      log(`slug 被清空 → 按标题重新生成：${next}`);
+    } else if (typeof v === 'string') {
+      const next = slugify(v, existingSlugs);
+      patch.slug = next;
+      changed.slug = next;
+    } else {
+      log(`slug 类型不支持（${typeof v}），已忽略并保持原值`);
+    }
+  }
+
+  return { patch, changed, error: null };
+}
+
+/** 契约相关的 debug 日志：排查「为什么我传的值没存上」时唯一的线索。
+ *  用 console.debug（Node 下走 stdout），不引入日志依赖、不污染业务错误日志。 */
+function defaultArticlePatchLog(message) {
+  console.debug(`[admin:article-patch] ${message}`);
+}
+
 /** 更新文章 */
 router.put('/articles/:id', async (req, res) => {
   try {
@@ -245,7 +374,9 @@ router.put('/articles/:id', async (req, res) => {
     const row = await db('articles').where('id', id).first();
     if (!row) return notFound(res, '文章不存在');
 
-    const { title, content, summary, cover, category_id, tags, status, is_top, allow_comment, allow_copy, slug, published_at } = req.body;
+    const { title, content, summary, cover, category_id, tags, is_top, allow_comment, allow_copy } = req.body;
+    // 契约相关的字段（status / published_at / slug）不进解构：它们由 resolveArticlePatch 统一解析
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
     const patch = { updated_at: db.fn.now() };
     if (title !== undefined) {
       // 空标题显式 400：cleanLine('') 得空串，直接落库触发 notNullable → 500
@@ -271,23 +402,14 @@ router.put('/articles/:id', async (req, res) => {
     if (is_top !== undefined) patch.is_top = toBool(is_top, row.is_top);
     if (allow_comment !== undefined) patch.allow_comment = toBool(allow_comment, row.allow_comment);
     if (allow_copy !== undefined) patch.allow_copy = toBool(allow_copy, row.allow_copy);
-    if (slug) {
-      patch.slug = slugify(slug, (await db('articles').whereNot('id', id).pluck('slug')));
-    }
-    if (status !== undefined) {
-      if (!['draft', 'published'].includes(status)) return fail(res, '非法状态', 400);
-      if (status !== row.status) {
-        patch.status = status;
-        if (status === 'published' && !row.published_at) {
-          patch.published_at = localDateTimeStr();
-        }
-      }
-    }
-    // 手动调整发布时间（补发旧文/时间线归档）：严格格式校验
-    if (published_at !== undefined && typeof published_at === 'string' && published_at) {
-      if (!isValidDateTime(published_at)) return fail(res, '发布时间不是有效日期', 400);
-      patch.published_at = published_at;
-    }
+    // status / published_at / slug 三个字段是「清空语义」的争议点，统一交给纯函数解析
+    // （契约表在 resolveArticlePatch 上方）。这里只负责：查一次去重整备列表 → 合并 patch。
+    const slugTouched = Object.prototype.hasOwnProperty.call(body, 'slug') && body.slug !== undefined;
+    // 只有真正在动 slug 时才查一次（免得改正文也白搭一次 pluck）
+    const existingSlugs = slugTouched ? await db('articles').whereNot('id', id).pluck('slug') : [];
+    const { patch: resolved, changed, error: patchError } = resolveArticlePatch(body, row, { existingSlugs });
+    if (patchError) return fail(res, patchError, 400);
+    Object.assign(patch, resolved);
     // 事务：正文更新与标签重建原子执行（中途失败整体回滚）
     const trx = await db.transaction();
     try {
@@ -303,7 +425,7 @@ router.put('/articles/:id', async (req, res) => {
           if (tagRow) {
             tagId = tagRow.id;
           } else {
-            [tagId] = await trx('tags').insert({ name: t, slug: slugify(t, await trx('tags').pluck('slug')) });
+            [tagId] = await trx('tags').insert({ name: t, slug: await uniqueSlug('tags', t, { conn: trx }) });
           }
           await trx('article_tags').insert({ article_id: id, tag_id: tagId }).onConflict(['article_id', 'tag_id']).ignore();
         }
@@ -314,7 +436,18 @@ router.put('/articles/:id', async (req, res) => {
       throw e;
     }
     invalidateReadingCache();
-    return ok(res, null, '文章更新成功');
+    // 回传**结果值**而不是 null（本次契约的一部分）：
+    //   ① slug 被清空时是由后端按标题重新生成的，前端不知道新值 —— 不回传就会出现
+    //      「输入框空着、真实地址却是别的」，用户下一次保存又会触发一次重生成；
+    //   ② published_at 被清空时必须回传 null，前端才能把日期框同步清掉，
+    //      也才能区分「后端收到 null（清空）」与「后端没收到这个字段（保持原值）」。
+    // 老调用方（如 ArticleManage 的批量发布只读 code/message）不读 data，新增字段不影响它们。
+    return ok(res, {
+      id,
+      slug: changed.slug !== undefined ? changed.slug : (row.slug || ''),
+      published_at: changed.published_at ? (patch.published_at ?? null) : (row.published_at ?? null),
+      status: changed.status !== undefined ? changed.status : row.status,
+    }, '文章更新成功');
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
       return fail(res, '链接地址已存在，请更换 slug 或标题后重试');
@@ -332,13 +465,38 @@ router.post('/articles/:id/duplicate', async (req, res) => {
     if (!row) return notFound(res, '文章不存在');
     const tagRows = await db('article_tags').where('article_id', id).pluck('tag_id');
     const newId = await db.transaction(async (trx) => {
-      // 标题去重：已有同名副本时追加序号（如「副本 (2)」）
-      let title = `${cleanLine(row.title, 190)}（副本）`;
-      const dupCount = await trx('articles').where('title', 'like', `${title.replace(/[%_\\]/g, '\\$&')}%`).count('* as cnt').first();
-      if (Number(dupCount.cnt || 0) > 0) title = `${cleanLine(row.title, 186)}（副本 ${Number(dupCount.cnt) + 1}）`;
+      // 标题去重：已有副本时追加递增序号（「（副本）」「（副本 2）」「（副本 3）」…）
+      //
+      // ⚠ 不能只数「以（副本）开头」的数量。原实现是
+      //   count(title LIKE '原标题（副本）%')，然后拿 count+1 当序号 ——
+      // 第二次复制时标题变成「原标题（副本 2）」，它**不再**以「原标题（副本）」开头
+      // （中间多了一个空格和数字），于是 count 永远停在 1，第 3、4、5 次
+      // 全都生成同一个「原标题（副本 2）」。实测连按 4 次得到
+      // [副本, 副本 2, 副本 2, 副本 2]。slug 因为有 slugify 兜底没撞，
+      // 所以列表里只有标题重复 —— 更难被发现。
+      //
+      // 正解：把已存在的**全部**同族标题取回来，解析出各自用掉的序号，
+      // 取最大值 +1。这样与历史数据也兼容（哪怕早年手工改过标题）。
+      const baseTitle = cleanLine(row.title, 190);
+      const prefix = `${baseTitle}（副本`;
+      const existing = await trx('articles')
+        .where('title', 'like', `${prefix.replace(/[%_\\]/g, '\\$&')}%`)
+        .pluck('title');
+      // 「（副本）」记作 1，「（副本 N）」记作 N
+      let maxSeq = 0;
+      for (const t of existing) {
+        const m = String(t).match(/（副本(?: (\d+))?）\s*$/);
+        if (!m) continue;
+        const n = m[1] ? Number(m[1]) : 1;
+        if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+      }
+      const seq = maxSeq + 1;
+      const title = seq === 1
+        ? `${baseTitle}（副本）`.slice(0, 200)
+        : `${cleanLine(row.title, 186)}（副本 ${seq}）`.slice(0, 200);
       const [aid] = await trx('articles').insert({
         title,
-        slug: slugify(title, await trx('articles').pluck('slug')),
+        slug: await uniqueSlug('articles', title, { conn: trx }),
         summary: row.summary || '',
         content: row.content || '',
         cover: row.cover || '',
@@ -457,7 +615,7 @@ router.post('/articles/batch-update', async (req, res) => {
       if (tagRow) {
         tagId = tagRow.id;
       } else {
-        [tagId] = await db('tags').insert({ name: tagName, slug: slugify(tagName, await db('tags').pluck('slug')) });
+        [tagId] = await db('tags').insert({ name: tagName, slug: await uniqueSlug('tags', tagName) });
       }
       await db('article_tags')
         .insert(safeIds.map((aid) => ({ article_id: aid, tag_id: tagId })))
@@ -498,9 +656,17 @@ router.post('/articles/admin/import', async (req, res) => {
         }
         const title = cleanLine(it.title, 200);
         if (!title) { skipped += 1; continue; }
-        const content = String(it.content || '');
+        // 备份是外部输入（导出的 JSON 会被下载、改过、再传回来），必须与创建/更新
+        // 同等清洗，否则恢复路径成为唯一绕过点：content 原样入库就把 <script> /
+        // <iframe> 直接写回正文列（存储型 XSS，前台渲染即执行）。
+        const rawContent = String(it.content || '');
+        if (!rawContent) { skipped += 1; continue; }
+        if (rawContent.length > 100000) { skipped += 1; continue; }
+        // 与创建（上方 POST /articles）和更新（PUT /articles/:id）完全同一个函数、
+        // 同一个上限：内联事件属性（onerror/onload）也一并由它按相同规则处理，
+        // 三条写入路径因此产出一致的净化结果，不再有「哪条路径更宽松」的差异。
+        const content = cleanMarkdown(rawContent, 100000);
         if (!content) { skipped += 1; continue; }
-        if (content.length > 100000) { skipped += 1; continue; }
         // 导入 slug 与创建/更新保持一致的白名单清洗（slugify 输出等价：
         // 小写字母/数字/中文/连字符，≤80）—— 脏 slug（含 / . .. 空格等）若直接
         // 入库会污染 URL 面（分享页路径分裂），此处不符即回退自动生成
@@ -521,7 +687,7 @@ router.post('/articles/admin/import', async (req, res) => {
           if (!cat) {
             const [cid] = await trx('categories').insert({
               name: cname,
-              slug: slugify(cname, await trx('categories').pluck('slug')),
+              slug: await uniqueSlug('categories', cname, { conn: trx }),
             });
             cat = { id: cid };
           }
@@ -531,7 +697,7 @@ router.post('/articles/admin/import', async (req, res) => {
         const now = db.fn.now();
         const [aid] = await trx('articles').insert({
           title,
-          slug: slug || slugify(title, await trx('articles').pluck('slug')),
+          slug: slug || await uniqueSlug('articles', title, { conn: trx }),
           summary: cleanLine(it.summary, 300),
           content,
           // 封面：允许站内相对路径（/uploads/xxx.png，本站导出格式），
@@ -558,7 +724,7 @@ router.post('/articles/admin/import', async (req, res) => {
         for (const tn of tagNames) {
           let tag = await trx('tags').where('name', tn).first('id');
           if (!tag) {
-            const [tid] = await trx('tags').insert({ name: tn, slug: slugify(tn, await trx('tags').pluck('slug')) });
+            const [tid] = await trx('tags').insert({ name: tn, slug: await uniqueSlug('tags', tn, { conn: trx }) });
             tag = { id: tid };
           }
           tagIds.push(tag.id);
@@ -803,7 +969,7 @@ router.post('/categories', async (req, res) => {
     if (!cleanName) return fail(res, '分类名称不能为空');
     await db('categories').insert({
       name: cleanName,
-      slug: slugify(slug || cleanName, await db('categories').pluck('slug')),
+      slug: await uniqueSlug('categories', slug || cleanName),
       description: cleanLine(description, 255), color: validHexColor(color),
     });
     return ok(res, null, '分类创建成功');
@@ -833,9 +999,9 @@ router.put('/categories/:id', async (req, res) => {
     if (description !== undefined) patch.description = cleanLine(description, 255);
     if (color !== undefined) patch.color = validHexColor(color);
     if (slug) {
-      patch.slug = slugify(slug, (await db('categories').whereNot('id', id).pluck('slug')));
+      patch.slug = await uniqueSlug('categories', slug, { excludeId: id });
     } else if (name !== undefined && patch.name) {
-      patch.slug = slugify(patch.name, (await db('categories').whereNot('id', id).pluck('slug')));
+      patch.slug = await uniqueSlug('categories', patch.name, { excludeId: id });
     }
     // 排序值（0-100 整数）：前台展示顺序
     if (sort !== undefined) {
@@ -875,7 +1041,7 @@ router.post('/tags', async (req, res) => {
     if (!name) return fail(res, '标签名称不能为空');
     const existing = await db('tags').where('name', name).first();
     if (existing) return fail(res, '标签已存在');
-    await db('tags').insert({ name, slug: slugify(name, await db('tags').pluck('slug')) });
+    await db('tags').insert({ name, slug: await uniqueSlug('tags', name) });
     return ok(res, null, '标签创建成功');
   } catch (e) {
     return fail(res, '创建标签失败', 500);
@@ -1009,7 +1175,7 @@ router.get('/comments/admin/export', async (req, res) => {
       return `"${safe.replace(/"/g, '""')}"`;
     };
     // 状态中文化（导出可读性）
-    const statusZh = { pending: '待审核', approved: '已通过', rejected: '已拒绝' };
+    const statusZh = REVIEW_STATUS_ZH;
     const header = ['ID', '昵称', '邮箱', '内容', '状态', 'AI 标记', '时间', '文章'].map(esc).join(',');
     const lines = rows.map((r) =>
       [r.id, r.nickname, r.email, r.content, statusZh[r.status] || r.status, r.ai_reason, r.created_at, r.article_title].map(esc).join(',')
@@ -1029,7 +1195,7 @@ router.put('/comments/:id/status', async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
     const { status } = req.body;
-    if (!['pending', 'approved', 'rejected'].includes(status)) return fail(res, '非法状态');
+    if (!isOneOf(REVIEW_STATUS, status)) return fail(res, '非法状态');
     await db('comments').where('id', id).update({ status });
     return ok(res, null, '评论状态已更新');
   } catch (e) {
@@ -1074,7 +1240,7 @@ router.post('/comments/batch-status', async (req, res) => {
     const { ids, status } = req.body || {};
     if (!Array.isArray(ids) || !ids.length) return fail(res, '请选择评论');
     if (ids.length > 500) return fail(res, '单次最多操作 500 条');
-    if (!['approved', 'rejected', 'pending'].includes(status)) return fail(res, '非法状态');
+    if (!isOneOf(REVIEW_STATUS, status)) return fail(res, '非法状态');
     const safeIds = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
     if (!safeIds.length) return fail(res, '参数不合法');
     await db('comments').whereIn('id', safeIds).update({ status });
@@ -1151,7 +1317,7 @@ router.put('/links/:id/status', async (req, res) => {
     const { status, sort } = req.body;
     const patch = {};
     if (status !== undefined) {
-      if (!['pending', 'approved', 'rejected'].includes(status)) return fail(res, '非法状态');
+      if (!isOneOf(REVIEW_STATUS, status)) return fail(res, '非法状态');
       patch.status = status;
     }
     // 排序值钳制（0-100，防恶意写入超范围值破坏排序稳定性）
@@ -1185,7 +1351,7 @@ router.post('/links/batch-status', async (req, res) => {
   try {
     const { ids, status } = req.body || {};
     if (!Array.isArray(ids) || !ids.length) return fail(res, '请选择要操作的友链');
-    if (!['pending', 'approved', 'rejected'].includes(status)) return fail(res, '非法状态');
+    if (!isOneOf(REVIEW_STATUS, status)) return fail(res, '非法状态');
     if (ids.length > 500) return fail(res, '单次最多操作 500 条');
     const safeIds = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
     if (!safeIds.length) return fail(res, '参数不合法');
@@ -1289,7 +1455,7 @@ router.get('/messages/admin/export', async (req, res) => {
       return `"${safe.replace(/"/g, '""')}"`;
     };
     // 状态中文化（导出可读性）
-    const statusZh = { pending: '待审核', approved: '已通过', rejected: '已拒绝' };
+    const statusZh = REVIEW_STATUS_ZH;
     const header = ['ID', '昵称', '邮箱', '内容', '状态', 'AI 标记', '时间'].map(esc).join(',');
     const lines = rows.map((r) =>
       [r.id, r.nickname, r.email, r.content, statusZh[r.status] || r.status, r.ai_reason, r.created_at].map(esc).join(',')
@@ -1309,7 +1475,7 @@ router.put('/messages/:id/status', async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return fail(res, '参数不合法');
     const { status } = req.body;
-    if (!['pending', 'approved', 'rejected'].includes(status)) return fail(res, '非法状态');
+    if (!isOneOf(REVIEW_STATUS, status)) return fail(res, '非法状态');
     await db('messages').where('id', id).update({ status });
     return ok(res, null, '留言状态已更新');
   } catch (e) {
@@ -1431,7 +1597,7 @@ router.post('/messages/batch-delete', async (req, res) => {
 router.post('/messages/batch-status', async (req, res) => {
   try {
     const { ids, status } = req.body || {};
-    if (!['approved', 'rejected', 'pending'].includes(status)) return fail(res, '状态不合法');
+    if (!isOneOf(REVIEW_STATUS, status)) return fail(res, '状态不合法');
     if (!Array.isArray(ids) || !ids.length) return fail(res, '请选择要操作的留言');
     if (ids.length > 500) return fail(res, '单次最多操作 500 条');
     const safeIds = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
@@ -1445,6 +1611,46 @@ router.post('/messages/batch-status', async (req, res) => {
 
 // ============ 统计 / 设置 ============
 
+/* ---------- 仪表盘缓存 ----------
+ * 一次请求并发 18 条聚合查询（含 4 条 count、3 条分组、2 条 sum），是全站最贵的读接口。
+ * 而它的使用场景是「管理员打开看一眼」—— 15 秒内的重复请求（刷新、切标签页、
+ * 前端 3 个视图各拉一次）没有任何新信息。
+ *
+ * 为什么不做主动失效：admin.js 有 8 处写操作，各接一条失效调用看起来对称，
+ * 但漏一处就是「改完不生效」且无法测；15 秒 TTL 的代价是「最多晚 15 秒看到变化」，
+ * 对仪表盘完全可以接受。需要立刻刷新时调 invalidateDashboardCache()。
+ *
+ * key 含 role：现在只有一个 admin 角色，但把 role 写进 key 是零成本的，
+ * 将来加编辑角色时不会串数据。key 也含 days（7-90，最多 84 个组合）。
+ */
+const DASHBOARD_TTL = 15 * 1000;
+const DASHBOARD_CACHE_MAX = 128;
+const dashboardCache = new Map(); // key -> { at, data }
+
+function readDashboardCache(key) {
+  const rec = dashboardCache.get(key);
+  if (!rec) return null;
+  if (Date.now() - rec.at >= DASHBOARD_TTL) {
+    dashboardCache.delete(key);
+    return null;
+  }
+  return rec.data;
+}
+
+function writeDashboardCache(key, data) {
+  if (!dashboardCache.has(key) && dashboardCache.size >= DASHBOARD_CACHE_MAX) {
+    // 插入序淘汰最旧的一条：days 的取值空间有限（84），正常永远碰不到上限
+    const oldest = dashboardCache.keys().next().value;
+    if (oldest !== undefined) dashboardCache.delete(oldest);
+  }
+  dashboardCache.set(key, { at: Date.now(), data });
+}
+
+/** 立即失效（测试、以及将来任何需要「改完立刻看到」的调用点） */
+function invalidateDashboardCache() {
+  dashboardCache.clear();
+}
+
 /** 后台仪表盘数据 */
 router.get('/stats/dashboard', async (req, res) => {
   try {
@@ -1453,6 +1659,10 @@ router.get('/stats/dashboard', async (req, res) => {
     // 时间范围可配置（7-90 天，默认 14）
     const days = Math.min(90, Math.max(7, Number(req.query.days) || 14));
     const since = localDateStr(new Date(Date.now() - (days - 1) * 24 * 3600 * 1000));
+
+    const cacheKey = `${(req.user && req.user.role) || 'anon'}|${days}`;
+    const cached = readDashboardCache(cacheKey);
+    if (cached) return ok(res, cached);
 
     const [trend, byCategory, pendingComments, pendingLinks, pendingMessages, total, topArticles, recentComments, recentMessages, recentArticles, commentTrend, messageTrend, draftCount, totalViews, totalComments, totalMessages, todayVisits, uncategorized] = await Promise.all([
       db('visits')
@@ -1517,7 +1727,7 @@ router.get('/stats/dashboard', async (req, res) => {
       fullTrend.push(trendMap[d] || { day: d, pv: 0, uv: 0 });
     }
 
-    return ok(res, {
+    const payload = {
       trend: fullTrend,
       // 分类分布（含未分类条目，便于发现未归类文章）
       by_category: (() => {
@@ -1581,7 +1791,9 @@ router.get('/stats/dashboard', async (req, res) => {
         slug: a.slug,
         published_at: a.published_at,
       })),
-    });
+    };
+    writeDashboardCache(cacheKey, payload);
+    return ok(res, payload);
   } catch (e) {
     return fail(res, '获取仪表盘数据失败', 500);
   }
@@ -1590,8 +1802,18 @@ router.get('/stats/dashboard', async (req, res) => {
 /** 保存站点设置（后台） */
 router.put('/settings', async (req, res) => {
   try {
-    const settings = await saveSettings(req.body || {});
-    return ok(res, settings, '设置已保存');
+    const { settings, rejected } = await saveSettings(req.body || {});
+    // 静默丢弃必须让用户看见：saveSettings 的每个校验分支都是 `continue`，
+    // 不提示的话用户会以为「已保存」而配置其实没变（然后去排查别的地方）。
+    // 这里把被拒的字段名与原因一起回给前端，前端据此决定用 success 还是 warning。
+    const msg = rejected.length
+      ? `已保存，但以下 ${rejected.length} 个字段未通过校验、保持原值：${rejected.map((r) => `${r.key}（${r.reason}）`).join('；')}`
+      : '设置已保存';
+    if (rejected.length) {
+      // 落到响应体里，前端不必解析中文文案就能判断
+      return ok(res, { ...settings, rejected }, msg);
+    }
+    return ok(res, settings, msg);
   } catch (e) {
     return fail(res, '保存设置失败', 500);
   }
@@ -1785,7 +2007,14 @@ router.post('/upload', (req, res, next) => {
     },
   });
 
-  /** 上传后二次校验：magic bytes 防伪造扩展名 */
+  /**
+   * 上传后二次校验：magic bytes 防伪造扩展名（SVG 是全文扫描）。
+   *
+   * 读完的字节挂在 `file.rawBytes` 上供后续复用：紧接着的 EXIF 剥离原本会
+   * 再把同一个文件完整读一遍（上限 5MB × 2）。这里缓存一次即可 —— 注意**不可**
+   * 复用 multer 的 `file.buffer` 字段名：diskStorage 下它不存在，但将来若改成
+   * memoryStorage 就会被 multer 自己的语义覆盖，命名冲突会静默把校验绕过去。
+   */
   function verifyMagic(req2, res2, next2) {
     if (!req2.file) return next2();
     const ext = path.extname(req2.file.filename).toLowerCase();
@@ -1795,6 +2024,7 @@ router.post('/upload', (req, res, next) => {
       fs.unlinkSync(req2.file.path);
       return fail(res2, '文件内容与扩展名不符，已拒绝');
     }
+    req2.file.rawBytes = buffer;
     next2();
   }
 
@@ -1808,10 +2038,17 @@ router.post('/upload', (req, res, next) => {
       if (upExt === '.jpg' || upExt === '.jpeg') {
         try {
           const { stripExif } = require('../utils/stripExif');
-          const stripped = stripExif(fs.readFileSync(req.file.path));
-          fs.writeFileSync(req.file.path, stripped);
+          // 复用 verifyMagic 已读到的字节（同一文件不读第二遍）。
+          // 回退分支保留：verifyMagic 在没有 file 时直接 next()，防御性兜底。
+          const raw = req.file.rawBytes || fs.readFileSync(req.file.path);
+          const stripped = stripExif(raw);
+          // 没有可剥离的段时 stripExif 原样返回同一个 Buffer 引用：
+          // 此时跳过写盘，省一次 5MB 写入（内容完全没变）。
+          if (stripped !== raw) fs.writeFileSync(req.file.path, stripped);
         } catch (e) { /* 忽略：保留原文件 */ }
       }
+      // 释放引用，避免 Buffer 跟着请求对象在后续中间件里多活一会儿
+      req.file.rawBytes = null;
       return ok(res, { url: `/uploads/${req.file.filename}`, filename: req.file.filename }, '上传成功');
     });
   });
@@ -1825,23 +2062,32 @@ router.post('/upload', (req, res, next) => {
  */
 async function collectReferencedUploads() {
   const referenced = new Set();
-  // 提取字符串中全部 /uploads/<file> 引用（支持 cover URL、正文 Markdown、设置项值）
-  const extract = (s) => {
-    if (typeof s !== 'string') return;
-    for (const m of s.matchAll(/\/uploads\/([A-Za-z0-9._-]+)/g)) referenced.add(m[1]);
-  };
+  // 提取字符串中全部 /uploads/<rel> 引用（支持 cover URL、正文 Markdown、设置项值）
+  //
+  // ⚠ 必须认**一层子目录**：AI 写作助手转存的图在 `/uploads/ai/<name>`。
+  // 旧正则 `([A-Za-z0-9._-]+)` 只捕获第一段，于是 ai/ 里的图永远被判定为「未引用」——
+  // 图片管理页显示可删、孤儿清理会真的删掉仍在正文里使用的图（破图），
+  // 而 /uploads/list 又只列顶层，这些文件对站长完全不可见。
+  // 提取逻辑已抽到 utils/uploads（纯函数，可离线测）
+  const extract = (s) => { extractUploadRefs(s, referenced); };
   // ⚠ 手记（notes）也必须算进来。
   // 原先只扫了 articles.cover / articles.content / settings.value / links.avatar，
   // **完全没查 notes** —— 于是手记正文里插入过的图片会被判定成孤儿：
   // 实测造一条正文引用 `/uploads/probe-note-img.png` 的手记，
   // 图片管理页把它当成「未引用」、删除按钮可点，点一下手记里就变破图。
   // notes 有两个可能带图的字段：content（Markdown 正文）与 images（图集 JSON）。
+  //
+  // 性能：正文列用 `LIKE '%/uploads/%'` 预过滤。
+  // 任何能被 extractUploadRefs 提取出引用的文本，必然包含字面量 `/uploads/` ——
+  // 所以这是个**必要条件**过滤，不会漏行，但把「读全部文章全文」降到「读有图文章的全文」。
+  // 博客站里绝大多数文章不含图片，这个比例通常是一个数量级以上的差距。
+  // （封面/头像/图片集本身很短，不值得预过滤；settings 表只有几十行。）
   const [covers, contents, settings, linkAvatars, noteContents, noteImages] = await Promise.all([
     db('articles').whereNotNull('cover').pluck('cover'),
-    db('articles').pluck('content'),
+    db('articles').where('content', 'like', UPLOAD_REF_SQL_LIKE).pluck('content'),
     db('settings').pluck('value'),
     db('links').whereNotNull('avatar').pluck('avatar'),
-    db('notes').pluck('content'),
+    db('notes').where('content', 'like', UPLOAD_REF_SQL_LIKE).pluck('content'),
     db('notes').whereNotNull('images').pluck('images'),
   ]);
   covers.forEach(extract);
@@ -1853,20 +2099,24 @@ async function collectReferencedUploads() {
   return referenced;
 }
 
-/** 上传文件列表（名称/大小/修改时间/是否被引用，倒序，上限 500） */
+/** 上传文件列表（相对路径/大小/修改时间/是否被引用，倒序，上限 500）。
+ *  用 utils/uploads 的递归（顶层 + 一层子目录）：ai/ 转存图必须可见，
+ *  否则它们既删不掉、也看不出是否被引用。`name` 保持相对路径，与删除接口同一口径。 */
 router.get('/uploads/list', async (req, res) => {
   try {
-    const fs = require('fs');
-    const path = require('path');
-    if (!fs.existsSync(config.uploadDir)) return ok(res, []);
+    const { listUploadFiles } = require('../utils/uploads');
     const referenced = await collectReferencedUploads();
-    const files = fs.readdirSync(config.uploadDir)
-      .filter((f) => {
-        try { return fs.statSync(path.join(config.uploadDir, f)).isFile(); } catch (e) { return false; }
-      })
+    const files = listUploadFiles(config.uploadDir)
       .map((f) => {
-        const st = fs.statSync(path.join(config.uploadDir, f));
-        return { name: f, size: st.size, mtime: st.mtimeMs, used: referenced.has(f) };
+        const slash = f.rel.indexOf('/');
+        return {
+          name: f.rel,
+          path: f.rel,
+          dir: slash === -1 ? '' : f.rel.slice(0, slash),
+          size: f.size,
+          mtime: f.mtime,
+          used: referenced.has(f.rel),
+        };
       })
       .sort((a, b) => b.mtime - a.mtime)
       .slice(0, 500);
@@ -1876,24 +2126,27 @@ router.get('/uploads/list', async (req, res) => {
   }
 });
 
-/** 删除单个上传文件（严格文件名校验防路径穿越；被引用中的图片拒绝删除） */
-router.delete('/uploads/:filename', async (req, res) => {
+/**
+ * 删除单个上传文件（严格路径校验防穿越；被引用中的图片拒绝删除）。
+ *
+ * 两条路由共用同一处理：`DELETE /uploads/:filename`（顶层）与 `DELETE /uploads/*`（子目录）。
+ * Express 的 `:filename` 不跨 `/`，而 ai/ 转存图的相对路径是 `ai/x.png` ——
+ * 只留一条路由时它们永远删不掉（前端点了报"文件名不合法"）。
+ * 校验统一交给 utils/uploads.resolveUploadPath：段白名单 + 解析后必须仍在根内。
+ */
+async function deleteUploadFile(req, res) {
   try {
     const fs = require('fs');
-    const path = require('path');
-    const name = String(req.params.filename || '');
-    // 仅允许服务端生成的随机文件名格式（杜绝 ../ 穿越与扩展名伪装）
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$/.test(name)) return fail(res, '文件名不合法');
-    const uploadRoot = path.resolve(config.uploadDir);
-    const full = path.resolve(uploadRoot, name);
-    if (full !== path.join(uploadRoot, name) || !full.startsWith(uploadRoot + path.sep)) {
-      return fail(res, '文件名不合法');
-    }
+    const { resolveUploadPath } = require('../utils/uploads');
+    const raw = String(req.params.filename || req.params[0] || '');
+    const rel = raw.replace(/^\/+/, '');
+    const full = resolveUploadPath(config.uploadDir, rel);
+    if (!full) return fail(res, '文件名不合法');
     if (!fs.existsSync(full)) return fail(res, '文件不存在');
 
-    // 引用保护：正在被文章/设置使用的图片禁止删除（防文章图裂）
+    // 引用保护：正在被文章/手记/设置使用的图片禁止删除（防文章图裂）
     const referenced = await collectReferencedUploads();
-    if (referenced.has(name)) {
+    if (referenced.has(rel)) {
       return fail(res, '该图片正被文章、手记或站点设置引用，不能直接删除', 400);
     }
 
@@ -1902,31 +2155,33 @@ router.delete('/uploads/:filename', async (req, res) => {
   } catch (e) {
     return fail(res, '删除失败', 500);
   }
-});
+}
+router.delete('/uploads/:filename', deleteUploadFile);
+router.delete('/uploads/*', deleteUploadFile);
 
 /**
  * 扫描 uploads 目录，删除未被任何内容引用的孤儿文件
- * 引用来源：文章封面 / 文章正文 / 站点设置中的图片路径
+ * 引用来源：文章封面 / 文章正文 / 站点设置 / 友链头像 / 手记正文与图集
  * 安全窗口：24 小时内新上传的文件跳过（防止刚上传、引用尚未保存的竞态误删）
+ * 覆盖范围：顶层 + 一层子目录（ai/），与列表/删除同一套 utils/uploads 规则。
  */
 router.post('/uploads/cleanup-orphans', async (req, res) => {
   try {
     const fs = require('fs');
-    const path = require('path');
+    const { listUploadFiles, resolveUploadPath } = require('../utils/uploads');
     const referenced = await collectReferencedUploads();
-
-    if (!fs.existsSync(config.uploadDir)) return ok(res, { scanned: 0, deleted: [] });
     const cutoff = Date.now() - 24 * 3600e3;
-    const files = fs.readdirSync(config.uploadDir);
+    const files = listUploadFiles(config.uploadDir);
     const deleted = [];
     for (const f of files) {
-      const full = path.join(config.uploadDir, f);
-      let st;
-      try { st = fs.statSync(full); } catch (e) { continue; }
-      if (!st.isFile() || st.mtimeMs >= cutoff) continue;
-      if (!referenced.has(f)) {
-        try { fs.unlinkSync(full); deleted.push(f); } catch (e) { /* 占用/权限：跳过 */ }
-      }
+      if (f.mtime >= cutoff) continue;
+      if (referenced.has(f.rel)) continue;
+      const full = resolveUploadPath(config.uploadDir, f.rel);
+      if (!full) continue;
+      try {
+        fs.unlinkSync(full);
+        deleted.push(f.rel);
+      } catch (e) { /* 占用/权限：跳过 */ }
     }
     return ok(res, { scanned: files.length, deleted }, deleted.length ? `已清理 ${deleted.length} 个孤儿文件` : '没有需要清理的孤儿文件');
   } catch (e) {
@@ -1951,15 +2206,15 @@ router.get('/security', async (req, res) => {
 });
 
 /** 手动解封 IP */
-router.post('/security/unban', async (req, res) => {
+router.post('/security/unban', asyncGuard(async (req, res) => {
   const ip = cleanLine(req.body?.ip, 64);
   if (!ip || require('net').isIP(ip) === 0) return fail(res, 'IP 地址格式不正确');
   await unban(ip);
   return ok(res, null, '已解封');
-});
+}));
 
 /** 手动封禁 IP（留言管理/安全中心联动）：默认 30 天，上限 1 年，审计中间件自动记录 */
-router.post('/security/ban', async (req, res) => {
+router.post('/security/ban', asyncGuard(async (req, res) => {
   const ip = cleanLine(req.body?.ip, 64);
   const minutes = Math.min(Math.max(Number(req.body?.minutes) || 30 * 24 * 60, 5), 365 * 24 * 60);
   const reason = cleanLine(req.body?.reason, 120);
@@ -1972,7 +2227,7 @@ router.post('/security/ban', async (req, res) => {
   const okBan = ban(ip, minutes, reason || '管理员手动封禁');
   if (!okBan) return fail(res, '封禁失败：可信白名单或本机地址不可封禁');
   return ok(res, { ip, minutes }, `已封禁 ${ip}（${durText}）`);
-});
+}));
 
 /** 管理员操作审计日志（近 100 条） */
 router.get('/security/audit', async (req, res) => {
@@ -1983,7 +2238,11 @@ router.get('/security/audit', async (req, res) => {
       .select('id', 'username', 'action', 'detail', 'ip', 'created_at');
     return ok(res, rows);
   } catch (e) {
-    return ok(res, []);
+    // DB 异常不能伪装成「没有日志」：原实现 catch 里 ok(res, []) 会让安全面板显示
+    // 「无记录」，数据库掉线/表缺失被误读成「没人攻击过」—— 排查方向被彻底带偏。
+    // 显式 503 + 明确文案，前端拦截器弹提示（code!==0），面板保留上一次数据。
+    console.error('[security/audit] 查询审计日志失败:', e && e.message);
+    return fail(res, '审计日志暂时不可用，请稍后重试', 503);
   }
 });
 
@@ -1996,11 +2255,16 @@ router.get('/security/config', (req, res) => {
 });
 
 /** 安全配置保存（强校验：规则 ID 白名单 / IP-CIDR 格式 / 数值区间在 securitySettings 内收敛） */
-router.put('/security/config', async (req, res) => {
+router.put('/security/config', asyncGuard(async (req, res) => {
   const patch = req.body || {};
   if (patch.disabledRules !== undefined) {
     if (!Array.isArray(patch.disabledRules)) return fail(res, '禁用规则必须为数组');
-    const bad = patch.disabledRules.filter((id) => !RULE_INDEX[id]);
+    // ⚠ 必须用 hasOwnProperty 而不是裸索引 —— 与 share-page 的 STATIC_PAGES 是同一个坑：
+    // `RULE_INDEX['constructor']` / `['toString']` / `['__proto__']` 都返回 Object.prototype
+    // 上的函数（**真值**），于是这些名字能通过「未知规则 ID」校验并被写进 disabledRules。
+    // WAF 实际判断禁用用的是字符串 includes，所以规则不会被真禁用 —— 但配置里会留下垃圾条目，
+    // 后台安全中心显示「已禁用规则：constructor」，而且 RULE_INDEX['constructor'].group 是 undefined。
+    const bad = patch.disabledRules.filter((id) => !Object.prototype.hasOwnProperty.call(RULE_INDEX, String(id)));
     if (bad.length) return fail(res, `未知规则 ID：${bad.slice(0, 5).join('、')}`);
   }
   if (patch.trustedIps !== undefined) {
@@ -2020,7 +2284,7 @@ router.put('/security/config', async (req, res) => {
     console.error('[admin] 保存安全配置失败:', e.message);
     return fail(res, '保存失败（配置表不可用，请先执行数据库迁移）', 500);
   }
-});
+}));
 
 /** 规则测试器（dry-run）：粘贴文本返回命中的规则与异常分，不记分不拦截
  * 文本经 base64 传输 —— 测试器必须能接收攻击载荷本身，绕过全局 WAF 的 body 扫描 */
@@ -2509,13 +2773,13 @@ async function searchWikimediaImages(query) {
   }
 }
 
-router.get('/ai/images', async (req, res) => {
+router.get('/ai/images', asyncGuard(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 80);
   if (!q) return fail(res, '缺少搜索词', 400);
   const images = await searchWikimediaImages(q);
   if (!images.length) return ok(res, { images: [], source: 'wikimedia' }, '没搜到合适的图，换个词试试');
   return ok(res, { images, source: 'wikimedia' });
-});
+}));
 
 /* ---------------- 图片转存：外链图 → 本站 uploads ----------------
    封面直接外链会随源站失效，转存一份到 /uploads/ai/ 更稳。 */
@@ -2546,7 +2810,18 @@ router.post('/ai/save-image', async (req, res) => {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 12000);
   try {
-    const r = await fetch(raw, { signal: ctrl.signal, headers: { 'User-Agent': WM_UA } });
+    // ⚠ redirect 必须显式设为 'manual'。
+    //
+    // riskyImageSource() 只校验**第一跳**的 URL。fetch 的默认值是 'follow'，
+    // 于是 `https://任意公网域名/redir` → 302 `Location: http://169.254.169.254/...`
+    // 会让真正的请求打到内网地址上，而校验早已通过 —— 这是教科书式的 SSRF 重定向绕过。
+    // （已实测：302 到 127.0.0.1 的内网路径时，fetch 直接返回了内网内容。）
+    //
+    // 这里业务上是「抓取一张远程图片」，正常图床不会对图片地址做跳转，
+    // 因此直接拒绝跳转比逐跳校验更简单可靠。若将来确有需要，
+    // 必须对每一跳的 Location 重新调用 riskyImageSource()，并限制跳转次数。
+    const r = await fetch(raw, { signal: ctrl.signal, redirect: 'manual', headers: { 'User-Agent': WM_UA } });
+    if (r.status >= 300 && r.status < 400) return fail(res, '图片地址不允许跳转', 400);
     if (!r.ok) return fail(res, `图片源返回 ${r.status}`, 502);
     if (Number(r.headers.get('content-length') || 0) > 5 * 1024 * 1024) return fail(res, '图片超过 5MB', 413);
     const mime = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
@@ -2574,7 +2849,7 @@ router.post('/ai/save-image', async (req, res) => {
 
 /* ---------------- 站内文章检索（供 read/list 工具） ---------------- */
 
-router.get('/ai/articles', async (req, res) => {
+router.get('/ai/articles', asyncGuard(async (req, res) => {
   const keyword = String(req.query.keyword || '').trim().slice(0, 60);
   const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 20);
   const q = db('articles').orderBy('updated_at', 'desc').limit(limit)
@@ -2594,10 +2869,10 @@ router.get('/ai/articles', async (req, res) => {
   }
   const rows = await q;
   return ok(res, { articles: rows });
-});
+}));
 
 /** 网页搜索（供 search_web 工具，浏览器端执行）：后台开关 + Key 双重门控 */
-router.get('/ai/web-search', async (req, res) => {
+router.get('/ai/web-search', asyncGuard(async (req, res) => {
   const query = String(req.query.q || '').trim().slice(0, 400);
   if (!query) return fail(res, '缺少搜索词', 400);
   const settings = await getAllSettings();
@@ -2606,9 +2881,9 @@ router.get('/ai/web-search', async (req, res) => {
   const r = await searchWeb(query, { apiKey: settings.websearch_api_key });
   if (!r.ok) return fail(res, r.error || '搜索失败', 502);
   return ok(res, { results: r.results, cached: !!r.cached });
-});
+}));
 
-router.get('/ai/article', async (req, res) => {
+router.get('/ai/article', asyncGuard(async (req, res) => {
   const slug = String(req.query.slug || '').trim().slice(0, 220);
   if (!slug) return fail(res, '缺少 slug', 400);
   const row = await db('articles').where('slug', slug).first();
@@ -2627,10 +2902,10 @@ router.get('/ai/article', async (req, res) => {
     summary: String(row.summary || '').slice(0, 500),
     content: String(row.content || '').slice(0, 8000),
   });
-});
+}));
 
 /** 最近评论（供 list_comments 工具）：了解读者在问什么 */
-router.get('/ai/comments', async (req, res) => {
+router.get('/ai/comments', asyncGuard(async (req, res) => {
   const rows = await db('comments as c')
     .join('articles as a', 'c.article_id', 'a.id')
     .orderBy('c.created_at', 'desc')
@@ -2644,7 +2919,7 @@ router.get('/ai/comments', async (req, res) => {
       content: String(r.content || '').slice(0, 200),
     })),
   });
-});
+}));
 
 /** 最近留言（供 list_messages 工具） */
 router.get('/ai/messages', async (req, res) => {
@@ -2731,4 +3006,13 @@ router.post('/ai/chat', async (req, res) => {
   }
 });
 
+// 纯函数随 router 一起导出（挂在函数对象上），不改变 `module.exports === router` 这个
+// 既有形态 —— app.js 是 `require('./routes/admin')` 后直接 app.use(...)，不受影响。
+// 这样 test/articlePatchContract.test.js 可以真实调用它，而不必为「导出一个函数」
+// 在本任务允许改动的文件之外新建模块。
 module.exports = router;
+module.exports.resolveArticlePatch = resolveArticlePatch;
+module.exports.DASHBOARD_TTL = DASHBOARD_TTL;
+module.exports.readDashboardCache = readDashboardCache;
+module.exports.writeDashboardCache = writeDashboardCache;
+module.exports.invalidateDashboardCache = invalidateDashboardCache;

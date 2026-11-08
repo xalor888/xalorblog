@@ -20,6 +20,7 @@
  * 命中联动 IP 信誉系统；规则组/单条规则可经安全中心配置禁用。
  */
 
+const { ALLOWED_METHODS } = require('../utils/httpMethods');
 const { report, logEvent } = require('./ipGuard');
 const config = require('../config');
 const securitySettings = require('../utils/securitySettings');
@@ -108,12 +109,61 @@ function scopeGroups(scope, sec) {
   ];
 }
 
+/** 单段扫描窗口：超长值分块扫，而不是截断（截断=尾部载荷直接免检）。
+ *  4000 字符是单段正则预算的经验值，实测四类载荷（benign/adversarial）都在 0.2ms 内。 */
+const SCAN_CHUNK = 4000;
+/** 单值最多扫多少段：2MB 的单值 = 500 段，全额扫会吃掉几百毫秒 CPU。 */
+const SCAN_CHUNK_MAX = 16;
+/** 分块步长与完整覆盖上界：超过这个长度的尾部不再逐字扫，
+ *  改为整体判定为可疑（见 scanAll 的 TRUNCATED_RULE_ID 分支），不是静默放弃。 */
+const SCAN_CHUNK_OVERLAP = 512;
+const SCAN_CHUNK_STRIDE = SCAN_CHUNK - SCAN_CHUNK_OVERLAP;
+/** 能保证逐字覆盖的最大长度：16 段 × 步长 + 最后一段的窗口 */
+const SCAN_FULL_COVER = SCAN_CHUNK + SCAN_CHUNK_STRIDE * (SCAN_CHUNK_MAX - 1);
+/** 未扫描尾部视为可疑时命中的伪规则（不属任何规则组，永远启用、不受 PL/禁用影响） */
+const TRUNCATED_RULE_ID = 'WAF-TRUNCATED';
+
+/**
+ * 把超长文本切成重叠窗口后逐段生成变体视图。
+ *
+ * 为什么必须分块而不是 slice(0, 4000)：原先截断到前 4000 字符，
+ * 于是「4100 个 a + <script>alert(1)</script>」这类 payload 的载荷部分
+ * 完全落在扫描窗口外 —— 只要在真载荷前面垫 4KB 无害字符就能零分通过 WAF
+ * （实测 </script>、UNION SELECT、;cat /etc/passwd、../../etc/passwd 全部 score=0）。
+ *
+ * 为什么窗口要重叠：SQL-01（union…select，跨 40 字符）、XSS-04（标签内事件，
+ * 可跨数百字符）这类规则允许很长的中间段，硬切在边界上会让载荷被切成两半而漏检。
+ * 重叠量取 512：覆盖全部带长度上界的规则（最大是 SQL-24 的 60 与 MSC-01/02 的 80），
+ * 且对常见短载荷（<script>、' OR '1'='1）绰绰有余。
+ *
+ * 超过 SCAN_FULL_COVER（56320）的部分不再逐字扫，但**必须判为可疑**：
+ * 只截断不判定时，第 57000 个字符起放载荷即可完全免检
+ * （实测 57000/60000/80000/200000 处放 <script>alert(1)</script> 全部 score=0）。
+ * 单值超过 56KB 的合法场景本站不存在 —— 评论 2000、留言 2000、
+ * 文章正文 about_content 走豁免组且 cleanMarkdown 上限 50000 —— 所以
+ * 「超长即可疑」不会误伤正常内容，代价只是超阈值请求被 403。
+ */
+function scanSegments(text) {
+  if (text.length <= SCAN_CHUNK) return [text];
+  const segments = [];
+  for (let start = 0, n = 0; start < text.length && n < SCAN_CHUNK_MAX; start += SCAN_CHUNK_STRIDE, n += 1) {
+    segments.push(text.slice(start, start + SCAN_CHUNK));
+  }
+  return segments;
+}
+
 /** 扫描前的公共准备：设置快照、禁用集、变体视图 */
 function prepareScan(text, sec) {
   if (typeof text !== 'string' || !text.length) return null;
-  if (text.length > 4000) text = text.slice(0, 4000);
   const disabled = sec.disabledRules.length ? new Set(sec.disabledRules) : null;
-  return { text, sec, disabled, variants: buildVariants(text) };
+  // 变体视图对每一段分别构建：解码必须在段内做，跨段解码会制造伪命中
+  const variants = [];
+  for (const seg of scanSegments(text)) {
+    for (const v of buildVariants(seg)) {
+      if (!variants.includes(v)) variants.push(v);
+    }
+  }
+  return { text, sec, disabled, variants };
 }
 
 /** 单组内跑规则（含 zones 面过滤 / PL 门控 / 禁用 / skipGroups），返回全部命中 */
@@ -164,7 +214,7 @@ function crlfCheck(ctx, disabled) {
  * 全量扫描：返回 { hits, score }。命中不提前终止（评分需要全景），
  * 每个（文本 × 组）仍按规则序展开；由调用方控制扫描面数量。
  */
-function scanAll(text, scope = 'body', { urlKey = false, skipGroups = null } = {}) {
+function scanAll(text, scope = 'body', { urlKey = false, skipGroups = null, truncationLimit = 0 } = {}) {
   const sec = securitySettings.getConfig();
   const ctx = prepareScan(text, sec);
   if (!ctx) return { hits: [], score: 0 };
@@ -172,6 +222,28 @@ function scanAll(text, scope = 'body', { urlKey = false, skipGroups = null } = {
   if (scope === 'body' && urlKey && sec.groups.SSRF !== false) groups.push('SSRF');
 
   const hits = [];
+  // 尾部未能逐字覆盖：整个值判可疑（critical=5，单条即达默认阈值）。
+  // 放在规则循环之前，让超长请求即使前面几段是干净填充也照样被拦。
+  //
+  // 为什么还要 truncationLimit：exempt 字段（content/about_content 等正文类）
+  // 的合法上限远高于通用阈值 —— 文章正文 cleanMarkdown 允许 100000 字符。
+  // 若不分面处理，1 万字以上的正常长文会被判超长可疑，直接把写长文的作者 403。
+  // 只有「超出该字段合法上限」才算可疑。
+  // 超出「该字段合法上限」才算超长可疑；上限按扫描面取值：
+  //  - 普通字段：SCAN_FULL_COVER（分块能逐字覆盖的上界）
+  //  - 正文类豁免字段：调用方给出更宽的 truncationLimit（文章正文 100000）
+  const limit = truncationLimit > 0 ? truncationLimit : SCAN_FULL_COVER;
+  if (ctx.text.length > limit) {
+    hits.push({
+      id: TRUNCATED_RULE_ID,
+      group: 'MISC',
+      note: `单值超出可检测上限（>${limit} 字符），尾部无法逐字检测`,
+      sev: 'critical',
+      score: SEVERITY_SCORE.critical,
+      pl: 1,
+      variant: 0,
+    });
+  }
   for (const g of groups) {
     hits.push(...runGroupRules(RULE_GROUPS[g], ctx, scope, skipGroups));
   }
@@ -224,6 +296,11 @@ const CHECK_HEADERS = ['cookie', 'x-forwarded-for', 'x-real-ip', 'referer', 'x-r
  */
 const MAX_SCANNED_VALUES = 200; // 单请求扫描字符串上限：防超大 body 拖垮正则预算
 
+/** 正文类豁免字段的合法长度上限。取自实际写入口径：
+ *  admin.js 的 cleanMarkdown(content, 100000) 是站内最大的一处，
+ *  超出它的一定不是正常文章，才值得判超长可疑。 */
+const BODY_FIELD_MAX_LEN = 100000;
+
 function scanRequestBody(body) {
   const hits = [];
   let scanned = 0;
@@ -242,10 +319,20 @@ function scanRequestBody(body) {
       }
       if (scanned >= MAX_SCANNED_VALUES) return;
       scanned += 1;
-      const exemptGroups = PARAM_EXEMPT_GROUPS[String(k).toLowerCase()];
-      const skipGroups = exemptGroups && exemptGroups.length ? exemptGroups : null;
+      // 必须用「自有属性」查询：PARAM_EXEMPT_GROUPS 是普通对象字面量，
+      // 用下标读会命中原型链成员 —— 键名 "constructor" 取到的是 Object 构造函数，
+      // 它 truthy 且 length===1，于是 skipGroups 变成函数，
+      // 引擎里 skipGroups.includes(...) 抛 TypeError，整个注释接口 500。
+      // （body 里带一个 constructor 键即可触发，任何人都能做到。）
+      const exemptGroups = Object.hasOwn(PARAM_EXEMPT_GROUPS, String(k).toLowerCase())
+        ? PARAM_EXEMPT_GROUPS[String(k).toLowerCase()]
+        : null;
+      const skipGroups = Array.isArray(exemptGroups) && exemptGroups.length ? exemptGroups : null;
       const urlKey = !skipGroups && URL_FIELD_RE.test(k);
-      const r = scanAll(typeof v === 'string' ? v : String(v), 'body', { urlKey, skipGroups });
+      // 正文类豁免字段的合法上限更高（文章正文 cleanMarkdown 允许 100000），
+      // 其余字段沿用通用分块覆盖上界：超出上限的值尾部扫不到，一律判可疑。
+      const truncationLimit = skipGroups ? BODY_FIELD_MAX_LEN : 0;
+      const r = scanAll(typeof v === 'string' ? v : String(v), 'body', { urlKey, skipGroups, truncationLimit });
       hits.push(...r.hits);
       if (hits.length > 32) return; // 命中足够多，评分必然过阈，省预算
     }
@@ -286,7 +373,7 @@ function trackUaRotation(ip, ua) {
   const now = Date.now();
   let rec = uaTracker.get(ip);
   if (!rec || now - rec.windowStart > UA_WINDOW) {
-    rec = { uas: new Set(), windowStart: now };
+    rec = { uas: new Set(), windowStart: now, reported: false };
     uaTracker.set(ip, rec);
   }
   // 仅对「声明是浏览器」的 UA 计数（爬虫 UA 已被独立机制拦截，不重复计）
@@ -303,7 +390,24 @@ function trackUaRotation(ip, ua) {
       uaTracker.delete(oldest);
     }
   }
-  return rec.uas.size >= UA_DIFF_THRESHOLD;
+  return rec.uas.size >= UA_DIFF_THRESHOLD && markUaReportedOnce(rec);
+}
+
+/**
+ * 同一窗口只上报一次。
+ *
+ * 原实现直接 return ``uas.size >= 阈值``：一旦跨过 6 个 UA，**该窗口内每一次请求**
+ * 都返回 true，调用方就每请求 report 一次（waf 权重 3，banScore 默认 10）——
+ * 于是第 6 个 UA 之后的第 2 个请求就触发自动封禁。
+ * 注释写的是「多设备/NAT 共网 IP 罕见且无害（只计积分不封禁）」，
+ * 而实际效果是：NAT/校园网/公司出口下几台设备的浏览器 UA 一凑满 6 个，
+ * 该出口 IP 上所有真实访客被一起封 15 分钟，并且每次重犯翻倍。
+ * 改为跨阈值瞬间只报一次（与 gate.js 的 trackFpIp 同一处理原则）。
+ */
+function markUaReportedOnce(rec) {
+  if (rec.reported) return false;
+  rec.reported = true;
+  return true;
 }
 
 /* ==================== JSON 炸弹防护 ==================== */
@@ -365,7 +469,7 @@ function waf(req, res, next) {
 
   // ---- 0. 方法白名单 + 请求基线体积（前置防线，先于一切特征检测；一票硬拦） ----
   const method = String(req.method || '').toUpperCase();
-  if (!['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'].includes(method)) {
+  if (!ALLOWED_METHODS.includes(method)) {
     report(ip, 'waf', `BAD-METHOD ${method} ${req.path}`);
     return res.status(403).json({ code: 1, message: '访问被拒绝' });
   }

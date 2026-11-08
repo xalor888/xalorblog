@@ -13,16 +13,23 @@ const MAX_NOTE_IMAGES = 9;
 /** 列表摘要长度 */
 const EXCERPT_LEN = 200;
 
-/** 图片列（JSON 字符串）→ 数组；脏值一律降级为空数组 */
+/** 图片列（JSON 字符串或已是数组）→ 数组；脏值一律降级为空数组。
+ *  两条入口必须走同一套过滤：原来数组分支直接 `return raw`，于是调用方传进来的
+ *  非字符串项（对象/数字）会原样进 noteSummary 的 cover 与 image_count，
+ *  而字符串分支是过滤过的 —— 同一份数据两条路给出两种结果，属"看起来对称"的典型。 */
 function parseImages(raw) {
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw !== 'string' || !raw.trim()) return [];
-  try {
-    const list = JSON.parse(raw);
-    return Array.isArray(list) ? list.filter((u) => typeof u === 'string' && u) : [];
-  } catch (e) {
-    return [];
+  let list = [];
+  if (Array.isArray(raw)) {
+    list = raw;
+  } else if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      list = Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      list = [];
+    }
   }
+  return list.filter((u) => typeof u === 'string' && u).slice(0, MAX_NOTE_IMAGES);
 }
 
 /**

@@ -12,6 +12,11 @@ const BASE = process.env.TEST_BASE || 'http://127.0.0.1:3000';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 let fp = process.env.TEST_FP || 'a'.repeat(64); // 默认稳定指纹
 
+// 票据/表单令牌的 Origin 必须落在 app.js 的 allowedOrigins（config.corsOrigins）里，
+// 否则服务端 CORS 直接拒绝，表现出来却只是「票据签发失败」这种笼统错误。
+// 抽成常量并在报错里点名，换前端端口时改 TEST_ORIGIN 环境变量即可。
+const TEST_ORIGIN = process.env.TEST_ORIGIN || 'http://localhost:5173';
+
 function sha256hex(s) {
   const crypto = require('crypto');
   return crypto.createHash('sha256').update(s).digest('hex');
@@ -91,11 +96,14 @@ async function getTicket(forceFp, customUa, extraHeaders = {}) {
   if (!solution) throw new Error('PoW 求解失败');
   const t = await req('POST', '/api/anti/ticket', {
     body: { id, solution },
-    headers: { 'X-Fp': useFp, Origin: 'http://localhost:5173', Referer: 'http://localhost:5173/', ...extraHeaders },
+    headers: { 'X-Fp': useFp, Origin: TEST_ORIGIN, Referer: `${TEST_ORIGIN}/`, ...extraHeaders },
     ua: customUa,
   });
   if (t.status !== 200 || !t.body || !t.body.data || !t.body.data.token) {
-    throw new Error('票据签发失败: ' + JSON.stringify(t.body));
+    throw new Error(
+      `票据签发失败（HTTP ${t.status}，Origin=${TEST_ORIGIN}）：${JSON.stringify(t.body)}` +
+      ` —— 403 时检查服务端 CORS_ORIGINS 是否包含 ${TEST_ORIGIN}（换前端端口请设 TEST_ORIGIN）`
+    );
   }
   return t.body.data.token;
 }
@@ -104,18 +112,24 @@ async function getTicket(forceFp, customUa, extraHeaders = {}) {
 async function getFormToken(ticket, forPath = '/comments', options = {}) {
   const r = await req('GET', '/api/anti/seed?for=' + encodeURIComponent(forPath), {
     ticket,
-    headers: { 'X-Fp': options.fp || fp, Origin: 'http://localhost:5173', Referer: 'http://localhost:5173/', ...(options.headers || {}) },
+    headers: { 'X-Fp': options.fp || fp, Origin: TEST_ORIGIN, Referer: `${TEST_ORIGIN}/`, ...(options.headers || {}) },
   });
   if (r.status !== 200 || !r.body || !r.body.data) {
-    throw new Error('表单令牌签发失败: ' + JSON.stringify(r.body));
+    throw new Error(
+      `表单令牌签发失败（HTTP ${r.status}，Origin=${TEST_ORIGIN}）：${JSON.stringify(r.body)}` +
+      ` —— 403 时检查服务端 CORS_ORIGINS 是否包含 ${TEST_ORIGIN}`
+    );
   }
   return r.body.data;
 }
 
-/** 带票据的 GET（读接口） */
-async function get(path, opts = {}) {
-  return req('GET', path, { ticket: opts.ticket || opts, ...(opts.ticket ? {} : opts), silent: opts.silent });
-}
+// 这里曾导出 get(path, opts)：带票据的读请求。
+// 已删除，理由有二：
+//   1) 实现是坏的且写反了语义（opts 为字符串时 `{...opts}` 把字符摊成数字键、
+//      opts.silent 恒 undefined；为对象时只保留 ticket 丢掉 headers）；
+//   2) 全仓没有任何调用点，读请求一律直接用 req('GET', path, { ticket, headers })。
+// 留一个「看起来能用」的坏 API 比没有更危险：后来者会用它，然后在难以定位的地方失败。
+// 需要时直接调 req()，语义只有一份。
 
 /** 带签名票据的写请求 */
 async function post(path, body, ticket, extraHeaders = {}) {
@@ -175,7 +189,7 @@ async function formPost(path, body, ticket, opts = {}) {
   const hpField = seed.hp_field;
   const formBody = { ...body, form_token: seed.token };
   let hpBody = formBody;
-  const hpHeaders = { 'X-Fp': useFp, Origin: 'http://localhost:5173', Referer: 'http://localhost:5173/', ...(opts.headers || {}) };
+  const hpHeaders = { 'X-Fp': useFp, Origin: TEST_ORIGIN, Referer: `${TEST_ORIGIN}/`, ...(opts.headers || {}) };
   if (opts.fillHoneypot) {
     // 蜜罐字段：真实用户看不到该字段不填；机器人填了 → 服务端靠 X-Hp-Field 头识别
     hpBody = { ...formBody, [hpField]: 'http://spam.example.com' };
@@ -193,4 +207,4 @@ async function asBotUA(path, ua = 'python-requests/2.31', method = 'GET') {
   return req(method, path, { headers: { 'User-Agent': ua } });
 }
 
-module.exports = { req, getTicket, getFormToken, formPost, uploadFile, get, post, asBotUA, sha256hex, digestHasLeadingZeros, hmac, UA, BASE };
+module.exports = { req, getTicket, getFormToken, formPost, uploadFile, post, asBotUA, sha256hex, digestHasLeadingZeros, hmac, UA, BASE, TEST_ORIGIN };
