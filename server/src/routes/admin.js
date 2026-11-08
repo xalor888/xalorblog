@@ -26,6 +26,7 @@ const { parseImages, serializeImages, buildExcerpt, noteSummary } = require('../
 // 阅读统计缓存失效：任何「文章内容 / 发布状态变了」的写操作之后都要调用，
 // 否则主页与侧栏的字数、阅读时长最多陈旧 60 秒（cacheInvalidation.test.js 锁死全部路径）。
 const { invalidateReadingCache } = require('./stats');
+const { invalidateSummaryCache } = require('./home');
 
 const router = express.Router();
 
@@ -35,6 +36,24 @@ router.use(authRequired);
 router.use((req, res, next) => {
   if (req.user && req.user.role === 'admin') return next();
   return res.status(403).json({ code: 1, message: '访问被拒绝' });
+});
+
+/**
+ * 主页摘要缓存：**任何成功的后台写请求之后都清一次**。
+ *
+ * 为什么用一条钩子而不是在每个 handler 里手写一行：`/api/home/summary` 的缓存里
+ * 装着文章数、手记数、最近文章与友链（60 秒 TTL）。后台有 20 多个写点，逐个加
+ * 「失效调用」漏一处就是长期脏数据，而且**漏了也没有任何现象**——只能靠人记得。
+ * 这里按「方法 + 状态码」判定，新增路由自动覆盖，漏不掉。
+ *
+ * 代价是偶尔多清一次（比如改了个无关配置）。个人站这个量级下，比脏缓存便宜得多。
+ */
+router.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  res.on('finish', () => {
+    if (res.statusCode < 400) invalidateSummaryCache();
+  });
+  return next();
 });
 
 // ============ 文章 ============

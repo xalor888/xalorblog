@@ -21,7 +21,7 @@ Vue 3 + Vite + Pinia 前端 与 Express + Knex + MySQL 8 后端组成的**个人
 | 目录 | 文件 | 行数 | 说明 |
 |---|---:|---:|---|
 | `server/src` | 61 | 14,317 | 18 个路由 + 12 个中间件 + 26 个工具 + 迁移/种子 |
-| `server/test` | 83 | 14024 | **77 个 `*.test.js`**（67 个在离线链、17 个在集成链，**其中 7 个两条链都跑**；并集 = 76，无孤儿）+ `run.js` + `helpers/` + WAF 语料 + `run-mac.sh` |
+| `server/test` | 83 | 14024 | **78 个 `*.test.js`**（68 个在离线链、17 个在集成链，**其中 7 个两条链都跑**；并集 = 77，无孤儿）+ `run.js` + `helpers/` + WAF 语料 + `run-mac.sh` |
 | `server/scripts` | 2 | 490 | `bench-read-paths.js`（SQL 基线）+ `e2e-smoke.js`（端到端冒烟） |
 | `web/src` | 102 | 33,083 | 35 个视图 + 14 个组件 + 30 个工具 + 5 store + 2 composables + 3 个图片资源（不计行） |
 | `web/public` | 15 | 467 | `theme-init.js` / `boot-guard.js` / `anti-debug.js`（不进打包）+ 图标/manifest（8 个二进制不计行） |
@@ -516,11 +516,13 @@ cd web && npm run build
 EXPLAIN 验证删冗余索引没把查询打成全表扫描：
 slug 查询 `type=const + articles_slug_unique`、归档与列表都 `Backward index scan`（无需 filesort）。
 
-### 13.6 仍在「需人工决策」的
+### 13.6 「需人工决策」的（2026-11-08 已全部处理，见 §15）
 
-WAF 单发高危载荷放行（12 载荷 / 17 变体，分数 3–4 < 阈值 5）、色情词权重 25 < 待审阈值 30、
-深色主题两处颜色对比度、`share-page` 空壳落地页、3 条疑似冗余索引、
-手记列表的 `Using filesort`、`https` 指向内网仍放行（需 DNS 私有网段判断）。
+原清单：WAF 单发高危载荷、色情词权重、深色两处对比度、`share-page` 空壳页、
+3 条疑似冗余索引、手记 `Using filesort`、`https` 指向内网。
+
+现状：前五项已落地并各有测试钉住；`share-page` 早在第 46 轮补成真实内容页；
+冗余索引只剩 `migrate.js` 里几条「需逐个人工确认」的（未被删除）。
 
 ### 13.7 文档复核（本轮顺手做的）
 
@@ -642,3 +644,51 @@ test-gate-integrity      **元门禁**：每道门禁能让 build 变红、在�
 1. **本文件 §1–§9** —— 架构与请求旅程，仍然准确
 2. **本节** —— 正文没覆盖的新文件
 3. `code-map/` 分区笔记 —— 逐文件细节（但只到第 5 轮）
+
+---
+
+## 15. 2026-11-08 攻坚：五项决策落地 + 真库闭环
+
+### 15.1 五项决策（都有可执行断言，不是散文）
+
+| 项 | 改了什么 | 钉住它的测试 |
+|---|---|---|
+| WAF 单发高危载荷 | **扫描面加权**：`query/path/header ×1.25`，`body ×1` —— 单发 `error`(4) 在网络面 = 5 达阈值即拦，正文仍是 4 放行。另把 `SQL-22`（引号接注释）与 `XSS-23`（裸伪协议）从 warning 提到 error | `wafThreshold.test.js`【F】、`wafBodyGuard.test.js`、`waf-fuzz --assert`（缺口预算 12 → **0**） |
+| 色情词权重 | `25 → 30`（与辱骂词同档），单发即进待审；**不加**硬拦表（避免技术讨论被拒收） | `moderationWeights.test.js`、`moderationScore.test.js` |
+| 主题派生色 | 阶梯系数重调（浅 `.40/.55/.66/.72/.78`、深 `.30/.50/.66/.72/.78`），`dark-2` 改为向页底压暗；`light-9` 实测浅 **1.24:1** / 深 **1.34:1** | `test-derived-tokens.mjs`（36 条，含 main.css 兜底值逐字节比对）、`test-theme-init-parity.mjs`、`check-theme-parity.mjs` |
+| schema enum | `migrate.js` 5 处 `t.enum` 改为 `[...ARTICLE_STATUS]` / `[...REVIEW_STATUS]` 派生 | `schemaEnumSync.test.js`（断言「全部派生，写回字面量即红」）、`enums.test.js` |
+| 手记 filesort | 新增覆盖索引 `(status, is_pinned, published_at, id)`；实测 EXPLAIN 变为 `Covering index lookup ... (reverse)`，filesort 消失 | `notesSortIndex.test.js`（含探针 MySQL 的 EXPLAIN 对照：旧索引 / `(status,id)` / 覆盖索引） |
+
+### 15.2 WAF 实测数字（1326 变体）
+
+| 指标 | 改前 | 改后 |
+|---|---|---|
+| 拦截 / 放行 | 848 / 478 | **1223 / 103** |
+| 已知缺口（分数不到阈值） | 12 条 | **0 条** |
+| 良性语料误杀 | 0 | **0** |
+
+正文护栏单独成测：`content`/`title`/`summary` 等自由文本字段对全部规则组豁免（零命中），
+非豁免正文字段（`nickname`/`website`）单发 4 分 < 5 放行；同样字符串进 `query`/`header` 即达标。
+
+### 15.3 真库闭环（此前 7 天唯一的验证空白）
+
+- **护栏**：`test/run.js` 在 `DB_NAME` 不以 `_scratch` 结尾时**拒绝执行**（这些套件会 DELETE 真实行）。
+- **结果**：`xalor_blog_scratch` 上 `migrate → seed → 17 个套件` 全绿（含新增 `writePath.test.js`）。
+- **写路径**：文章发布 → 列表/详情立刻可见；评论 待审 → 批准 → 前台可见；手记发布 → 主页列表与
+  **摘要缓存**立刻反映（`note_count` 递增）；同 IP 重复点赞 429。
+- **摘要缓存**：`admin.js` 加统一钩子 —— 任何成功的写请求（方法 + 状态码判定）自动清 `/api/home/summary`，
+  取代「十几个写点逐个手写失效」的漏点模式。
+- **备份演练**：`mysqldump` 生产库 → 恢复进 `xalor_blog_scratch2` → **17 张表行数逐表一致**
+  （`audit_logs` 26,220 行）。
+
+### 15.4 新增门禁
+
+| 门禁 | 防什么 |
+|---|---|
+| `adminAuthz.test.js`（9 条） | 后台路由必须全部排在 `authRequired` + 角色闸之后；新增路由若写到守卫上面，立刻红 |
+| `wafBodyGuard.test.js`（13 条） | 「技术文章能发布」与「单发载荷被拦」两件事同时成立 |
+| `writePath.test.js`（20 条，集成链） | 写入 → 缓存失效 → 前台可见这条链路 |
+
+### 15.5 计数现状
+
+离线套件 **68**、集成套件 **17**、构建门禁 **36**、`*.test.js` **78**。

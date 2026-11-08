@@ -102,6 +102,10 @@ async function suite() {
   }
 
   console.log('\n=== C. 手记：发布后主页立刻可见 ===');
+  // 先记下摘要里的手记数（这个接口免票、带 60s 缓存 —— 写了手记却不清缓存，
+  // 个人主页的数字会最多陈旧一分钟，且没有任何现象提示你）
+  r = await c.req('GET', '/api/home/summary', { ticket, silent: true });
+  const notesBefore = (r.body && r.body.data && r.body.data.stats && r.body.data.stats.note_count) || 0;
   const noteText = `写路径手记-${stamp}`;
   r = await c.req('POST', adminBase + '/notes', {
     body: { content: noteText, status: 'published', mood: '测试' },
@@ -116,6 +120,11 @@ async function suite() {
   // 所以这里按 id 命中，不按正文文本 —— 否则断言会因为「字段本来就没有」而假红。
   const hit = Array.isArray(notes) ? notes.find((x) => x.id === nid) : null;
   assert('主页手记列表立刻可见（notes 缓存已失效）', !!hit, `列表 ${Array.isArray(notes) ? notes.length : '?'} 条`);
+
+  r = await c.req('GET', '/api/home/summary', { ticket, silent: true });
+  const notesAfter = (r.body && r.body.data && r.body.data.stats && r.body.data.stats.note_count) || 0;
+  assert('主页摘要的手记数立刻反映新增（摘要缓存被清过）', notesAfter >= notesBefore + 1,
+    `before=${notesBefore} after=${notesAfter} —— 60s 缓存没失效`);
 
   if (nid) {
     r = await c.req('DELETE', adminBase + '/notes/' + nid, { ticket, headers: authHeaders, silent: true });
