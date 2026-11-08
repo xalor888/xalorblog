@@ -37,7 +37,7 @@ console.log('=== A. 生产：只允许 https ===');
     check('本机 http 也拒绝（生产不该连本机网关）',
       isUsableBase('http://127.0.0.1:8080') === false);
     check('内网 http 拒绝', isUsableBase('http://192.168.1.10') === false);
-    // 本轮把这条补上了：只校验「必须是 https」不够，`https://192.168.1.10/v1`
+    // 这次把这条补上了：只校验「必须是 https」不够，`https://192.168.1.10/v1`
     // 协议完全合法但它指向内网 —— 这是 SSRF 的正面入口。
     check('https 指向内网必须拒绝（协议合法 ≠ 目标公网可达）',
       isUsableBase('https://192.168.1.10') === false, '放行即是 SSRF 通道');

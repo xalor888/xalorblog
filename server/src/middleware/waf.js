@@ -397,7 +397,7 @@ const MISS_EXEMPT_RE = [
   /^\/health(?:\/(?:live|ready))?$/i,
 ];
 
-/** UA 轮换检测：同一 IP 在 5 分钟窗口内出现 ≥6 个不同 UA → 脚本轮换 UA 规避指纹识别
+/** UA 轮换检测：同一 IP 在 5 分钟窗口内出现 ≥6 个不同 UA → 脚这次换 UA 规避指纹识别
  * 正常用户浏览器 UA 恒定；多设备/NAT 共网 IP 罕见且无害（只计积分不封禁） */
 const uaTracker = new Map(); // ip -> { uas: Set, windowStart }
 const UA_DIFF_THRESHOLD = 6;

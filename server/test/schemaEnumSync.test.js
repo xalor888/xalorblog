@@ -8,7 +8,7 @@
  *   - schema 多了废弃值 → 能写进去但校验会拒（静默不一致，难发现）
  *   - **顺序不一致** → `ORDER BY status` 的排序语义变了，而没人会想到是这个原因
  *
- * `「schema enum 待决策」项` 记着「3 处 t.enum 仍是硬编码」。第 79 轮实测：**实际是 5 处**，
+ * `「schema enum 待决策」项` 记着「3 处 t.enum 仍是硬编码」。实测：**实际是 5 处**，
  * 且分属 2 个枚举（articles/notes 用 ARTICLE_STATUS；comments/links/messages 用 REVIEW_STATUS）。
  *
  * 2026-11-08 的处理：**改成派生**。`migrate.js` 现在写 `t.enum('status', [...ARTICLE_STATUS])` /

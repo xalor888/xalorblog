@@ -1316,7 +1316,7 @@ onUnmounted(() => {
 
 .le-desc {
   font-size: 0.9rem;
-  /* --text-3 在浅色底上 5.34:1 合规（第 53 轮已确认），
+  /* --text-3 在浅色底上 5.34:1 合规（已确认），
      之前 3.56 是因为整块继承了错误页面的颜色上下文。显式声明。 */
   color: var(--text-3);
   margin-bottom: 26px;

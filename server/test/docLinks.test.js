@@ -58,15 +58,11 @@ console.log('=== A. 文档内链都指向真实文件 ===');
 console.log('\n=== B. 入口文档必须存在且互相可达 ===');
 {
   // README 是入口，必须指向代码索引；索引必须指向分区笔记。
-  // 第三条是守卫：这个批次的过程记录（`AUTOPILOT*` / `HANDOVER`）已按用户要求删除，
-  // 谁把它们写回文档，链接就会指向不存在的文件 —— 而错误只发生在读者点进去的那一刻。
+  // 失效链接本身由 A 组抓（链接指向不存在的文件就会被列出来），这里只查可达性。
   const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
   const codeMap = fs.readFileSync(path.join(ROOT, 'docs/CODE_MAP.md'), 'utf8');
   ok('README 指向 CODE_MAP', /\[[^\]]*\]\([^)]*CODE_MAP\.md/.test(readme));
   ok('CODE_MAP 指向 code-map 分区笔记', /\[[^\]]*\]\([^)]*code-map\//.test(codeMap));
-  const removed = ['AUTOPILOT.md', 'AUTOPILOT_LOG.md', 'HANDOVER.md']
-    .filter((n) => readme.includes(n) || codeMap.includes(n));
-  ok('已删除的过程记录没有被文档引用回来', removed.length === 0, removed.join(' | '));
 }
 
 console.log('\n=== C. 判据自检 ===');

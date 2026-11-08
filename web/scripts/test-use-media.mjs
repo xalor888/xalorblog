@@ -90,7 +90,7 @@ function collectBreakpoints() {
 }
 const breakpoints = collectBreakpoints();
 
-console.log('\n【A. 断点常量与 CSS 媒体查询一致（本轮的重点）】');
+console.log('\n【A. 断点常量与 CSS 媒体查询一致（这次的重点）】');
 {
   const { BREAKPOINT_ADMIN } = load({ hasWindow: false });
   ok('导出了 BREAKPOINT_ADMIN', BREAKPOINT_ADMIN === 820, String(BREAKPOINT_ADMIN));

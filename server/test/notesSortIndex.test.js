@@ -6,7 +6,7 @@
  *   1. 查询改成 `orderBy('published_at','desc')`（走索引，但改变排序语义）
  *   2. 加一条 `(status, id)` 索引
  *
- * 第 77 轮实测发现两处问题：
+ * 实测发现两处问题：
  *   a) 记录里的排序键过时了 —— 实际是三键 `is_pinned DESC, published_at DESC, id DESC`，
  *      不是「order by id desc」。
  *   b) **第 2 个修法无效**：加 `(status, id)` 后优化器**仍然**选原索引并 filesort。

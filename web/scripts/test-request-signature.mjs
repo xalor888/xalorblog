@@ -102,12 +102,12 @@ console.log('\n【B. sigPath 的两种前缀口径（混用会全线 403）】')
     ['/api', true, '/'],                      // 剥完为空回退 '/'
     ['/api/', true, '/'],
     ['/articles', true, '/articles'],         // 没有前缀时原样返回
-    ['/apifoo/articles', true, '/apifoo/articles'],   // 本轮修：前缀必须整段匹配
+    ['/apifoo/articles', true, '/apifoo/articles'],   // 这次修：前缀必须整段匹配
     ['/api-docs', true, '/api-docs'],                 // 同形不同段，也不能剥
     ['/apiX', true, '/apiX'],
     ['/api/articles?x=1', true, '/articles'], // query 先去掉
   ];
-  // 这三条（/apifoo、/api-docs、/apiX）是本轮修的真 bug：
+  // 这三条（/apifoo、/api-docs、/apiX）是这次修的真 bug：
   // 旧实现的 `startsWith(prefix)` 是**字符串**前缀匹配，`/apifoo` 也"以 /api 开头"，
   // 于是被剥成 `/foo/articles` —— 服务端 req.path 是 `/apifoo/articles`，
   // 两侧对不上 → 那个请求永远 403，而错误信息只会说「请求签名无效」。
@@ -154,7 +154,7 @@ console.log('\n【D. jti 提取与票据边界】');
   const r2 = await api.buildRequestSignature({ ticket: 'onlyonepart', method: 'GET', url: '/x' });
   ok('单段票据 → jti 为空串（不抛）', r2.jti === '', JSON.stringify(r2.jti));
 
-  // 空票据：本轮修的问题。crypto.subtle 不允许零长度 HMAC key
+  // 空票据：这次修的问题。crypto.subtle 不允许零长度 HMAC key
   // （DataError: Zero-length key is not supported），而服务端 Node 的
   // createHmac 允许空 key —— 两侧行为不一致，且用户只看到「网络错误」。
   // 现在主动抛一个说得清的错。

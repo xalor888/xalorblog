@@ -1,6 +1,6 @@
 # W12 构建期自检脚本（除 focus-visible）
 
-> ⚠ **本文是第 5 轮写的快照，数字已过时**（当时 8 个脚本 / build 串 6 个）。
+> ⚠ **本文是早期写的快照，数字已过时**（当时 8 个脚本 / build 串 6 个）。
 > 现在 `web/scripts/` 有 **20 道门禁**，`build` 与 `test:scripts` 串的是**同一批 20 个**顺序完全一致
 > （`test:scripts` 只是去掉末尾的 `vite build`，它俩的漂移由 `test-gate-integrity.mjs` 钉住）。
 > 下面各节的**逐脚本说明仍然有效**，只是当时只覆盖了前 8 个。
@@ -170,7 +170,7 @@
 
 ## 小结
 
-1. 这批脚本是 web 侧**构建前防线**，被 `build` / `test:scripts` 串成顺序门禁：任一条失败即中断 `vite build`，属"改了会挡发版"的高耦合代码。（`test-focus-visible.mjs` 本轮曾排除在外，现在已在链里。）
+1. 这批脚本是 web 侧**构建前防线**，被 `build` / `test:scripts` 串成顺序门禁：任一条失败即中断 `vite build`，属"改了会挡发版"的高耦合代码。（`test-focus-visible.mjs` 这次曾排除在外，现在已在链里。）
 2. 手段只有两种：静态正则断言（mobile-baseline、reading-prefs 后半、contrast-tokens、theme-init-parity）与纯函数/沙箱行为断言（script-order fixture、anti-debug 的 vm、word-stats、reading-prefs 前半）。前者锁"不许删掉这条修复"，断言的常是源码文本；后者才是真回归。
 3. 跨仓边界只有一处：`test-word-stats.mjs` 用 `createRequire` 直拉 `server/src/routes/stats.js` 与 `utils/markdownText.js`，绕开 HTTP 也绕开 API 契约——锁的是函数返回值口径，代价是依赖 `server/.env` 的 `DB_PASSWORD`。
 4. 与后端/网络的边界为零：其余 7 个不发请求、不需头/票据/签名，全离线；`anti-debug.js` 是唯一被真正执行的产物（vm 内），其余只被读取。

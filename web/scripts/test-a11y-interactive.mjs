@@ -135,7 +135,7 @@ console.log('\n【非原生可交互元素必须有键盘与读屏语义】');
   }
 }
 
-console.log('\n【逐个复核本轮修过的三处（防回退）】');
+console.log('\n【逐个复核这次修过的三处（防回退）】');
 {
   const ci = readFileSync(resolve(SRC, 'components/site/CommentItem.vue'), 'utf8');
   ok('CommentItem 头像已改成 button（不是 div + @click）',

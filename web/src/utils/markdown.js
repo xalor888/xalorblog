@@ -232,7 +232,7 @@ function demoteH1(html) {
     // addHeadingIds 必须跳过它 —— 否则会给它编一个 id（heading-0），
     // 而 extractToc 只收 depth>=2 的原始标题、不给它编号，
     // 两边就**整体错位一位**：TOC 点「为什么选 Knex」跳到文章主标题。
-    // 这是第 19 轮加 h1 降级时引入的回归，第 37 轮才发现。
+    // 这是加 h1 降级时引入的回归，很久之后才发现。
     '<h2$1 data-demoted="1">$2</h2>'
   );
 }

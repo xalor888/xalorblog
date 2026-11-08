@@ -149,7 +149,7 @@ console.log('\n【自检：判据能抓到数字漂移】');
   const stale = 'npm test # 29 个离线套件';
   const parsed = Number((stale.match(/(\d+)\s*个离线套件/) || [])[1]);
   ok('自检：能从不符的文本里解析出旧数字', parsed === 29);
-  ok('自检：旧数字 ≠ 实际数字（这正是第 51 轮修的那处）', parsed !== offlineSuites);
+  ok('自检：旧数字 ≠ 实际数字（这正是曾修过的那处）', parsed !== offlineSuites);
   ok('自检：解析不到时不会误判为通过', (() => {
     const m = '一段没有数字的话'.match(/(\d+)\s*个离线套件/);
     return m === null;   // 调用方用 `ok('写了…', !!m)` 先拦住

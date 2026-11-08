@@ -4,7 +4,7 @@
  * 这类 bug 的特点是**完全静默**：页面照常返回 200，XML 也能被解析，
  * 只是搜索引擎把这个字段当垃圾丢掉 —— 或者更糟，把整条 URL 判为格式错误。
  *
- * 两种真实症状（本轮修的）：
+ * 两种真实症状（这次修的）：
  *   - `String(a.updated_at || a.published_at).slice(0,10)` 在两个字段都为 NULL 时
  *     得到字面量 `"null"`（`String(null)` 是 `"null"` 而不是空串！）→ `<lastmod>null</lastmod>`
  *   - `String(x || '').slice(0,10)` 得到 `''` → 空元素 `<lastmod></lastmod>`

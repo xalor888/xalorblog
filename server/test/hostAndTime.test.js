@@ -145,7 +145,7 @@ console.log('\n=== F. 非法输入必须抛错，而不是静默产出 1970 ==='
 {
   const throws = (fn) => { try { fn(); return false; } catch (e) { return true; } };
 
-  // 这是本轮修的隐患：`Intl.formatToParts(null)` 会把 null 当成时间戳 0，
+  // 这是这次修的隐患：`Intl.formatToParts(null)` 会把 null 当成时间戳 0，
   // 于是 localDateStr(row.published_at) 在字段为 NULL 时**静默返回 1970-01-01**，
   // 没有异常、没有日志 —— 而 published_at 在「导入备份」路径上确实允许为 NULL。
   ok('localDateStr(null) 抛错（否则会静默得到 1970-01-01）', throws(() => localDateStr(null)));

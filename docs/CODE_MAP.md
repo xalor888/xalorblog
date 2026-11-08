@@ -31,8 +31,8 @@ Vue 3 + Vite + Pinia 前端 与 Express + Knex + MySQL 8 后端组成的**个人
 
 > 数字口径：文本按真实行数统计（`.js` / `.mjs` / `.vue` / `.css` / `.html` / `.json` / `.txt` / `.svg` / `.sh`）；
 > 二进制（png/webp/jpg）计入**文件数**但不计行数 —— 这解释了为什么 `web/public` 有 15 个文件却只有 467 行。
-> 本表在**第 41 轮**首次重算，**第 57 轮**再次重算（+30 文件 / +4,400 行，
-> 主要来自本轮新增的离线套件、`e2e-smoke.js`、`httpMethods.js`、`enums.js`、`check-doc-numbers.mjs`）。
+> 本表重算过两次（+30 文件 / +4,400 行，
+> 主要来自这次新增的离线套件、`e2e-smoke.js`、`httpMethods.js`、`enums.js`、`check-doc-numbers.mjs`）。
 > 重算后文件数变少是因为把 `web/public` 之外的统计口径统一到了「有扩展名的源码」，
 > 而 `server/test` 从此前按套件数估的行数改成实测。
 >
@@ -140,7 +140,7 @@ cd web    && npm run build            # 先跑 20 道静态门禁 → vite 双�
 **孤儿检测**：磁盘上存在但两条链都没登记的 `*.test.js` 会被拦下并把退出码置 1 ——
 防止「写了个集成测试、跑了一次绿了、忘了登记，于是它再也不会跑」。
 `test/run.js` 里原本就有一份（`warnOrphanSuites`），但它只在 `npm run test:all` 里调用，
-而那条命令会清库、实际上从不运行；**第 39 轮把同一套判据搬进离线链**（`test/orphanSuites.test.js`），
+而那条命令会清库、实际上从不运行；**同一套判据已搬进离线链**（`test/orphanSuites.test.js`），
 现在每次 `npm test` 都查，还多查两件事：注册表里有没有指向已删除文件的条目、离线链有没有重复注册。
 
 ### 36 道 web 门禁
@@ -300,7 +300,7 @@ check-disk-space → test-gate-integrity → check-doc-numbers → bump-assets -
 
 ---
 
-## 11. 修复批次：2026-11-01
+## 11. 修复记录：2026-11-01
 
 按 §9 的 ROI 清单执行。**原则**：每修一处，要么补一条能失败的断言，要么写清为什么不补。
 所有数字都是本机实跑输出，不是估计。
@@ -365,7 +365,7 @@ cd web && npm run build        → 门禁全绿 + vite build exit 0
 
 ### 11.4 工作树说明（重要）
 
-本轮开始时工作树里已有 **37 个未提交修改**（`app.js`、`waf.js`、`ai.js`、`articles.js`、`feed.js`、`share.js`、`settings.js`、`Settings.vue`、`Messages.vue`、`Links.vue`、`SearchModal.vue`、`wordStats.js`、`main.css` 等），来自之前的会话。本轮的改动叠加在其上，`git diff` 无法区分归属 —— 审查时请以本文件 §11.1 的表格为准，而不是 `git diff --stat` 的文件列表。本轮未执行任何 git 提交。
+这次开始时工作树里已有 **37 个未提交修改**（`app.js`、`waf.js`、`ai.js`、`articles.js`、`feed.js`、`share.js`、`settings.js`、`Settings.vue`、`Messages.vue`、`Links.vue`、`SearchModal.vue`、`wordStats.js`、`main.css` 等），来自之前的会话。这次的改动叠加在其上，`git diff` 无法区分归属 —— 审查时请以本文件 §11.1 的表格为准，而不是 `git diff --stat` 的文件列表。这次未执行任何 git 提交。
 
 ---
 
@@ -398,7 +398,7 @@ cd web && npm run build
   vite build ✓ 7.62s   exit 0
 ```
 
-**反向验证（本轮新增 3 条）**
+**反向验证（这次新增 3 条）**
 - 把 `report` 改回「每次失败都计分」→ 固定 IP 第 5 次即 403，`lockout` 第 6 段 **5 条红**、exit 1；
 - 把 `main.css` 亮色 `light-7` 的十六进制改错一位 → parity **2 条红**、exit 1；
 - 把 `waf-fuzz --assert` 表里某类最低命中改成不可能值 → exit 1 并指出该类。
@@ -409,11 +409,11 @@ cd web && npm run build
 - **深色 `--el-color-primary-light-9` 对页底只有 1.12:1**：现在 CSS 与 JS 是「一致地低」。要改得动 `theme.js` 的 0.9 系数（会让 EP 的 plain 按钮底/表头底更明显），属视觉决策，未擅自改。
 - **深色 `--el-color-primary-dark-2` 与 primary 几乎同色**（`#e76b54` vs `#e76850`，语义上 dark-2 本该更暗）：主题公式的既有效果，同样属设计决策。
 - **`npm run test:all` 仍未执行**：会清 `ip_bans`、重置 `users.totp_*`、删本机测试评论/留言/手链、并重启服务。改造后的运行器能正确返回退出码，请在确认数据可清时自行运行。
-- **`main.css` 里其余「过渡/间距」类魔法数与 `--z-*` 裸值**（W11 记录的那些）本轮未动，它们不影响功能正确性。
+- **`main.css` 里其余「过渡/间距」类魔法数与 `--z-*` 裸值**（W11 记录的那些）这次未动，它们不影响功能正确性。
 
 ### 12.4 工作树说明
 
-工作树里仍有前序会话留下的未提交改动，本轮改动叠加其上。审查请以 §11.1 与 §12.1 的表格为准；本轮依旧没有任何 git 提交（删掉的 `og-image.webp` 也只在工作区，索引已复位）。
+工作树里仍有前序会话留下的未提交改动，这次改动叠加其上。审查请以 §11.1 与 §12.1 的表格为准；这次依旧没有任何 git 提交（删掉的 `og-image.webp` 也只在工作区，索引已复位）。
 
 ### 12.5 收尾补丁（同日，评审报告驱动的 4 项）
 
@@ -521,10 +521,10 @@ slug 查询 `type=const + articles_slug_unique`、归档与列表都 `Backward i
 原清单：WAF 单发高危载荷、色情词权重、深色两处对比度、`share-page` 空壳页、
 3 条疑似冗余索引、手记 `Using filesort`、`https` 指向内网。
 
-现状：前五项已落地并各有测试钉住；`share-page` 早在第 46 轮补成真实内容页；
+现状：前五项已落地并各有测试钉住；`share-page` 早已补成真实内容页；
 冗余索引只剩 `migrate.js` 里几条「需逐个人工确认」的（未被删除）。
 
-### 13.7 文档复核（本轮顺手做的）
+### 13.7 文档复核（这次顺手做的）
 
 - **§2 体量与 §6 测试段落已按实际重算**（原文写「15 个离线套件 / 8 个静态门禁」，
   实际是 46 个 `*.test.js` + `waf-fuzz --assert` / 13 道门禁）。
@@ -535,11 +535,11 @@ slug 查询 `type=const + articles_slug_unique`、归档与列表都 `Backward i
   `og-image.webp` 出现在 §11 的**历史记录**里（「已无引用可删」），不是当前断言。
   → 没有把这条做成门禁：判据（「当前存在」vs「历史记录」）无法自动区分，误报会把门禁变成噪音。
 
-### 13.8 工作树状态（截至本轮）
+### 13.8 工作树状态（截至这次）
 
 ```
 git status --short
-  51 个未跟踪（docs/ + 本轮新增的测试/工具/门禁脚本）
+  51 个未跟踪（docs/ + 这次新增的测试/工具/门禁脚本）
   87 个已修改
    1 个已删除（web/public/og-image.webp，74KB，无引用）
    0 个 staged
@@ -558,9 +558,9 @@ git status --short
 
 ---
 
-## 14. 附录：本次自主优化新增的文件（第 1–42 轮）
+## 14. 附录：新增文件索引
 
-> 上面各章是第 1–5 轮读代码时写的笔记。这一节补上是**之后 37 轮自主优化**新增的东西 —— 
+> 上面各章是早期读代码时写的笔记。这一节补上的是**后续新增**的东西 —— 
 > 它们在正文里没有对应章节，但理解当前状态需要知道它们存在。
 > 共 **87 个未跟踪文件**（本仓库从无 git 提交，所以全部显示为 `??`）。
 
@@ -572,7 +572,7 @@ git status --short
 | `utils/netGuard.js` | `isPrivateHost/isPrivateUrl/stripBrackets` —— SSRF 白名单判据（只认 IP 字面量，**不做 DNS 解析**，避免用解析结果判断带来的 TOCTOU） |
 | `utils/etag.js` | `weakCompare` / `etagMatches` —— nginx/CDN 会把强 ETag 改写成 `W/"..."`，严格相等会永远 304 不命中 |
 | `utils/indexAnalysis.js` | `classifyRedundantIndex` —— 判定「前缀重复的索引」，用于迁移时安全删除冗余索引 |
-| `utils/uploads.js` | `resolveUploadPath` / `listUploadFiles` / **`extractUploadRefs`**（第 71 轮从 `admin.js` 抽出，纯函数，可离线测） |
+| `utils/uploads.js` | `resolveUploadPath` / `listUploadFiles` / **`extractUploadRefs`**（从 `admin.js` 抽出，纯函数，可离线测） |
 | `middleware/compress.js` | `createGzipMiddleware` —— 异步 zlib，避免同步压缩阻塞事件循环 |
 
 ### 14.2 `server/test`（39 个新文件：38 个离线套件 + `helpers/`）
@@ -643,11 +643,11 @@ test-gate-integrity      **元门禁**：每道门禁能让 build 变红、在�
 
 1. **本文件 §1–§9** —— 架构与请求旅程，仍然准确
 2. **本节** —— 正文没覆盖的新文件
-3. `code-map/` 分区笔记 —— 逐文件细节（但只到第 5 轮）
+3. `code-map/` 分区笔记 —— 逐文件细节（但只到早期快照）
 
 ---
 
-## 15. 2026-11-08 攻坚：五项决策落地 + 真库闭环
+## 15. 2026-11-08 变更记录：五项决策落地 + 真库闭环
 
 ### 15.1 五项决策（都有可执行断言，不是散文）
 
@@ -670,7 +670,7 @@ test-gate-integrity      **元门禁**：每道门禁能让 build 变红、在�
 正文护栏单独成测：`content`/`title`/`summary` 等自由文本字段对全部规则组豁免（零命中），
 非豁免正文字段（`nickname`/`website`）单发 4 分 < 5 放行；同样字符串进 `query`/`header` 即达标。
 
-### 15.3 真库闭环（此前 7 天唯一的验证空白）
+### 15.3 真库闭环（此前唯一的验证空白）
 
 - **护栏**：`test/run.js` 在 `DB_NAME` 不以 `_scratch` 结尾时**拒绝执行**（这些套件会 DELETE 真实行）。
 - **结果**：`xalor_blog_scratch` 上 `migrate → seed → 17 个套件` 全绿（含新增 `writePath.test.js`）。
@@ -693,7 +693,7 @@ test-gate-integrity      **元门禁**：每道门禁能让 build 变红、在�
 
 离线套件 **79**、集成套件 **19**、构建门禁 **37**、`*.test.js` **91**。
 
-### 15.6 2026-11-08 第二轮（继续深挖）
+### 15.6 2026-11-08 后续一批（继续深挖）
 
 | 项 | 结论 / 改动 | 防线 |
 |---|---|---|

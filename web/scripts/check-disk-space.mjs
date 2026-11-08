@@ -1,7 +1,7 @@
 /**
  * 磁盘空间门禁：**构建开始前就告诉你会不会写不下**。
  *
- * 为什么需要：第 92 轮 `npm run build` 失败，报的是
+ * 为什么需要：曾有一次 `npm run build` 失败，报的是
  * ```
  * Error: ENOSPC: no space left on device, write
  * ```

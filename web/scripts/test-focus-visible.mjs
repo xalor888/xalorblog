@@ -6,7 +6,7 @@
  * 必须可见 —— 键盘用户 Tab 到输入框时，如果只有 border-color 变化，
  * 在小字号旁几乎看不出来，等于不知道自己在哪。
  *
- * 本轮实测（真实 Tab 走查 5 个页面）发现：
+ * 这次实测（真实 Tab 走查 5 个页面）发现：
  *   - 列表页搜索框、留言页昵称、留言内容：完全没有可见焦点指示
  *   - 页面数选择器：只有边框变色
  *
@@ -685,7 +685,7 @@ console.log('\n【站点设置：33 个字段，改坏了要有一键回到上�
 
 console.log('\n【手记图集（notes.images）是 JSON 字符串，扫描要能从中认出 URL】');
 {
-  // 上一轮把手记补进扫描，但我没验过 images 列的真实格式。
+  // 此前把手记补进扫描，但我没验过 images 列的真实格式。
   // 它存的是 **JSON 字符串**（`["/uploads/a.png"]`），不是数组、也不是裸文件名。
   // 实测：只放进图集、正文完全不提这张图的手记 →
   //   `.del-btn` disabled=true；绕过前端调接口 → 400，磁盘文件仍在；
@@ -722,7 +722,7 @@ console.log('\n【引用扫描的五类来源：漏掉任何一类都会把在�
   //
   // 跨端检查（web 门禁读 server 源码）天然脆：只要给某个查询加个 `where`，
   // 词法形态就变了，语义却没变 —— 于是 web build 无故变红，而去改它的人
-  // 手上正拿着一个功能正确的实现。第 64 轮就踩过一次（加了 LIKE 预过滤）。
+  // 手上正拿着一个功能正确的实现。此前就踩过一次（加了 LIKE 预过滤）。
   //
   // 所以这里改成两层：
   //   a) **表级**：collectReferencedUploads 必须查这 4 张表（这是真正的契约，
@@ -809,7 +809,7 @@ console.log('\n【图片管理：被引用的图片前后端都要拦住，删�
 
 console.log('\n【批量操作的端到端：真改了库里那几条，且不多不少】');
 {
-  // 上一轮评论页没数据，只靠断言；这一轮造了 4 条待审评论，把链路走完整：
+  // 此前评论页没数据，只靠断言；这一轮造了 4 条待审评论，把链路走完整：
   //   全选表头 → 已选 4 条；取消选择 → 勾选归 0；
   //   勾 2 条「批量通过」→ 提示「已通过 2 条评论」，
   //   库里 c3/c4=approved、c1/c2 仍 pending（**没有误改未选中的**）；
@@ -1265,7 +1265,7 @@ console.log('\n【Markdown 净化：七种载荷全挡，内联 style 里的 url
 
 console.log('\n【高亮只有一份实现：两处共用，不再各自分叉】');
 {
-  // 第 125 轮修了搜索弹层的顺序问题，第 126 轮发现 ArticleList.vue 里有**逐字相同的第二份**，
+  // 修过搜索弹层的顺序问题后，又发现 ArticleList.vue 里有**逐字相同的第二份**，
   // 带着同一个缺陷（搜 `A & B` 命中却不亮）。现在两处都走 @/utils/highlight。
   // 实测：列表页 ?keyword=A & B → 1 篇、1 处 mark；弹层 → 1 条、1 处 mark。
   const util = read('../src/utils/highlight.js');
@@ -1290,7 +1290,7 @@ console.log('\n【搜索高亮：先匹配再转义，且不能因此放过 XSS�
   // 原因是「整串先转义、再拿关键词去匹配转义后的串」——
   // 标题里的 & 已变成 &amp;，关键词里的 & 就匹配不上了。
   // 修法是 **在原文上匹配、只对命中的片段转义**（用 split 保留分隔符）。
-  // 实现已移到共用工具里（第 126 轮），所以读 highlight.js 而不是 SearchModal
+  // 实现已移到共用工具里（早已抽走），所以读 highlight.js 而不是 SearchModal
   const sm = read('../src/utils/highlight.js');
   const fn = (sm.match(/export function highlightKeyword[\s\S]{0,900}/) || [''])[0];
   ok('高亮函数存在', !!fn);
@@ -1479,7 +1479,7 @@ console.log('\n【两个编辑器的脏标记清理方式不同，但都要正�
   // ArticleEdit 用的是封装好的 assignForm：
   //   suppressWatch = true → 赋值 → await nextTick() → suppressWatch = false
   // 这个顺序是**正确**的（等 watch 回调跑完才解除抑制）。
-  // NoteEdit 原来没有这层封装，发布后会被自己的脏检查挡住 —— 第 114 轮修的就是它。
+  // NoteEdit 原来没有这层封装，发布后会被自己的脏检查挡住 —— 修的就是它。
   // 实测 ArticleEdit 发布：确认框 → 「文章已发布」→ 跳回列表，**没有**误报「尚未保存」。
   const ae = read('../src/views/admin/ArticleEdit.vue');
   const af = (ae.match(/async function assignForm[\s\S]{0,400}/) || [''])[0];
@@ -1491,7 +1491,7 @@ console.log('\n【两个编辑器的脏标记清理方式不同，但都要正�
      /await nextTick\(\)[\s\S]{0,60}suppressWatch = false/.test(af));
   ok('ArticleEdit 清草稿时也清 dirty', /function clearDraft[\s\S]{0,120}dirty\.value = false/.test(ae));
 
-  // NoteEdit 必须也有 nextTick 那一步（第 114 轮修的）
+  // NoteEdit 必须也有 nextTick 那一步（修过的）
   const ne = read('../src/views/admin/NoteEdit.vue');
   ok('NoteEdit 也有 nextTick 再清 dirty', /await nextTick\(\)[\s\S]{0,120}dirty\.value = false/.test(ne));
 }
@@ -1631,7 +1631,7 @@ console.log('\n【评论草稿按文章隔离，不能串味】');
 {
   // 实测：在文章 A 写草稿 → localStorage 只有 xalor_cdraft_1；
   // 切到文章 B → 输入框**干净**；切回 A → 内容恢复并提示「已恢复上次未提交的评论草稿」。
-  // 也验了损坏值会被清掉（keyGone: true）—— 用的是第 106 轮修好的那条 catch 分支。
+  // 也验了损坏值会被清掉（keyGone: true）—— 用的是已修好的那条 catch 分支。
   const cs = read('../src/components/site/CommentSection.vue');
   ok('草稿键带 articleId（按文章隔离）', /xalor_cdraft_\$\{props\.articleId\}|xalor_cdraft_\$\{/.test(cs));
   ok('用的是共用的 localDraft 工具', /from '@\/utils\/localDraft'/.test(cs));
@@ -2155,7 +2155,7 @@ console.log('\n【分享页的 body 不能是空的】');
 
   // 补内容不能破坏爬虫抓到的东西
   ok('JSON-LD 未被破坏', /application\/ld\+json/.test(share));
-  ok('og:url 仍指向 selfUrl（上一轮的修复没被回退）', /property="og:url" content="\$\{selfUrl\}"/.test(share));
+  ok('og:url 仍指向 selfUrl（此前的修复没被回退）', /property="og:url" content="\$\{selfUrl\}"/.test(share));
 }
 
 console.log('\n【分享页：og:url 必须与 canonical 一致】');
@@ -2169,7 +2169,7 @@ console.log('\n【分享页：og:url 必须与 canonical 一致】');
   ok('og:url 与 canonical 同为 selfUrl', /property="og:url" content="\$\{selfUrl\}"/.test(share));
   // 但人类重定向仍然必须走 hash URL
   ok('refresh 仍指向 hash URL（人类落点）', /http-equiv="refresh" content="0;url=\$\{shareUrl\}"/.test(share));
-  // 兜底按钮现在带 style，不能钉死 `">`（上一轮那条断言因此失配过）
+  // 兜底按钮现在带 style，不能钉死 `">`（此前那条断言因此失配过）
   ok('兜底按钮仍指向 hash URL（人类落点）', /<a href="\$\{shareUrl\}"/.test(share));
   // 站点级分享页本来就一致，别被改坏
   ok('站点分享页 og:url 仍是 selfUrl', (share.match(/property="og:url" content="\$\{selfUrl\}"/g) || []).length >= 2);
@@ -2255,7 +2255,7 @@ console.log('\n【改筛选要回第 1 页，改排序/每页条数不该清筛�
     clearFn.slice(0, 40)
   );
 
-  // 关键词与筛选可以共存（上一轮改成不清 keyword 后必须仍然如此）
+  // 关键词与筛选可以共存（此前改成不清 keyword 后必须仍然如此）
   ok('改分类时关键词保留', !/delete q\.keyword/.test(catFn));
   ok('改标签时关键词保留', !/delete q\.keyword/.test(tagFn));
 }
@@ -2759,7 +2759,7 @@ console.log('\n【列表滚动位置：由路由 scrollBehavior 负责】');
     'hash 路由下 savedPosition 经常是 null，只靠它等于不恢复'
   );
   ok('兜底只在位置 > 0 时用（新页面仍从顶部开始）', /stateScroll\.top > 0/.test(factory));
-  // ⚠ 上一轮这里写错了。我断言「同路径 query 变化应保持不动」，
+  // ⚠ 此前这里写错了。我断言「同路径 query 变化应保持不动」，
   // 但实测产品意图是相反的：**换筛选应该回到顶部**（读者要看新结果的第一条），
   // 而**浏览器后退应该回到原处**。两者都合理，只是触发源不同。
   // 现在记录的是真实分工：
@@ -2900,7 +2900,7 @@ console.log('\n【之前从未检查过的路由】');
 console.log('\n【关于页与个人主页的一致性】');
 {
   // 关于页只走 renderMarkdown、不走 addHeadingIds —— 没有 TOC 就不需要锚点，
-  // 但必须确认它的标题大纲仍然合法（第 19 轮降级后不能冒出第二个 h1）。
+  // 但必须确认它的标题大纲仍然合法（降级后不能冒出第二个 h1）。
   const about = read('../src/views/site/About.vue');
   ok('关于页用 renderMarkdown 渲染正文', /renderMarkdown\(/.test(about));
   ok(
@@ -2913,13 +2913,13 @@ console.log('\n【关于页与个人主页的一致性】');
   const home = read('../src/views/home/Layout.vue');
   ok('个人主页有主题切换', /toggleTheme/.test(home));
   ok('个人主页也用了 useThemeStore', /useThemeStore/.test(home));
-  ok('个人主页有 skip-link（第 28 轮补的）', /class="skip-link"/.test(home));
+  ok('个人主页有 skip-link（此前补的）', /class="skip-link"/.test(home));
   ok('个人主页主内容可聚焦', /id="home-main"[^>]*tabindex="-1"/.test(home));
 }
 
 console.log('\n【TOC 编号必须与正文标题一一对应】');
 {
-  // 第 19 轮加 h1 降级时引入的回归，第 37 轮才发现：
+  // 加 h1 降级时引入过回归，很久之后才发现：
   // demoteH1 把正文的 `# 标题` 变成 <h2>，而 addHeadingIds 给它也编了号（heading-0），
   // 但 extractToc 只收原始 depth>=2 的标题、不编号 —— 两边**整体错位一位**。
   // 实测：点 TOC 第一项跳到的是文章主标题，而不是它写的那一节。
@@ -3264,7 +3264,7 @@ console.log('\n【对话框：改了内容点取消不能静默丢弃】');
 
 console.log('\n【保存成功后必须重置基线，否则误报「未保存」】');
 {
-  // 上一轮刚加的未保存保护引入了一个反向缺陷，实测复现：
+  // 此前刚加的未保存保护引入了一个反向缺陷，实测复现：
   // 改字段 → 保存（提示「设置已保存」）→ 点离开，仍被「尚有未保存的修改」拦住。
   // 用户刚保存过，页面却说没保存 —— 误报比漏报更伤信任。
   for (const [path, label, anchor] of [

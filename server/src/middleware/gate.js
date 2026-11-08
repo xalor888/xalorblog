@@ -177,7 +177,7 @@ function verifyPow(req, body) {
   if (!pz) return { ok: false, reason: '挑战不存在或已失效' };
   puzzles.delete(id);
   if (Date.now() - pz.ts > PUZZLE_TTL) return { ok: false, reason: '挑战已过期，请重试' };
-  // UA 一致性：换 UA 重新求解（防拼接脚本轮换 UA 绕过）
+  // UA 一致性：换 UA 重新求解（防拼接脚这次换 UA 绕过）
   if (normUa(req.headers['user-agent']) !== pz.ua) return { ok: false, reason: '环境信息不匹配' };
   // 指纹一致性：挑战签发时的指纹必须与提交时一致
   if (String(req.headers['x-fp'] || '').slice(0, 128) !== pz.fp) {

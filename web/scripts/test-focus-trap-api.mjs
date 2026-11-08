@@ -1,7 +1,7 @@
 /**
  * useFocusTrap 的 engage/disengage 契约（node:vm + 假 DOM，无浏览器）。
  *
- * 背景：第 73 轮给 3 个 `el-dialog` 接焦点陷阱时，给 `useFocusTrap` 暴露了
+ * 背景：给 3 个 `el-dialog` 接焦点陷阱时，给 `useFocusTrap` 暴露了
  * 手动接管。那些调用方用一个刻意的写法：
  *
  *   const trap = useFocusTrap(panelRef, computed(() => false), {...});
@@ -117,7 +117,7 @@ function load(vue, dom) {
 
 const tick = () => Promise.resolve();
 
-console.log('\n【A. engage/disengage 已暴露（第 73 轮加的）】');
+console.log('\n【A. engage/disengage 已暴露（接对话框时加的）】');
 {
   const dom = makeDom();
   const vue = makeVue();

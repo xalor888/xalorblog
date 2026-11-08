@@ -164,7 +164,7 @@
 8. `web/src/utils/bookmark.js:45-47` —— `save(list.slice(0,MAX))` 却 `return list`，可返 101 条；唯一读返回值的 `ArticleDetail.vue:554` 恰好忽略它，属潜伏 bug。
 9. `web/src/utils/bookmark.js:9-16` 与 `web/src/utils/history.js:23` —— 同构模块读取策略不一致：足迹过滤无 `slug` 脏项，收藏不过滤，篡改 storage 后收藏页会渲染 `undefined` 链接、`key` 冲突。
 10. `web/src/utils/markdown.js:300` —— 所有 h1 降级标题共用 `id="heading-demoted"`，正文两个 `# 标题` 即产生重复 id，锚点只命中第一个且 HTML 不合法。
-11. `web/src/utils/markdown.js:259-270` 与 `:291-307` —— `extractToc` 只收 lexer 的 heading token（不进 `html` token），`addHeadingIds` 却对渲染后每个 `<h2-4>` 计数；正文写一处原生 `<h2>` 就让 TOC 整体错位一位，正是 `:196-199` 记录的第 37 轮回归同类。
+11. `web/src/utils/markdown.js:259-270` 与 `:291-307` —— `extractToc` 只收 lexer 的 heading token（不进 `html` token），`addHeadingIds` 却对渲染后每个 `<h2-4>` 计数；正文写一处原生 `<h2>` 就让 TOC 整体错位一位，正是 `:196-199` 记录的回归同类。
 12. `web/src/utils/markdown.js:104` 与 `ArticleDetail.vue:720`/`NoteDetail.vue:95`/`NoteEdit.vue:130`/`About.vue:72` 对比 `ArticleEdit.vue:408`/`Settings.vue:486`/`AskAi.vue:39`/`AiPanel.vue:31` —— 标题 id 与图片兜底靠调用方手动串 `addImgAttrs(addHeadingIds(...))`，预览与对话只调 `renderMarkdown`，同一份 Markdown 两套可访问性行为，且顺序约定只有注释没有测试。
 13. `web/src/components/site/AskAi.vue:39`、`web/src/views/admin/AiPanel.vue:31` —— 模板表达式里直接调 `renderMarkdown(...)`，每次重渲染都重跑 `marked.parse` + `DOMPurify.sanitize`，流式输出时相当于每帧全文净化。
 14. `web/src/utils/markdown.js:499-520` —— `initMarkdownInteractions` 不返回 disposer、也没有 `installed` 保护，HMR 或二次调用会让一次点击触发两次剪贴板写入与两套定时器。

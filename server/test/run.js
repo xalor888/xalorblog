@@ -119,7 +119,7 @@ function resetDb(label) {
 
 /* ==================== 服务进程（只动自己 spawn 的那个） ==================== */
 
-/** 杀掉本脚本上一轮 spawn 的进程。按端口扫杀会连开发者自己的 npm run dev 一起打死，已移除 */
+/** 杀掉本脚本此前 spawn 的进程。按端口扫杀会连开发者自己的 npm run dev 一起打死，已移除 */
 function killSpawned() {
   if (!spawnedPid) return;
   const pid = spawnedPid;

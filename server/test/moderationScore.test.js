@@ -20,7 +20,7 @@ process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'unit-test-placeholder-pass
 // 预期噪音：H 组会调用 antiSpam 的 checkSensitive，它在首次调用时触发
 // securitySettings 的懒加载 → 连库失败 → stderr 打一行「安全配置加载失败」。
 // 那行日志本身是正确的（失败不阻塞、只记一次、30s 退避重试），
-// 且**只出现一次**正是上一轮去重修复的现场验证。exit code 不受影响。
+// 且**只出现一次**正是此前去重修复的现场验证。exit code 不受影响。
 
 const {
   localModeration, normalizeForSpam, REJECT_SCORE, PENDING_SCORE,

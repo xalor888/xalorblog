@@ -6,7 +6,7 @@
  * 必须按「服务器本地时区」解释，否则跨时区访客的相对时间整体偏移。
  * 这个 bug 真实发生过（旧实现用 `-getTimezoneOffset()`，与 `SITE_TZ` 配置可能不一致）。
  *
- * 本轮修的真问题：`formatDate` 对 **Date 对象**产出 `"Thu Sep 24"` 而不是 `"2026-09-24"`。
+ * 这次修的真问题：`formatDate` 对 **Date 对象**产出 `"Thu Sep 24"` 而不是 `"2026-09-24"`。
  * 因为旧实现只有 `String(time).slice(0, 10)`，而 `String(new Date())` 是
  * "Thu Sep 24 2026 04:05:21 GMT+0800 …"。`timeAgo` 的签名明确支持 `string|Date`
  * 且超过 30 天会走到这里 —— 目前调用方都传字符串所以没触发，但承诺与实现不一致。
@@ -64,7 +64,7 @@ console.log('\n【A. formatDate：Date 与字符串必须都给 YYYY-MM-DD】');
   const d = new Date(Date.now() - 40 * 86400000);   // 40 天前
   const p = (n) => String(n).padStart(2, '0');
   const want = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  ok('Date 对象 → YYYY-MM-DD（本轮修的）', api.formatDate(d) === want, `${api.formatDate(d)} ≠ ${want}`);
+  ok('Date 对象 → YYYY-MM-DD（这次修的）', api.formatDate(d) === want, `${api.formatDate(d)} ≠ ${want}`);
   ok('Date 对象不产出英文月份缩写', !/[A-Z][a-z]{2} [A-Z][a-z]{2}/.test(api.formatDate(d)));
   ok('字符串原样取前 10 位', api.formatDate('2026-09-24 12:00:00') === '2026-09-24');
   ok('ISO 字符串也行', api.formatDate('2026-09-24T12:00:00Z') === '2026-09-24');

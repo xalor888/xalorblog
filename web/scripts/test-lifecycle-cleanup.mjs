@@ -87,7 +87,7 @@ console.log('\n【图标名写错要看得见】');
   ok('仍有 Activity 兜底（生产环境不能崩）', /return Activity;/.test(xi));
 }
 
-console.log('\n【死 CSS：本轮删掉的选择器不许回来】');
+console.log('\n【死 CSS：这次删掉的选择器不许回来】');
 {
   const ae = read('views/admin/ArticleEdit.vue');
   const ap = read('views/admin/AiPanel.vue');

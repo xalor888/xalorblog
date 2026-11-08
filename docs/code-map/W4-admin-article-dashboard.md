@@ -85,7 +85,7 @@
 
 **实际逻辑**：
 - `checkReady()`：`ensurePass()` → `GET /ai/status` → `data.ready/model`；异常分支挂 6s 间隔、最多 5 次的重试定时器。
-- 一次用户指令 = `send()` → `runTurn()` 最多 4 轮：每轮 `streamOnce()` 打开 `POST /ai/chat`（body 为 `buildHistory()` 全量历史 + `currentContext()`），逐块解析 `data: {...}\n\n`；`type:'text'` 追加正文，`type:'action'` 立刻 `handleTool()` 执行并把 `tool_calls`/`role:'tool'` 结果压进同一气泡；`type:'error'` 终止本轮。只要本轮产生过 `tool_results` 就继续下一轮（模型看着结果接着说话）。
+- 一次用户指令 = `send()` → `runTurn()` 最多 4 轮：每轮 `streamOnce()` 打开 `POST /ai/chat`（body 为 `buildHistory()` 全量历史 + `currentContext()`），逐块解析 `data: {...}\n\n`；`type:'text'` 追加正文，`type:'action'` 立刻 `handleTool()` 执行并把 `tool_calls`/`role:'tool'` 结果压进同一气泡；`type:'error'` 终止这次。只要这次产生过 `tool_results` 就继续后续（模型看着结果接着说话）。
 - `handleTool()` 的读类工具直接打后台接口：`/ai/images?q=`（Wikimedia 搜图）、`/ai/web-search?q=`（校验 `code===0`）、`/ai/articles?keyword=&limit=10`、`/ai/article?slug=`、`/ai/comments`、`/ai/messages`、`/ai/save-image`(POST `{url}`)；写类工具（改标题/正文/摘要/标签/分类/封面/快捷键/草稿/发布/插入链接）统一走 `applyAiAction(name,args)` 交给页面 applier，成功则把 `{label,snapshotId}` 记到气泡的 `applied[]`。
 - 撤销：`canUndoTag()` 只让 `snapshotId === aiUndoTopId()` 的那个标签显示撤销钮（防跨栈错位），`undoOne()` 调 `undoAiLast()` 并把标签置 `undone`。
 - 图片：`useAsCover()` 先把缩略图 `POST /ai/save-image` 转存到 `/uploads/ai/…` 再 `set_cover`；`insertImage()` 直接把远程 URL 以 Markdown 插入光标处。
@@ -133,7 +133,7 @@
 - `web/src/views/admin/AiPanel.vue:219-229`：`signedFetch` 对 403/500 **不抛错**，`res.json()` 拿到 `code:1` 后 `d = {}` → `aiReady=false`，直接落成"尚未配置模型"；而重试定时器只挂在 `catch` 分支，响应体失败永不重试——闸门/票据问题被伪装成"没配模型"。
 - `web/src/views/admin/AiPanel.vue:340`：`JSON.stringify(result).slice(0, 8000)` 直接按字符截断，`/ai/article` 返回的 8000 字正文 + 包装后必然被切，模型收到的是**半截非法 JSON**。
 - `web/src/views/admin/AiPanel.vue:507-513`：`defineExpose({ reset })` 没有任何调用方（`Layout.vue:111` 挂载时没有 `ref`，全仓 grep 无 `aiPanel` 引用）——切换文章后对话与 `tool_calls` 历史仍在，`buildHistory()`（`:254-269`）会把上一篇的正文/标题继续发给模型。
-- `web/src/views/admin/AiPanel.vue:346`：只有 `checkReady` 调过 `ensurePass()`，`runTurn`/`handleTool` 都不再续票；票据在对话中途过期时，下一轮 SSE 或任一读工具直接 403，界面只显示"会话已失效，刷新页面后重试"。
+- `web/src/views/admin/AiPanel.vue:346`：只有 `checkReady` 调过 `ensurePass()`，`runTurn`/`handleTool` 都不再续票；票据在对话中途过期时，后续 SSE 或任一读工具直接 403，界面只显示"会话已失效，刷新页面后重试"。
 - `web/src/views/admin/AiPanel.vue:473`：`insertImage` 插入的是远程原图 URL，与 `useAsCover`（`:449-469`，先 `save-image` 转存再写 `set_cover`）的策略相反——正文热链外站图片、可超 5MB，源站改链即成死图。
 - `web/src/views/admin/AiPanel.vue:399-423`：`MAX_ROUNDS` 用尽后静默退出，若第 4 轮仍只有工具调用，气泡里只剩标签没有结论，用户不知道还有后续，也没有"继续"入口。
 - `web/src/views/admin/AiPanel.vue:2-9,18,123-136`：抽屉无 `role="dialog"`/`aria-modal`，打开后不转移焦点、不响应 Esc，流式消息区无 `aria-live`——读屏用户既不知道面板开了，也听不到生成内容。

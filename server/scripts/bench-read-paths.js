@@ -122,7 +122,7 @@ async function main() {
   // 分享页要按路由参数取：pickHandler 只按路径前缀找，这里直接拿 router 的栈项
   const sharePageHandler = pickHandler(shareRouter, 'get', '/share-page/:page?');
   // 分享页有 60 秒列表缓存，不失效的话「冷路径」只有第一轮是冷的，
-  // 取中位数会得到 0 条 SQL —— 那是假数据（本轮实测发现）
+  // 取中位数会得到 0 条 SQL —— 那是假数据（这次实测发现）
   const invalidateShare = shareRouter.clearShareListCache;
   const tagsHandler = pickHandler(tagsRouter, 'get', '/');
 
@@ -151,7 +151,7 @@ async function main() {
       req: () => req({ page: '1', pageSize: '10' }),
     },
     {
-      // 这一页在轮次 71 加了「最近 30 篇文章」的正文列表（给搜索引擎的真实内容），
+      // 这一页后续加了「最近 30 篇文章」的正文列表（给搜索引擎的真实内容），
       // 所以它的 SQL 条数与体积值得单独盯住
       name: 'GET /api/share-page/articles',
       handler: sharePageHandler,
@@ -200,7 +200,7 @@ async function main() {
   console.log('⚠ 数据量小，**绝对耗时**只能作为趋势参考；**SQL 条数**才是主指标（它与缓存/查询结构直接相关，不受行数影响）。');
 
   // 自检：没接 invalidate 的用例如果带进程内缓存，「冷 SQL」只有第一轮是真的，
-  // 中位数会退化成缓存命中值（本轮就是这样发现 share-page 显示 0 条 SQL 的假数据）
+  // 中位数会退化成缓存命中值（这次就是这样发现 share-page 显示 0 条 SQL 的假数据）
   const noInvalidate = cases.filter((c) => !c.invalidate).map((c) => c.name);
 
   console.log(`\n只读接口基线（每项跑 ${rounds} 轮取中位数）`);

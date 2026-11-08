@@ -177,7 +177,7 @@ async function run(get) {
     ok(`${path} 没有渲染出 undefined 字样`, !/undefined/.test(r.raw || ''));
   }
 
-  // 原型链键不能被当成合法页面（第 44 轮修的 bug 的回归测试）
+  // 原型链键不能被当成合法页面（修过的 bug 的回归测试）
   for (const k of ['constructor', 'toString', 'valueOf']) {
     const r = await get('GET', `/api/share-page/${k}`);
     ok(`/api/share-page/${k} 返回 404（原型链键不是页面）`, r.status === 404, `status=${r.status}`);
@@ -188,7 +188,7 @@ async function run(get) {
   ok('sitemap 返回 200', sm.status === 200, `status=${sm.status}`);
   const locs = [...(sm.raw || '').matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
   ok('sitemap 有 URL', locs.length > 5, `${locs.length} 条`);
-  ok('sitemap 包含文章列表页（第 46 轮修的那处）',
+  ok('sitemap 包含文章列表页（修过的那处）',
     locs.some((u) => /\/share-page\/articles$/.test(u)), locs.join(' ').slice(0, 120));
   ok('sitemap 不含 hash 路由（# 之后会被爬虫丢弃）',
     locs.every((u) => !u.includes('#')), locs.filter((u) => u.includes('#')).join(' '));

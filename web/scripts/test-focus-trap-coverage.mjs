@@ -5,7 +5,7 @@
  * 关闭后把焦点还给触发元素。项目里 4 个自定义弹层都接了：
  *   ImageLightbox / ShortcutHelp / SearchModal / AskAi
  *
- * 第 72 轮发现：另有 **3 个用 `<el-dialog>` 的组件没接**，而 Element Plus 的
+ * 后来发现：另有 **3 个用 `<el-dialog>` 的组件没接**，而 Element Plus 的
  * dialog **声明了 `aria-modal="true"` 却没有实现焦点陷阱**：
  *   - `dialog.vue` 的模板有 `aria-modal`
  *   - `dialog.mjs` 有一个 `trapFocus: Boolean` prop，但**无默认值（即 false）**
@@ -85,7 +85,7 @@ console.log('\n【B. useFocusTrap 的实现要点仍在】');
 
 console.log('\n【C. el-dialog 也必须真的困住焦点】');
 {
-  // 第 72 轮发现 EP 的 el-dialog 模板有 aria-modal="true"，但 trapFocus prop
+  // 发现 EP 的 el-dialog 模板有 aria-modal="true"，但 trapFocus prop
   // 无默认值且全仓无人消费 —— 那是个假承诺。同轮给 3 个 el-dialog 接上了
   // useFocusTrap（用 @opened/@closed 手动 engage，因为 watch(v-model) 的
   // nextTick 赶不上 EP 的过渡动画）。

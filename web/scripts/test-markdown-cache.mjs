@@ -24,7 +24,7 @@ const failures = [];
 function ok(name, cond, detail = '') {
   // 成功项也打印：其他 19 道门禁都是这样，这里原来只在失败时输出。
   // 差异的实际后果是「怀疑断言到底跑没跑」—— 排查时看不到清单，
-  // 就没法确认新加的那条是不是真的在跑（本轮加 4 条 AiPanel 断言时正是这个感觉）。
+  // 就没法确认新加的那条是不是真的在跑（这次加 4 条 AiPanel 断言时正是这个感觉）。
   if (cond) { pass++; console.log(`  ✓ ${name}`); }
   else {
     fail++;

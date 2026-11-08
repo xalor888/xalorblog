@@ -118,7 +118,7 @@ async function run() {
     }
     check('这些字段的值也都没出现在响应里', leaked.length === 0, leaked.join(', '));
 
-    // 这道防线本轮做过一次结构性加固：原来只显式剔除 `ai_api_key` / `websearch_api_key`
+    // 这道防线这次做过一次结构性加固：原来只显式剔除 `ai_api_key` / `websearch_api_key`
     // 两个已知键（逐键解构），新增密钥字段漏改一行就泄漏且无任何断言会红。
     // 现在改成按名字模式过滤，默认安全。若以下断言变红，说明有人改回了逐键解构。
   }

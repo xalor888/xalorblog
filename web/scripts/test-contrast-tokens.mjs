@@ -3,7 +3,7 @@
  *
  * 为什么是「检查 token」而不是「检查页面」：
  * 页面级审计需要真实浏览器（computed style + 半透明层合成），只能手动跑。
- * 但本轮挖出的三处系统性偏差，根子都在 **token 层面**：
+ * 但这次挖出的三处系统性偏差，根子都在 **token 层面**：
  *   1. 深色主题把主色 `shade()` 调暗 → 所有强调色文字 2.99:1
  *   2. `--accent-soft` 在深色下混白色 → 「亮字压亮底」1.33:1
  *   3. `--text-3` / `--accent`（作文字）/ 分类色恰好在 4.0–4.4 之间
@@ -140,7 +140,7 @@ console.log('\n【深色主题：方向必须相反】');
   ok(
     `--accent-deep-dark 比浅色 --accent 更亮（深色要提亮，不是调暗）`,
     lum(accentDeepDark) > lum(token('--accent')),
-    '本轮的真实 bug：JS 用 shade() 把它调暗了 28%'
+    '这次的真实 bug：JS 用 shade() 把它调暗了 28%'
   );
   ok(
     `--accent-soft-dark 对深底只略亮（不是混白出来的近原色，当前 ${contrast(accentSoftDark, bgDark)}）`,

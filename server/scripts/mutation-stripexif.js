@@ -112,7 +112,7 @@ const MUTATIONS = [
   // ---------- FF00 填充（源码注释记录过的坑） ----------
   {
     id: 'E11',
-    desc: '**FF00 只跳过 1 字节**（下一轮落在 0x00 上 → 整份回退，EXIF 静默留存）',
+    desc: '**FF00 只跳过 1 字节**（后续落在 0x00 上 → 整份回退，EXIF 静默留存）',
     from: '    if (marker === 0x00) {\n      i += 2;\n      continue;\n    }',
     to: '    if (marker === 0x00) {\n      i += 1;\n      continue;\n    }',
   },

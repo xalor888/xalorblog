@@ -178,7 +178,7 @@ async function run() {
       (await run1({ home_since_date: '2026-01-01' })).length === 1);
   }
 
-  console.log('\n=== E0. 结构化键必须单编码落库（本轮修的真缺陷） ===');
+  console.log('\n=== E0. 结构化键必须单编码落库（这次修的真缺陷） ===');
 {
   // 原实现：分支里 JSON.stringify(cleaned) 之后没 continue，落到通用分支又被
   // JSON.stringify 一次 → 落库是双编码（外面多一层引号），读回来 parse 一次得到字符串。

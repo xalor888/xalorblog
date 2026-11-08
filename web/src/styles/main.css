@@ -1707,7 +1707,7 @@ select:focus-visible,
   /* 打印字号 12pt。
      ⚠ 读 computed 值时别被「16px」骗了：**12pt = 16px**（12 × 96/72）。
      基线是 1.02rem（≈16.32px），四舍五入后两者在 devtools 里都显示 16px，
-     很容易误判成「规则没生效」—— 我为此排查了好几轮，
+     很容易误判成「规则没生效」—— 为此排查了很久，
      直到手动注入 20pt 得到 26.67px 才确认媒体查询与优先级都是好的。
      !important 保留：详情页 `.markdown-body` 是 scoped 的，
      实际选择器 `.markdown-body[data-v-x]` 与本条同权重，而组件样式后注入。 */

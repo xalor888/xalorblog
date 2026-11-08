@@ -83,7 +83,7 @@
 1. `server/test/run.js:134-136` — 空 `if` 分支是死代码：注释说首个套件无需重启，但空块可整体删掉；副作用是单套件模式下仍会二次清库+重启，白付 2-4s。
 2. `server/test/run.js:128-130` — 默认套件清单只有 16 个，仓库里还有 `allowWords/cacheInvalidation/homeSummary/moderationPolicy/notesCrypto/readingStats/routeEdgeCases/waf-fixtures` 8 个未纳入，它们只存在于 `package.json` 的 `npm test` 串联脚本；"全量集成"名不副实，尤其 `waf-fixtures.test.js`（RULE_INDEX 覆盖率门禁）在真实服务链路下跑不到。
 3. `server/test/run.js:46-48`、`149-151` — 两处 `catch` 都只打印一行，`main().catch` 之外的失败全部被吞，进程退出码恒为 0，CI 无法用退出码判定红绿。
-4. `server/test/run.js:148` — `execSync` 的 timeout 终止的是 shell，被 `node test/x.test.js` 派生的孙进程可能存活并继续打 3000 端口；长套件（240s）超时后下一轮 `restartServer` 才顺手清掉它，期间日志/状态会串。
+4. `server/test/run.js:148` — `execSync` 的 timeout 终止的是 shell，被 `node test/x.test.js` 派生的孙进程可能存活并继续打 3000 端口；长套件（240s）超时后后续 `restartServer` 才顺手清掉它，期间日志/状态会串。
 5. `server/test/run.js:93` — 每次重启 `openSync` 一个 fd 交给 spawn 且永不 `close`，16+ 次重启即 16+ 个泄漏句柄；`test-run.log` 也没有轮转，长期跑会无限增长。
 6. `server/test/run.js:112-116` — `waitServer` 只要求"拿到响应"就 resolve，不校验 `res.statusCode`；服务因 DB 未迁移/配置缺失返回 5xx 时同样打印"服务就绪"，后续套件在坏环境里得出误导性结论。
 7. `server/test/run.js:79-87` — 按端口 SIGKILL 任意监听进程，仅排除自身与 `ppid`；开发者自己开的 `npm run dev`（父进程是 shell，不是本脚本）会被无声杀掉。

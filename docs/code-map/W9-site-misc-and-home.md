@@ -139,7 +139,7 @@
 23. `web/src/views/home/NoteDetail.vue:160-163` —— `note === null` 时提前 `return`，既不写 `og:*` 也不清旧值：从手记 A 打开一条已删除的手记 B，head 里留的仍是 A 的 `og:title`/`og:url`；161 与 164 行还是同一句 `document.title` 的重复赋值。
 24. `web/src/views/home/NoteDetail.vue:87,121-133` —— 点赞态只存组件内 `liked`，不落 localStorage；对比 `ArticleDetail` 会写 `xalor_liked_<id>`，这里刷新后按钮回到未赞，只能靠服务端 5 分钟窗口兜底。
 25. `web/src/views/home/NoteDetail.vue:140-146` —— 复制链接只有 `navigator.clipboard` 一条路径，失败静默；`ArticleDetail` 有 `execCommand` 兜底 + toast，两者能力不对等。
-26. `web/src/views/home/NoteDetail.vue:97-115` —— `load()` 不复位 `failedHint`，429 → 刷新失败 → 网络错误时，用户会先看到上一轮的「阅读过于频繁」文案。
+26. `web/src/views/home/NoteDetail.vue:97-115` —— `load()` 不复位 `failedHint`，429 → 刷新失败 → 网络错误时，用户会先看到此前的「阅读过于频繁」文案。
 27. `web/src/views/home/NoteDetail.vue:233-241` —— `.na-tag` 被拆成两个同名规则块（先 `overflow-wrap`，再 `display/gap/padding/background`），可合并。
 28. `web/src/views/home/Layout.vue:42-44,48-66` —— 移动抽屉缺 `aria-controls`、Escape 关闭、遮罩、焦点转移与滚动锁；博客布局 `web/src/views/site/Layout.vue:45,117,517` 五项俱全，两入口无障碍能力不对等。
 29. `web/src/views/home/Layout.vue:32-38` —— 导航里的主题按钮只有 `title` 没有 `aria-label`（同文件汉堡按钮有），且与 `120-131` 行浮层的主题按钮功能完全重复，键盘用户会 Tab 到两个语义相同的控件。
