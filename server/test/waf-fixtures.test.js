@@ -37,7 +37,7 @@ const THRESHOLD = Number(require('../src/utils/securitySettings').getConfig().an
 function runCase(c) {
   if (c.body) return scanRequestBody(c.body);
   if (c.key !== undefined) return scanRequestBody({ [c.key]: c.value });
-  const opts = c.keyword ? { skipGroups: ['SSRF'] } : {};
+  const opts = c.keyword ? { skipGroups: ['SSRF'], weight: 1 } : {};
   return scanAll(String(c.value ?? ''), c.scope || 'query', opts);
 }
 

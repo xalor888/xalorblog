@@ -552,7 +552,9 @@ function printReport(rows) {
  * 基数 12 是 2026-11 的实测值，不是「可接受的攻击面」，
  * 而是「当前状态的一个快照」：任何新增都会被抓住，要放松就得改这个数字并写明理由。
  */
-const KNOWN_GAP_BUDGET = { zeroHit: 0, belowThreshold: 12 };
+// belowThreshold 12 -> 0：扫描面加权（query/header ×1.25）已让单发 error 级载荷达标，
+// 于是「看见了但分数不到」不再是设计行为，而是**真缺口** —— 基数归零。
+const KNOWN_GAP_BUDGET = { zeroHit: 0, belowThreshold: 0 };
 
 function printAssertSummary(rows, benign, extraOk) {
   const total = rows.reduce((n, r) => n + r.samples, 0);

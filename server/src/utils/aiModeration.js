@@ -112,8 +112,11 @@ function localModeration(content, nickname = '', website = '') {
   // 辱骂词单个即 30 分（必进待审人工复核）：明确辱骂词无技术语境误伤，
   // 自动放行（旧权重 15）会让单条辱骂评论直接展示
   if (abuse > 0) { score += abuse * 30; reasons.push(`辱骂词×${abuse}`); }
+  // 敏感词单个即 30 分（必进待审）：与辱骂词同一档。旧权重 25 < PENDING_SCORE(30)，
+  // 于是「单发一个色情词、不伴随任何引流话术」的评论会**直接展示**。
+  // 真实垃圾评论几乎总带广告词（+20）才凑够 45，这正是它长期没被发现的原因。
   const porn = countHits(norm, PORN_KEYWORDS);
-  if (porn > 0) { score += porn * 25; reasons.push(`敏感词×${porn}`); }
+  if (porn > 0) { score += porn * 30; reasons.push(`敏感词×${porn}`); }
   // 攻击意图（求攻击/渗透协助）：计 30 分必进待审（技术讨论与攻击求助
   // 界限模糊，交人工判断而非直接拒绝；明显攻击指令配合其他特征可累积拒绝）
   const attack = countHits(norm, ATTACK_KEYWORDS) + countHits(normNick, ATTACK_KEYWORDS);

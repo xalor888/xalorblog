@@ -6,13 +6,17 @@
  *   1. 查询改成 `orderBy('published_at','desc')`（走索引，但改变排序语义）
  *   2. 加一条 `(status, id)` 索引
  *
- * ⚠ 第 77 轮实测发现两处问题：
+ * 第 77 轮实测发现两处问题：
  *   a) 记录里的排序键过时了 —— 实际是三键 `is_pinned DESC, published_at DESC, id DESC`，
  *      不是「order by id desc」。
  *   b) **第 2 个修法无效**：加 `(status, id)` 后优化器**仍然**选原索引并 filesort。
  *      真正的原因是 `is_pinned` 排在最左且不在索引里 ——
  *      复合索引只能覆盖「等值列之后」的排序键，最左排序键缺失就整体用不上。
  *      唯一有效的是 `(status, is_pinned, published_at, id)`（覆盖索引）。
+ *
+ * 2026-11-08：这条覆盖索引**已落到 migrate.js**（`ensureIndex('notes', 'idx_notes_public_sort', ...)`），
+ * 所以 B 组现在断言「索引已覆盖排序键」，C 组保留对照实验（旧索引 / (status,id) / 覆盖索引
+ * 三者的 EXPLAIN 差异）—— 前者是现状，后者是「为什么只有这一种修法有效」的证据。
  *
  * 本文件做三件事（不碰生产 schema）：
  *   1. 断言当前查询的排序键组合（防排序被无意改动）
@@ -103,21 +107,21 @@ async function main() {
   });
 
   console.log('\n【B. filesort 的成因（排序键 vs 现有索引）】');
-  ok('现有索引是 (status, published_at)', () => {
-    assert.deepStrictEqual(idxCols, ['status', 'published_at'],
-      `索引现在是 [${(idxCols || []).join(', ')}]，已变 —— 请同步更新本文件与 §6.6a`);
+  ok('索引已是覆盖索引 (status, is_pinned, published_at, id)（2026-11-08 修复）', () => {
+    assert.deepStrictEqual(idxCols, ['status', 'is_pinned', 'published_at', 'id'],
+      `索引现在是 [${(idxCols || []).join(', ')}] —— 若被改动，C 组的实测会重新出现 filesort`);
   });
-  ok('**is_pinned 不在索引里 —— 这才是 filesort 的真正原因**', () => {
-    assert.ok(!idxCols.includes('is_pinned'),
-      `索引现在是 [${idxCols.join(', ')}]，已含 is_pinned —— 成因已变，请更新 §6.6a 与本文件`);
+  ok('**is_pinned 现在排在等值列 status 之后的第一位**（旧索引缺的就是它）', () => {
+    assert.ok(idxCols.includes('is_pinned'),
+      `索引 [${idxCols.join(', ')}] 里没有 is_pinned —— filesort 会回来`);
+    assert.strictEqual(idxCols[0], 'status', '等值列必须位于索引最左');
   });
-  ok('成因推导：最左排序键缺失 → 索引顺序整体用不上 → 必然 filesort', () => {
-    // 复合索引只能覆盖「等值列（status）之后」的排序键。
-    // 排序键顺序是 [is_pinned, published_at, id]，索引是 [status, published_at]。
-    // is_pinned 在最左却不在索引中 → published_at 虽然在索引里，也无法被用作有序来源。
-    const afterEqual = keys.filter((k) => idxCols.includes(k));
-    const usable = afterEqual.includes('is_pinned') && idxCols.indexOf('is_pinned') > 0;
-    assert.ok(!usable, 'is_pinned 竟然能走索引了 —— 结论需重新核对');
+  ok('索引顺序与排序键顺序完全一致（等值列之后逐个对齐）', () => {
+    // 复合索引只能覆盖「等值列（status）之后」的排序键，且**顺序必须一致**。
+    // 排序键 [is_pinned, published_at, id]，索引去掉 status 之后应当正好是这三个。
+    const afterEqual = idxCols.slice(1);
+    assert.deepStrictEqual(afterEqual, keys,
+      `索引尾段 [${afterEqual.join(', ')}] ≠ 排序键 [${keys.join(', ')}]`);
   });
 
   console.log('\n【C. 实测：加 (status, id) 索引并不能消除 filesort】');

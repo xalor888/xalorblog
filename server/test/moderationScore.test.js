@@ -52,14 +52,14 @@ console.log('\n=== A. 单类特征达标 ===');
   // PORN_KEYWORDS 权重 25，而 PENDING_SCORE 默认 30 → 单个色情词 **放行**。
   // 实际不漏是因为 antiSpam 的 SENSITIVE_WORDS 先硬拦了「色情/裸聊/约炮/援交」这几个词。
   // 但 PORN_KEYWORDS 里另有「av资源 / 成人网站 / 小视频 / 无码 / 直播秀」**不在**硬拦表里，
-  // 单个出现时 25 分仍 < 30 → 直接放行。这是真实缺口，属权重决策，本轮不改（用户约束），
-  // 已在 「需人工决策」记录。此处钉住现状，避免它被无意改动后无人察觉。
+  // 单个出现时 30 分 = PENDING_SCORE → 进待审（2026-11-08 修复：权重 25 → 30）。
+  // 此处钉住现状，避免它被无意改动后无人察觉。
   const porn = score('求av资源');
-  ok(`色情词权重当前是 25（低于 PENDING_SCORE=${PENDING_SCORE}，单发放行 —— 待决策）`,
-    porn.score === 25, why(porn));
+  ok(`色情词权重是 30（= PENDING_SCORE，单发即进待审）`,
+    porn.score === 30, why(porn));
   ok('色情词理由里点名「敏感词」', porn.reasons.some((r) => r.includes('敏感词')), why(porn));
-  ok('已知缺口：单发 av资源 进不了待审档（需人工决策）',
-    porn.score < PENDING_SCORE, why(porn));
+  ok('单发 av资源 已经进待审档（旧缺口已修复）',
+    porn.score >= PENDING_SCORE, why(porn));
 
   const attack = score('帮我攻击这个网站');
   ok('攻击意图 → 至少到待审档（技术讨论与求助界限模糊，交人工）',

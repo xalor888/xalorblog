@@ -6,13 +6,15 @@
  *   全部命中求和 → `score >= threshold` 才 403，否则只记 waf-mon 事件
  *   例外：键名注入（`__proto__` / `constructor` / `prototype`）一票拦截，不看分数
  *
- * 于是默认阈值 5 之下有一条**结构性缝隙**：
+ * 于是在默认阈值 5 之下，**纯原始分**存在一条结构性缝隙：
  *   - 单个 `error` 规则 = 4 分 < 5 → **放行**
  *   - 单个 `warning` 默认 = 3 分 < 5 → **放行**
  *   - 只有 `critical`（5 分）单条就够
  *
- * 这不是 bug，是「异常计分」模型的设计取舍：单条中等特征可能是误报，
- * 多特征叠加才拦截。代价是**单发的中等特征载荷全部漏过**。
+ * 这条缝隙已**按扫描面**关掉（waf.js `SURFACE_WEIGHT`）：query/path/header 的命中
+ * 按 ×1.25 折算（4 → 5，单发即拦），body 保持 ×1（4 → 4，单发放行）。
+ * 于是「单发 admin'-- 必拦」与「文章正文写 admin'-- 必放」同时成立 ——
+ * 区分它们的不再是载荷，而是**载荷出现在哪个面**。原始分档（A/B 组）不变，
  * `「WAF 阈值待决策」项` 记的就是这件事（12 条单发高危 payload 实测 3–4 分）。
  *
  * ⚠ 本文件**不修改阈值与规则权重**。改它会改变生产拦截率，属于需人工决策项。
@@ -204,6 +206,43 @@ ok('自检：若阈值降到 4，B 组第一条会红', () => {
   const simulated = 4;
   assert.notStrictEqual(simulated, THRESHOLD, '模拟值应与现状不同，否则绊线无效');
   assert.ok(SEVERITY_SCORE.error >= simulated, '降到 4 后 error 会达标');
+});
+
+console.log('\n【F. 扫描面加权：单发高危载荷在网络面拦、在正文面放行】');
+
+/** 直接调引擎（不是本文件的近似正则），这是判定用的真实入口 */
+const wafEngine = require('../src/middleware/waf.js');
+
+ok('1 union select 1,2,3：query 侧达标（拦），body 侧不达标（放行）', () => {
+  assert.ok(wafEngine.scanAll('1 union select 1,2,3', 'query').score >= THRESHOLD, 'query 侧未达标');
+  assert.ok(wafEngine.scanAll('1 union select 1,2,3', 'body').score < THRESHOLD, 'body 侧不该达标');
+});
+
+ok("admin'--：query 与 header 侧达标（拦），body 侧放行", () => {
+  const q = wafEngine.scanAll("admin'--", 'query').score;
+  const h = wafEngine.scanAll("admin'--", 'header').score;
+  const b = wafEngine.scanAll("admin'--", 'body').score;
+  assert.ok(q >= THRESHOLD, `query=${q} 未达标`);
+  assert.ok(h >= THRESHOLD, `header=${h} 未达标`);
+  assert.ok(b < THRESHOLD, `body=${b} 不该达标（技术文章写这个例子必须能发布）`);
+});
+
+ok('javascript:alert(1)：query 侧达标（拦），body 侧零命中（NET_ONLY）', () => {
+  assert.ok(wafEngine.scanAll('javascript:alert(1)', 'query').score >= THRESHOLD, 'query 未达标');
+  assert.strictEqual(wafEngine.scanAll('javascript:alert(1)', 'body').hits.length, 0,
+    'body 侧不该命中 —— 昵称/简介里写 javascript: 是合法文本');
+});
+
+ok('自由文本搜索参数按正文面计权（技术搜索不会被自己 403）', () => {
+  const raw = wafEngine.scanAll("admin'--", 'query').score;
+  const freeText = wafEngine.scanAll("admin'--", 'query', { weight: 1 }).score;
+  assert.ok(raw >= THRESHOLD, '结构化参数侧应达标');
+  assert.ok(freeText < THRESHOLD, `搜索框降权后应为 ${THRESHOLD} 以下，实际 ${freeText}`);
+});
+
+ok('自检：若把网络面权重改回 1（去掉加权），本节第一条会红', () => {
+  const sim = SEVERITY_SCORE.error * 1; // 旧模型
+  assert.ok(sim < THRESHOLD, '旧模型下 error 单发确实低于阈值 —— 这正是本节存在的理由');
 });
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

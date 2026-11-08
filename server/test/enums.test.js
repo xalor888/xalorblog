@@ -91,8 +91,15 @@ console.log('\n=== D. 与数据库 schema 一致 ===');
   // 只取「审核状态」那三张表 —— articles.status 是 ARTICLE_STATUS（draft/published），
   // 它也叫 status，但不能拿同一份判据去比（第一次写时就是这么误报的）。
   const reviewTables = ['comments', 'links', 'messages'];
+  // 两种写法：字面量（旧）与 [...常量]（2026-11-08 起的唯一写法）。派生式要把常量展开再比。
+  const CONST_MAP = { ARTICLE_STATUS, REVIEW_STATUS };
   const allEnums = [...mig.matchAll(/t\.enum\('status',\s*\[([^\]]+)\]\)/g)]
-    .map((m) => [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort());
+    .map((m) => {
+      const body = m[1].trim();
+      const spread = body.match(/^\.\.\.([A-Za-z_][A-Za-z0-9_]*)$/);
+      if (spread) return [...(CONST_MAP[spread[1]] || [])].sort();
+      return [...body.matchAll(/'([^']+)'/g)].map((x) => x[1]).sort();
+    });
   const reviewEnums = allEnums.filter((e) => JSON.stringify(e) === JSON.stringify([...REVIEW_STATUS].sort()));
 
   check(`migrate.js 里至少 2 张表用审核状态`, () => {

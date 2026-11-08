@@ -3,6 +3,11 @@
  */
 const db = require('./db');
 const { classifyRedundantIndex } = require('./utils/indexAnalysis');
+// 枚举的**唯一来源**是 utils/enums.js（运行时校验与展示都读它）。
+// schema 里的 `t.enum(...)` 曾经把同一份取值各写一遍（5 处 / 2 组），于是「改常量忘迁移」
+// 与「改迁移忘常量」都能让状态集合悄悄分叉 —— 而现在两边同源，分不出岔。
+// 注意：这不会自动迁移既有库（改 enum 需要 ALTER），这里保证的是「新建库与常量一致」。
+const { ARTICLE_STATUS, REVIEW_STATUS } = require('./utils/enums');
 
 /** 删除被唯一索引完全覆盖的冗余索引（不满足条件时只记一条说明，不动数据库） */
 async function dropRedundantIndex(table, indexName, keeperName) {
@@ -73,7 +78,7 @@ async function migrate() {
         t.mediumtext('content').notNullable(); // Markdown 原文
         t.string('cover', 500).defaultTo(''); // 封面图 URL
         t.integer('category_id').unsigned().references('id').inTable('categories').onDelete('SET NULL');
-        t.enum('status', ['draft', 'published']).defaultTo('draft');
+        t.enum('status', [...ARTICLE_STATUS]).defaultTo('draft');
         t.boolean('is_top').defaultTo(false); // 置顶
         t.integer('views').defaultTo(0);
         t.integer('likes').defaultTo(0);
@@ -126,7 +131,7 @@ async function migrate() {
         t.string('website', 200).defaultTo('');
         t.string('content', 2000).notNullable();
         t.string('ip', 64).defaultTo('');
-        t.enum('status', ['pending', 'approved', 'rejected']).defaultTo('approved');
+        t.enum('status', [...REVIEW_STATUS]).defaultTo('approved');
         t.string('ai_reason', 120).defaultTo(''); // AI 审核标记原因（管理员可见，定位可疑评论）
         t.integer('likes').notNullable().defaultTo(0); // 评论点赞数
         t.timestamp('created_at').defaultTo(db.fn.now());
@@ -159,7 +164,7 @@ async function migrate() {
         t.string('avatar', 500).defaultTo('');
         t.string('description', 200).defaultTo('');
         t.string('email', 100).defaultTo(''); // 申请时留下的联系方式
-        t.enum('status', ['pending', 'approved', 'rejected']).defaultTo('pending');
+        t.enum('status', [...REVIEW_STATUS]).defaultTo('pending');
         t.integer('sort').defaultTo(0);
         t.timestamp('created_at').defaultTo(db.fn.now());
       });
@@ -270,7 +275,7 @@ async function migrate() {
         t.string('email', 100).defaultTo('');
         t.string('content', 2000).notNullable();
         t.string('ip', 64).defaultTo(''); // 用于重复内容检测
-        t.enum('status', ['pending', 'approved', 'rejected']).defaultTo('approved');
+        t.enum('status', [...REVIEW_STATUS]).defaultTo('approved');
         t.string('ai_reason', 120).defaultTo(''); // AI 审核标记原因
         t.string('reply', 2000).defaultTo(''); // 站长回复
         t.timestamp('replied_at').nullable(); // 回复时间
@@ -376,7 +381,7 @@ async function migrate() {
         t.string('location', 80).defaultTo(''); // 地点
         t.integer('likes').defaultTo(0); // 点赞数（IP 维度防刷在应用层）
         t.boolean('is_pinned').defaultTo(false); // 置顶
-        t.enum('status', ['draft', 'published']).defaultTo('draft');
+        t.enum('status', [...ARTICLE_STATUS]).defaultTo('draft');
         t.timestamp('published_at').nullable();
         t.timestamp('created_at').defaultTo(db.fn.now());
         t.timestamp('updated_at').defaultTo(db.fn.now());
@@ -445,6 +450,13 @@ async function migrate() {
   await ensureIndex('visits', 'idx_visits_day', ['day']);
   // UV 去重查询按 day
   await ensureIndex('visit_uv', 'idx_visit_uv_day', ['day']);
+  // 手记列表的排序键是 (is_pinned DESC, published_at DESC, id DESC)，最左的 is_pinned
+  // 不在任何索引里 —— 复合索引只能覆盖「等值列之后」的排序键，缺最左键就整体用不上，
+  // 所以 EXPLAIN 一直有 Using filesort。实测（notesSortIndex.test.js 的探针组）：
+  //   (status, id)           → 仍然 filesort（无效修法）
+  //   (status, is_pinned, published_at, id) → filesort 消失（覆盖索引）
+  // 数据量小的时候这条只是「顺手」，但它是**唯一**有效的那条，且成本仅是写放大一点点。
+  await ensureIndex('notes', 'idx_notes_public_sort', ['status', 'is_pinned', 'published_at', 'id']);
   await ensureIndex('sessions', 'idx_sessions_user_id', ['user_id']);
   // 每次认证按 jti 查会话（高频读路径）
   await ensureIndex('sessions', 'idx_sessions_jti', ['jti']);

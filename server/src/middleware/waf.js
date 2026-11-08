@@ -166,6 +166,39 @@ function prepareScan(text, sec) {
   return { text, sec, disabled, variants };
 }
 
+/**
+ * 扫描面权重：**网络面命中按 1.25 折算**，正文面保持 1。
+ *
+ * 为什么需要它：异常计分制下 `error=4 < 阈值 5`，所以「单发一条中等特征载荷」
+ * 永远不够拦 —— 单发一个 `admin'--`、一个 `javascript:` URI、一个 CRLF 头注入，
+ * 在 query/header 上是**真实攻击向量**，在文章正文里却是**合法技术内容**
+ * （讲 SQL 注入必然写 `admin'--`，讲 shell 必然写 `$(id)`）。
+ * 两者的区别不在载荷，而在**它出现在哪个面**。所以权重挂在面上，不挂在规则上：
+ *
+ *   - query / path / header：4 × 1.25 = 5 → 单发即达阈值，拦。
+ *   - body（文章正文、评论、留言）：4 × 1 = 4 → 单发放行，多条叠加才拦。
+ *
+ * 这条改动等价于「把单发高危载荷的严重度提到 critical」，但**只对网络面生效**，
+ * 因此不会误杀正文里的技术讨论。误杀护栏见 test/waf/fixtures/benign.json
+ * 与 waf-fixtures.test.js 的 body 用例。
+ */
+const SURFACE_WEIGHT = { query: 1.25, path: 1.25, header: 1.25, body: 1 };
+
+/** 给命中标注扫描面与折算后的权重（幂等：重复标注不叠乘） */
+function withSurface(hit, scope, weight) {
+  if (hit.scope == null) hit.scope = scope;
+  if (hit.w == null) hit.w = (hit.score || 0) * (weight == null ? (SURFACE_WEIGHT[hit.scope] ?? 1) : weight);
+  return hit;
+}
+
+/**
+ * 自由文本参数（站内搜索框）：用户会把代码片段当搜索词敲进来 ——
+ * 「css 注释语法」「constructor.constructor 链」都是**正常的搜索**（前者含星号斜杠对）。
+ * 这类参数按**正文面**计权（×1），否则单发 error 级规则会把技术搜索变成 403。
+ * 只有真正的结构化参数（id / slug / page …）才按网络面计权。
+ */
+const FREE_TEXT_PARAM_RE = /^(?:keyword|q)$/i;
+
 /** 单组内跑规则（含 zones 面过滤 / PL 门控 / 禁用 / skipGroups），返回全部命中 */
 function runGroupRules(rules, ctx, scope, skipGroups) {
   const { sec, disabled, variants } = ctx;
@@ -214,7 +247,7 @@ function crlfCheck(ctx, disabled) {
  * 全量扫描：返回 { hits, score }。命中不提前终止（评分需要全景），
  * 每个（文本 × 组）仍按规则序展开；由调用方控制扫描面数量。
  */
-function scanAll(text, scope = 'body', { urlKey = false, skipGroups = null, truncationLimit = 0 } = {}) {
+function scanAll(text, scope = 'body', { urlKey = false, skipGroups = null, truncationLimit = 0, weight = null } = {}) {
   const sec = securitySettings.getConfig();
   const ctx = prepareScan(text, sec);
   if (!ctx) return { hits: [], score: 0 };
@@ -251,7 +284,9 @@ function scanAll(text, scope = 'body', { urlKey = false, skipGroups = null, trun
     const c = crlfCheck(ctx, ctx.disabled);
     if (c) hits.push(c);
   }
-  const score = hits.reduce((sum, h) => sum + (h.score || 0), 0);
+  // 统一标注扫描面并按面折算（含规则外产生的命中：超长截断、CRLF）
+  for (const h of hits) withSurface(h, scope, weight);
+  const score = hits.reduce((sum, h) => sum + (h.w ?? h.score ?? 0), 0);
   return { hits, score };
 }
 
@@ -338,7 +373,7 @@ function scanRequestBody(body) {
     }
   };
   walk(body);
-  const score = hits.reduce((sum, h) => sum + (h.score || 0), 0);
+  const score = hits.reduce((sum, h) => sum + (h.w ?? h.score ?? 0), 0);
   return { hits, score, scanned };
 }
 
@@ -560,7 +595,7 @@ function waf(req, res, next) {
     if (typeof node === 'object') {
       for (const [k, v] of Object.entries(node)) {
         if (!keyInjected && /^(?:__proto__|constructor|prototype)$/i.test(k)) keyInjected = true;
-        const isKeyword = /^keyword$/i.test(k);
+        const isKeyword = FREE_TEXT_PARAM_RE.test(k);
         if (!isKeyword) {
           hits.push(...scanAll(k, 'query').hits);
         }
@@ -568,7 +603,8 @@ function waf(req, res, next) {
           collectQuery(v);
           continue;
         }
-        hits.push(...scanAll(String(v), 'query', isKeyword ? { skipGroups: ['SSRF'] } : {}).hits);
+        // 自由文本参数：豁免 SSRF（搜索框里写 URL 合法）且按正文面计权（不让技术搜索被 403）
+        hits.push(...scanAll(String(v), 'query', isKeyword ? { skipGroups: ['SSRF'], weight: 1 } : {}).hits);
       }
       return;
     }
@@ -597,7 +633,8 @@ function waf(req, res, next) {
 
   // ---- 3. 判定：硬特征（键名注入）一票拦截；其余按异常分对照阈值 ----
   const threshold = Number(sec.anomalyThreshold) || 5;
-  const score = hits.reduce((sum, h) => sum + (h.score || 0), 0);
+  // 按扫描面加权的总分（网络面 ×1.25，正文面 ×1）—— 见 SURFACE_WEIGHT 的说明。
+  const score = hits.reduce((sum, h) => sum + (h.w ?? h.score ?? 0), 0);
   const topIds = [...new Set(hits.map((h) => h.id))].slice(0, 4).join(',');
 
   if (keyInjected) {

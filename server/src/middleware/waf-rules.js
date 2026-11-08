@@ -45,7 +45,9 @@ const SQL_PATTERNS = [
   R('SQL-19', /\/\*![0-9]{4,}/i, 'MySQL 版本注释', 'critical'),
   R('SQL-20', /\border\s+by\s+\d{1,3}\b/i, 'ORDER BY 列数探测', 'warning', 2),
   R('SQL-21', /\b(?:insert\s+into|delete\s+from|drop\s+(?:table|database|index|view)\b|truncate\s+(?:table|database)\b|alter\s+table\b|create\s+(?:table|database|user)\b|rename\s+table\b)/i, '精确 DDL/DML 语句', 'error'),
-  R('SQL-22', /['"]\s*(?:#|--)/i, '引号后接 SQL 注释符', 'warning'),
+  // sev=error（原 warning）：网络面 ×1.25 后单发即达阈值 —— 「search 参数里塞 admin'--」
+  // 是经典登录绕过载荷；正文面仍按 ×1 计权，技术文章写这个例子不会被拦。
+  R('SQL-22', /['"]\s*(?:#|--)/i, '引号后接 SQL 注释符', 'error'),
   R('SQL-23', /;\s*(?:select|insert|update|delete|drop|alter|create|--)\b/i, '堆叠查询', 'error'),
   R('SQL-24', /\bcase\s+when\b[\s\S]{0,60}\b(?:then|end)\b/i, 'CASE WHEN 条件注入', 'warning', 2),
   R('SQL-25', /\bif\s*\(\s*(?:select|exists|ascii|substr|sleep)/i, 'IF 条件盲注', 'error'),
@@ -86,7 +88,9 @@ const XSS_SHARED = [
   R('XSS-24', /<[a-z][^>]*\/\s*on[a-z]+\s*=/i, '斜杠分隔事件处理器', 'critical'),
 ];
 const XSS_NET_ONLY = [
-  R('XSS-23', /\b(?:javascript|vbscript)\s*:/i, '裸伪协议（网络面）', 'warning', 1, NET_ONLY),
+  // sev=error（原 warning）：NET_ONLY 保证正文不受影响（昵称里写 javascript: 仍合法），
+  // 而 query/header 里出现伪协议 ×1.25 后单发即拦。
+  R('XSS-23', /\b(?:javascript|vbscript)\s*:/i, '裸伪协议（网络面）', 'error', 1, NET_ONLY),
 ];
 
 /* ==================== 路径遍历 ==================== */

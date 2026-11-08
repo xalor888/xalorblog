@@ -65,28 +65,27 @@ ok('PORN_KEYWORDS 仍是这 7 个词（词表变了要同步本文件）', () =>
     `PORN_KEYWORDS 变成了 [${found.join(', ')}]。请在测试里同步词表。`);
 });
 
-ok('每个色情词单次命中的分数都是 25（低于门槛 30）', () => {
+ok('每个色情词单次命中就达到门槛（30 = PENDING_SCORE）', () => {
   for (const w of PORN) {
     const s = scoreOf(w);
-    assert.strictEqual(s, 25,
-      `「${w}」得分 ${s}，期望 25。如果上游有意把权重改成 30 —— ` +
-      `那正是 §6.2 想做的修复，请把 B 组改成 ≥ PENDING_SCORE 并更新文档。`);
-    assert.ok(s < PENDING_SCORE,
-      `「${w}」得分 ${s} 已 ≥ 门槛 ${PENDING_SCORE} —— 缺陷已修复，请更新本文件 B 组。`);
+    assert.strictEqual(s, 30,
+      `「${w}」得分 ${s}，期望 30（与辱骂词同档）。改回 25 会让单条色情评论直接展示。`);
+    assert.ok(s >= PENDING_SCORE,
+      `「${w}」得分 ${s} 低于门槛 ${PENDING_SCORE} —— 单发色情词会再次直接展示。`);
   }
 });
 
-ok('单个色情词的 action 不是「待审」（这就是缺陷本身）', () => {
+ok('单个色情词进待审（旧缺陷已修复）', () => {
   const r = localModeration('色情');
   assert.ok(r.reasons.some((x) => x.includes('敏感词')), '应当命中敏感词规则');
-  assert.ok(r.score < PENDING_SCORE, `得分 ${r.score} 应低于门槛 ${PENDING_SCORE}`);
+  assert.ok(r.score >= PENDING_SCORE, `得分 ${r.score} 应达到门槛 ${PENDING_SCORE}`);
 });
 
 ok('同一色情词重复多次不累加（countHits 数的是去重词数）', () => {
   for (const n of [2, 4, 10]) {
     const s = scoreOf('色情'.repeat(n));
-    assert.strictEqual(s, 25,
-      `重复 ${n} 次得分 ${s}，期望仍是 25 —— countHits 对每个词只计 1 次`);
+    assert.strictEqual(s, 30,
+      `重复 ${n} 次得分 ${s}，期望仍是 30 —— countHits 对每个词只计 1 次`);
   }
 });
 
@@ -104,11 +103,11 @@ ok('辱骂词单次命中 = 30 ≥ 门槛', () => {
   assert.ok(s >= PENDING_SCORE);
 });
 
-ok('色情与辱骂的权重不对称（记录事实，不是断言它合理）', () => {
+ok('色情与辱骂的权重已统一（2026-11-08 修复后的事实）', () => {
   const porn = scoreOf('色情');
   const abuse = scoreOf('傻逼');
-  assert.ok(porn < abuse,
-    `色情 ${porn} / 辱骂 ${abuse} —— 若两者相等，说明权重已统一，请更新 §6.2`);
+  assert.strictEqual(porn, abuse,
+    `色情 ${porn} / 辱骂 ${abuse} —— 两者应同为 30；不相等说明有人只改了一处`);
 });
 
 console.log('\n【D. 词表与权重的一致性（防漏配）】');
@@ -145,9 +144,9 @@ ok('正常评论得 0 分（不误伤）', () => {
 });
 
 console.log('\n【F. 自检：判据真的能区分】');
-ok(`自检：门槛 ${PENDING_SCORE} 能区分 25 与 30 两档`, () => {
-  assert.ok(25 < PENDING_SCORE && 30 >= PENDING_SCORE,
-    '25 应当低于门槛、30 应当达标 —— 否则本文件的 B/C 两组就失去意义');
+ok(`自检：门槛 ${PENDING_SCORE} 能区分 20 与 30 两档`, () => {
+  assert.ok(20 < PENDING_SCORE && 30 >= PENDING_SCORE,
+    '20（单个广告词）应低于门槛、30（色情/辱骂）应达标 —— 否则 B/C 两组失去意义');
 });
 ok('自检：若色情权重改成 30，B 组的「25」断言会红', () => {
   // 用逻辑复刻验证，不改真实代码

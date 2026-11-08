@@ -11,9 +11,13 @@
  * `「schema enum 待决策」项` 记着「3 处 t.enum 仍是硬编码」。第 79 轮实测：**实际是 5 处**，
  * 且分属 2 个枚举（articles/notes 用 ARTICLE_STATUS；comments/links/messages 用 REVIEW_STATUS）。
  *
- * 本文件不改 schema（那要迁移，属需人工决策项），只做**静态一致性断言**：
- * 每一处 `t.enum('status', [...])` 的取值必须与对应常量逐项相同（含顺序）。
- * 这样谁改了常量忘了迁移、或改了迁移忘了常量，测试立刻红。
+ * 2026-11-08 的处理：**改成派生**。`migrate.js` 现在写 `t.enum('status', [...ARTICLE_STATUS])` /
+ * `[...REVIEW_STATUS]`，同一份取值不再存在第二处副本 —— 「改常量忘迁移」这类分叉从结构上不可能再发生。
+ * 注意它**不迁移既有库**（改 enum 要 ALTER，MySQL 8 会重建表）；它保证的是「新建库与常量一致」。
+ *
+ * 本文件的职责随之变为两条静态断言：
+ *   1. 5 处 t.enum 必须**全部派生**（谁写回字面量，断言指名报错）
+ *   2. 派生结果与常量逐项相同（含顺序 —— 顺序影响 ORDER BY 语义）
  */
 
 'use strict';
@@ -44,6 +48,8 @@ const lines = src.split('\n');
  * 表名靠向上找最近一个 `createTable('xxx'` —— 迁移文件是顺序书写的，
  * 每个 createTable 块内的 enum 都属于那张表。
  */
+const CONST_MAP = { ARTICLE_STATUS, REVIEW_STATUS };
+
 function collectEnums() {
   const out = [];
   let currentTable = null;
@@ -51,10 +57,15 @@ function collectEnums() {
     const tm = line.match(/createTable\(\s*'([a-z_]+)'/);
     if (tm) currentTable = tm[1];
     const em = line.match(/t\.enum\(\s*'status'\s*,\s*\[([^\]]+)\]\s*\)(?:\.defaultTo\(\s*'([^']+)'\s*\))?/);
-    if (em) {
-      const values = [...em[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
-      out.push({ table: currentTable, values, defaultTo: em[2] || null, line: i + 1 });
-    }
+    if (!em) return;
+    const body = em[1].trim();
+    // 两种写法都要认：
+    //   [...ARTICLE_STATUS]  → 派生（2026-11-08 起的写法，唯一来源是 utils/enums.js）
+    //   ['draft','published'] → 字面量（旧写法，只为让「谁写回字面量」能被指名报错）
+    const spread = body.match(/^\.\.\.[A-Za-z_][A-Za-z0-9_]*$/) && body.slice(3).trim();
+    const derived = spread || null;
+    const values = derived ? [...(CONST_MAP[derived] || [])] : [...body.matchAll(/'([^']+)'/g)].map((x) => x[1]);
+    out.push({ table: currentTable, values, derived, literal: body, defaultTo: em[2] || null, line: i + 1 });
   });
   return out;
 }
@@ -92,10 +103,18 @@ ok(`找到 ${enums.length} 处 t.enum('status', ...)`, () => {
     `实际 ${enums.length} 处。§6.7 记的是「3 处」，已过时；数量变了请同步更新文档`);
 });
 
+ok('5 处 t.enum 全部从常量派生（不允许再写字面量）', () => {
+  const literal = enums.filter((e) => !e.derived).map((e) => `${e.table}(第 ${e.line} 行: ${e.literal})`);
+  assert.deepStrictEqual(literal, [],
+    `这些地方还在写枚举字面量：${literal.join(' | ')} —— 改成 [...常量名]，否则一定会与常量分叉`);
+});
+
 for (const e of enums) {
   const spec = TABLE_TO_ENUM[e.table];
-  ok(`${e.table}.status（第 ${e.line} 行）与 ${spec ? spec.name : '?'} 逐项一致`, () => {
+  ok(`${e.table}.status（第 ${e.line} 行）从 ${spec ? spec.name : '?'} 派生`, () => {
     assert.ok(spec, `表 ${e.table} 不在 TABLE_TO_ENUM 清单里 —— 新增表时请归类`);
+    assert.strictEqual(e.derived, spec.name,
+      `这一处写的是 [${e.literal}] —— 应写成 [...${spec.name}]；字面量会与常量分叉`);
     // 顺序也要一致：MySQL enum 的顺序影响 ORDER BY 语义
     assert.deepStrictEqual(e.values, [...spec.values],
       `schema 是 [${e.values.join(',')}]，常量是 [${[...spec.values].join(',')}]`);

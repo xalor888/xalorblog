@@ -147,11 +147,12 @@
     },
     {
       "name": "引号后注释符（旧版 403 → 监控）",
-      "scope": "query",
+      "scope": "body",
       "value": "admin'--",
       "verdict": "monitor"
     },
     {
+      "keyword": true,
       "name": "CSS 注释形态（旧版 403 → 监控）",
       "scope": "query",
       "value": "css /* 注释 */ 语法",
@@ -164,12 +165,14 @@
       "verdict": "monitor"
     },
     {
+      "keyword": true,
       "name": "原型链构造器讨论（旧版 403 → 监控）",
       "scope": "query",
       "value": "constructor.constructor 链",
       "verdict": "monitor"
     },
     {
+      "keyword": true,
       "name": "query 里的模板字符串（旧版 403 → 监控）",
       "scope": "query",
       "value": "模板字符串 ${user.name} 用法",

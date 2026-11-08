@@ -33,6 +33,23 @@ const DB_PASSWORD = process.env.DB_PASSWORD || '';
 const DB_HOST = process.env.DB_HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT) || 3000;
 
+/**
+ * 安全护栏：**这 16 个套件会写库**（见下面 RESET_SQL —— DELETE ip_bans / 清本机评论 /
+ * UPDATE users.totp_*，journey 套件还会建文章、发留言）。它们历史上挂在 `test:all` 上，
+ * 而那条命令默认指向生产库 —— 一次误跑就清掉真实数据。
+ *
+ * 所以库名必须显式表明「这是一次性库」：以 `_scratch` 结尾才允许跑。
+ * 真要跑在别的库上，必须自己写 TEST_ALLOW_NON_SCRATCH=1，把风险显式接过来。
+ */
+const SCRATCH_REQUIRED = !/_scratch(?:\d+)?$/i.test(DB_NAME);
+if (SCRATCH_REQUIRED && String(process.env.TEST_ALLOW_NON_SCRATCH || '') !== '1') {
+  console.error('[test:integration] 拒绝执行：DB_NAME = ' + DB_NAME + ' 看起来不是一次性库。');
+  console.error('  这些套件会 DELETE/UPDATE 真实数据（ip_bans / users.totp_* / comments / links）。');
+  console.error('  正确用法：DB_NAME=xalor_blog_scratch npm run test:all');
+  console.error('  非要用别的库：TEST_ALLOW_NON_SCRATCH=1（请先备份）。');
+  process.exit(1);
+}
+
 const SERVER_WAIT_MS = 20000;   // 等服务就绪的上限
 const PORT_RELEASE_MS = 10000;  // 杀掉自己起的子进程后等端口释放的上限
 
