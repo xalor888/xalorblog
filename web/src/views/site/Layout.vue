@@ -13,7 +13,7 @@
       @click.prevent="skipToMain"
     >跳到主要内容</a>
     <!-- 顶部导航 -->
-    <header class="site-nav sg-liquid" :class="{ scrolled: scrolled, overlay: navOverlay }">
+    <header ref="navRef" class="site-nav sg-liquid" :class="{ scrolled: scrolled, overlay: navOverlay }">
       <div class="nav-progress" :style="{ transform: `scaleX(${scrollPercent / 100})` }"></div>
       <div class="container nav-inner">
         <router-link to="/" class="brand">
@@ -300,6 +300,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import SearchModal from '@/components/ui/SearchModal.vue';
 import ShortcutHelp from '@/components/ui/ShortcutHelp.vue';
 import AmbientParticles from '@/components/site/AmbientParticles.vue';
+import { useLens } from '@/composables/useLens';
 import { useThemeStore, THEME_COLORS } from '@/stores/theme';
 import { useSiteStore } from '@/stores/site';
 import { homeUrl } from '@/utils/siteLinks';
@@ -322,6 +323,12 @@ const accentLabel = computed(() => {
   return hit ? hit.name : cur || '默认';
 });
 const site = useSiteStore();
+
+/* 折射：只挂给导航条（页面上唯一一块「背后是大图」的常驻玻璃）。
+   Safari / Firefox 上 `backdrop-filter: url(#f)` 解析通过但不渲染，
+   所以能不能挂由 `useLens` 里的引擎判定说了算，CSS 侧只认 `data-lens` 属性。 */
+const navRef = ref(null);
+useLens(navRef, { bevel: 24, maxShift: 14 });
 
 const scrolled = ref(false);
 const showTop = ref(false);
@@ -663,6 +670,15 @@ onUnmounted(() => {
   backdrop-filter: var(--sg-blur);
   -webkit-backdrop-filter: var(--sg-blur);
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+/* 折射（Chromium 专属）：`useLens` 判定引擎真的会渲染 `url(#f)` 之后才挂
+   `data-lens` 与 `--lens-chain`。为什么不写成 `@supports (backdrop-filter: url(#f))`：
+   Safari / Firefox 会**解析通过**这个值然后什么都不画 —— 特性查询给的是假阳性，
+   挂上去只会让滤镜节点白跑。所以 CSS 侧只认这个由 JS 写上的属性。 */
+.site-nav[data-lens] {
+  backdrop-filter: var(--lens-chain, var(--sg-blur));
+  -webkit-backdrop-filter: var(--lens-chain, var(--sg-blur));
 }
 
 .site-nav.overlay {
