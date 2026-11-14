@@ -179,6 +179,13 @@
       </router-view>
     </main>
 
+    <!-- 页脚上沿的「霜」：正文向上溶进页脚的玻璃，而不是撞到一条硬边。
+         为什么是**兄弟节点**而不是 `.site-footer::before`：页脚自己带
+         backdrop-filter，是 backdrop root —— 它内部的模糊只能采到页脚自己，
+         采不到页面。放在外面这一层（`.site-layout` 不模糊）才真的糊得住正文。
+         材质与渐隐都来自全局 `.sg-frost`（见 main.css「边缘羽化」段落）。 -->
+    <div class="footer-frost sg-frost" aria-hidden="true"></div>
+
     <!-- 页脚 -->
     <footer class="site-footer">
       <div class="container footer-inner">
@@ -651,7 +658,7 @@ onUnmounted(() => {
   border-radius: 20px;
   /* 液态玻璃：渐变面 + 顶部镜面 + 边缘折射亮线 + 内嵌体积光，底下背景化进来 */
   background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
-  border: 1px solid var(--sg-edge);
+  border: 1px solid var(--sg-hairline);
   box-shadow: var(--sg-shadow), var(--sg-inner);
   backdrop-filter: var(--sg-blur);
   -webkit-backdrop-filter: var(--sg-blur);
@@ -667,7 +674,11 @@ onUnmounted(() => {
   background:
     radial-gradient(130% 70% at 16% -12%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 55%),
     linear-gradient(160deg, rgba(18, 15, 13, 0.36) 0%, rgba(14, 12, 10, 0.26) 46%, rgba(20, 17, 15, 0.4) 100%);
-  border-color: rgba(255, 255, 255, 0.2);
+  /* 同上：边交给亮环画（浮在头图上时 0.43 的白环仍然看得见）。
+     ⚠ 兜底形态（不支持 mask 合成的老浏览器）会拿到 `--sg-edge`（0.6 白），
+       比这里原本手写的 0.2 要亮 —— 这是「一个 token 管两形态」的代价，
+       换来的是不必在每个表面各写一份 `!important`。 */
+  border-color: var(--sg-hairline);
 }
 
 .site-nav.overlay .brand-text,
@@ -1114,9 +1125,36 @@ onUnmounted(() => {
   margin-top: 0;
   /* 页脚也是液态玻璃：底部透出彩色渐变底，整站材质统一 */
   background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
-  border-top: 1px solid var(--sg-edge);
+  border-top: 1px solid var(--sg-hairline);
   backdrop-filter: var(--sg-blur-soft);
   -webkit-backdrop-filter: var(--sg-blur-soft);
+}
+
+/* 页脚上沿的「霜」几何：**净高 0** —— 页脚位置不变，霜只盖住它上方那 44px。
+   模糊与基础遮罩来自全局 `.sg-frost`；这里只改两件事：
+   ① `flex: none`，别让 flex 列把它压扁（压扁了就没有渐隐带）；
+   ② 遮罩前 40% 完全不糊 —— 只在贴近页脚的那一截结霜，
+      否则正文最后一行会整行发虚，这对读书的人来说是「字在飘」。 */
+.footer-frost {
+  flex: none;
+  position: relative;
+  z-index: 2;
+  height: 44px;
+  margin-top: -44px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, transparent 40%, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, transparent 40%, #000 100%);
+}
+
+/* 手机上这条霜要更短：375 宽时 44px 已经吃掉约 5% 视口高度，
+   而「渐隐带」在窄屏上更容易直接压住正文最后一行。
+   收成 34px 并把渐隐起点推到 52% —— 真正发糊的只剩贴近页脚的 ~16px。 */
+@media (max-width: 640px) {
+  .footer-frost {
+    height: 34px;
+    margin-top: -34px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, transparent 52%, #000 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, transparent 52%, #000 100%);
+  }
 }
 
 .footer-inner {

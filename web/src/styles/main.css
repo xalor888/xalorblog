@@ -146,6 +146,30 @@
     rgba(255, 255, 255, 0.92) 100%
   );
   --lg-edge: rgba(255, 255, 255, 0.75);
+  /* 边缘亮环的**方向性**渐变（上沿亮 → 中段归零 → 下沿回光）。
+     此前只有 `--lg-edge` 一个不透明度，四周同亮 —— 玻璃看起来像贴了一圈白胶带。
+     真实玻璃的边是有方向的：光源在上，上沿最亮；下沿是背景从玻璃里回出来的弱亮。
+     为什么不用 `border-image`：它不跟随 `border-radius`，圆角处会被画成方角。
+     配套的 mask 环（见下方「边缘亮环」段落）用 `border-radius: inherit` 挖出 1px，
+     圆角/胶囊/任意半径都自适应。
+     ⚠ 这个值**故意从 `--lg-edge` 派生**（72% / 32%），而不是写死两串 rgba：
+       ① 最亮的那一端就等于现有亮边，不会产生比现在更亮的像素（对比度门禁不会因此变红）；
+       ② 暗色主题不需要再写一遍：`--lg-edge` 在那个块里已被改写，
+          `var(--lg-edge)` 在**使用时**才取值，派生链自动跟着换色。 */
+  --lg-rim: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--lg-edge) 72%, transparent) 0%,
+    transparent 46%,
+    color-mix(in srgb, var(--lg-edge) 32%, transparent) 100%
+  );
+  /* 单色边「兜底色」：支持 mask 合成时（见下方「边缘亮环」段的 @supports）
+     它被切成 transparent，边只由亮环画；不支持时它就是 --lg-edge，退化成原来那圈实线。
+     为什么要这个开关：亮环最亮的一端只有 `--lg-edge` 的 72%（约 .54），
+     **压不住**底下那条 .75 的均匀实线 —— 两条一起画，中段永远亮着，
+     「上亮 → 中空 → 下回光」的方向感就被抹平了，只剩一圈略脏的白边。
+     走 token 开关而不是给四个表面各写一次 `!important`：
+     组件的 scoped 规则带 `[data-v-*]`，裸类名比不过它，`!important` 只会越写越乱。 */
+  --lg-hairline: var(--lg-edge);
   --lg-sheen: radial-gradient(
     130% 90% at 12% -14%,
     rgba(255, 255, 255, 0.92) 0%,
@@ -188,6 +212,16 @@
     rgba(255, 255, 255, 0) 55%
   );
   --sg-edge: rgba(255, 255, 255, 0.6);
+  /* 页面级表面（导航 / 卡片 / 浮钮 / 页脚）的亮环渐变，配方与 `--lg-rim` 同源：
+     同样从 `--sg-edge` 派生，暗色自动跟随，不重复定义。 */
+  --sg-rim: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--sg-edge) 72%, transparent) 0%,
+    transparent 46%,
+    color-mix(in srgb, var(--sg-edge) 34%, transparent) 100%
+  );
+  /* 页面级表面的兜底边，语义与 `--lg-hairline` 相同（见上方注释）。 */
+  --sg-hairline: var(--sg-edge);
   --sg-inner: inset 0 1px 0 rgba(255, 255, 255, 0.8),
     inset 0 -1px 1px rgba(255, 255, 255, 0.2);
   --sg-shadow: 0 1px 2px rgba(26, 24, 20, 0.05),
@@ -336,6 +370,153 @@
 @media (prefers-reduced-motion: reduce) {
   .sg-liquid::after {
     animation: none;
+  }
+}
+
+/* ============================================================
+   液态玻璃 · 边缘亮环（rim）
+   ------------------------------------------------------------
+   把「四周同亮的 1px 实线边」升级成**有方向的光学边**：
+   上沿最亮 → 中段归零 → 下沿回光。这是真实玻璃和「白边框 + 模糊」的分水岭。
+
+   做法：伪元素铺满 + `padding: 1px`，用两层 mask（content-box ⊕ border-box）
+   做差集，只留下 1px 环带；`border-radius: inherit` 让环自动跟随圆角。
+     · `border-image` 做不到这件事 —— 它不跟随 border-radius，圆角会被画成方角；
+     · `outline` 更不行 —— 不吃圆角，也没法做渐变。
+
+   ⚠ 为什么整段套在 `@supports` 里：不支持 mask 合成的浏览器（Safari < 15.4）
+     会把两层 mask 当成**并集**，结果是一整块半透明渐变**盖住面板**，比没有环更糟。
+     这里的 `@supports` 是**诚实的** —— `mask-composite` 只做文法与实现检查，
+     不会像 `backdrop-filter: url(#svg)` 那样在 Safari 上「解析通过但什么都不画」（假阳性）。
+     旧 Safari 的 `-webkit-mask-composite: xor` 也真支持，所以用 `or` 两边都放行。
+
+   兜底边怎么办：`border: 1px solid …` 那一行**不改写法**，只是把颜色换成
+   `--lg-hairline` / `--sg-hairline`。下面这个 @supports 成立时那两个 token 变成
+   `transparent`，边只由亮环画；不成立时它们仍是原来的 `--lg-edge` / `--sg-edge`，
+   退化成原来那圈完整实线。两种形态各自都是完整的设计，不是「降级成半成品」。
+   ============================================================ */
+@supports ((-webkit-mask-composite: xor) or (mask-composite: exclude)) {
+  /* 让位：兜底实线的颜色切到 transparent（见 :root 里 --lg-hairline 的注释） */
+  :root {
+    --lg-hairline: transparent;
+    --sg-hairline: transparent;
+  }
+
+  /* 一处配方，五个表面。给新面板加环：把选择器加进这组，并在下面声明 `--rim` */
+  .site-nav::before,
+  .card::before,
+  .dock-btn::before,
+  .el-message-box::before,
+  .site-footer::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: var(--rim, var(--lg-rim));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    /* 环是 1px 的装饰层，不参与命中测试、不进无障碍树 */
+    z-index: 0;
+  }
+
+  /* 页面级表面用 --sg-rim，浮层用 --lg-rim —— 两套材质亮边本就不同强度 */
+  .site-nav,
+  .dock-btn,
+  .site-footer {
+    --rim: var(--sg-rim);
+  }
+
+  .card,
+  .el-message-box {
+    --rim: var(--lg-rim);
+  }
+
+  /* 页脚只有一条 `border-top`，环的四边里只有上沿有意义：
+     其余三边收成 0，避免在左右两侧多画两条并不存在的亮线。 */
+  .site-footer::before {
+    padding: 1px 0 0;
+  }
+}
+
+/* ============================================================
+   液态玻璃 · 边缘羽化（frost）
+   ------------------------------------------------------------
+   真磨砂玻璃不会在清晰的边界上「啪」地停住 —— 边缘是逐渐结霜的。
+   这一层就是那道霜：`backdrop-filter` + 一条线性 mask，让模糊从一边渐隐到另一边。
+
+   ⚠ 语义别写反：**mask 的黑=画模糊，透明=底下原样透出**
+     （很多人第一次写会反过来，看到的是「中间清楚、边上糊」的镜像效果）。
+   ⚠ 只能当**兄弟层**用，不能塞进已有 `backdrop-filter` 的容器里当子元素：
+     带 backdrop-filter 的元素会成为 backdrop root，子元素的模糊只能采到它内部 ——
+     这就是 `.el-overlay` 那条注释（见「液态玻璃弹层系统」）的同一个坑。
+     所以这里的用法是：容器本身不模糊，模糊只出现在这个兄弟层上。
+
+   用法（页脚上方那道霜就是这么挂的，见 `views/site/Layout.vue` 的 `.footer-frost`）：
+     <div class="sg-frost" aria-hidden="true"></div>
+   ============================================================ */
+.sg-frost {
+  pointer-events: none;
+  -webkit-backdrop-filter: var(--sg-blur-soft);
+  backdrop-filter: var(--sg-blur-soft);
+  /* 上透明 → 下糊实：内容向上「溶」进它下面的玻璃面 */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 88%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 88%);
+}
+
+/* ============================================================
+   无障碍 / 打印 / 移动端的材质开关
+   ------------------------------------------------------------
+   一律**改 token**，不改选择器：所有表面都是 `backdrop-filter: var(--sg-blur)`
+   这种形状，改 token 就全站生效，且不必和组件里的 scoped 规则比特指度
+   （scoped 选择器带 `[data-v-*]`，裸类名比不过它 —— 那是 `!important` 的来路，
+   这里不需要）。
+   放在文件末尾：`:root` 与开头那份同层，靠源码顺序取胜，暗色块只改颜色不影响这里。
+   ============================================================ */
+
+/* 系统「降低透明度」：模糊全部关掉，玻璃退化成实色面板 */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --sg-blur: none;
+    --sg-blur-soft: none;
+    --lg-blur: none;
+    --lg-blur-pop: none;
+    --lg-scrim-blur: none;
+    /* 只关模糊还不够：半透明的「面」本身就在跟这个偏好对着干。
+       系统开关的意思字面就是「少透明」，所以面也换成实色 + 去掉高光/色温。
+       用 `--card` 而不是写死 #fff：暗色主题自动跟随，不用再写一遍。 */
+    --sg-surface: var(--card);
+    --lg-surface: var(--card);
+    --sg-sheen: none;
+    --lg-sheen: none;
+    --sg-tint: none;
+  }
+}
+
+/* 系统「增强对比」：面改成实色、去掉高光与色温，文字对比度不再随背景浮动 */
+@media (prefers-contrast: more) {
+  :root {
+    --sg-surface: var(--card);
+    --lg-surface: var(--card);
+    --sg-sheen: none;
+    --lg-sheen: none;
+    --sg-tint: none;
+    --sg-rim: var(--border);
+    --lg-rim: var(--border);
+  }
+}
+
+/* 移动端：模糊半径与面积都是合成器成本（实测同屏多个 backdrop-filter
+   可把 60fps 拉到 12fps 量级），小屏上收一档，视觉差别几乎看不出来。 */
+@media (max-width: 640px) {
+  :root {
+    --sg-blur: blur(14px) saturate(1.5);
+    --sg-blur-soft: blur(10px) saturate(1.35);
+    --lg-blur: blur(18px) saturate(1.7);
+    --lg-blur-pop: blur(14px) saturate(1.55);
+    --lg-scrim-blur: blur(2px);
   }
 }
 
@@ -947,7 +1128,7 @@ select:focus-visible,
   height: 40px;
   border-radius: 50%;
   background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
-  border: 1px solid var(--sg-edge);
+  border: 1px solid var(--sg-hairline);
   color: var(--text-2);
   box-shadow: var(--sg-shadow), var(--sg-inner);
   backdrop-filter: var(--sg-blur-soft);
@@ -970,13 +1151,17 @@ select:focus-visible,
 .card {
   /* 液态玻璃卡片（后台统一材质）：高光 → 更透的面 → 折射亮边 → 强模糊背板 */
   background: var(--lg-sheen), var(--lg-surface);
-  border: 1px solid var(--lg-edge);
+  border: 1px solid var(--lg-hairline);
   border-radius: var(--radius);
   box-shadow: var(--lg-shadow-pop), var(--lg-inner);
   backdrop-filter: var(--lg-blur);
   -webkit-backdrop-filter: var(--lg-blur);
   /* 性能：transform/box-shadow 变化不触发重排 */
   contain: layout paint style;
+  /* 边缘亮环（`.card::before`，见文件上方「边缘亮环」段落）的定位锚点。
+     `contain: paint` 本身已经让本元素成为绝对定位后代的包含块，
+     这里显式写出来，是为了让「环一定贴在这张卡的边上」这件事在源码里看得见。 */
+  position: relative;
 }
 
 /* 空状态 */
@@ -1224,7 +1409,7 @@ select:focus-visible,
   max-width: 440px !important;
   padding: 0 !important;
   border-radius: var(--lg-radius) !important;
-  border: 1px solid var(--lg-edge) !important;
+  border: 1px solid var(--lg-hairline) !important;
   background: var(--lg-sheen), var(--lg-surface) !important;
   -webkit-backdrop-filter: var(--lg-blur);
   backdrop-filter: var(--lg-blur);
@@ -1658,6 +1843,28 @@ select:focus-visible,
    打印样式：阅读体验优先
    ============================================================ */
 @media print {
+  /* 液态玻璃在纸上没有「背后」可采样：模糊关掉、投影与高光也不该打印，
+     否则出来的是一块灰浆 + 一大片吃墨的阴影。
+     改 token 而不是逐个选择器加 `!important`：所有表面都写成
+     `backdrop-filter: var(--sg-blur)` 这种形状，一处改完全站退化成实色面板。
+     ⚠ 这条**只能**写在这个 print 块里，不能另起一个：`test-focus-visible.mjs`
+       用 `/@media print \{[\s\S]*?\n\}/` 取**第一个** print 块校验「后台侧栏 /
+       工具栏 / 复制按钮是否在打印时被隐藏」，多一个块就把那份清单截断了
+       （当年另起一块，这道门禁当场红了 8 条）。 */
+  :root {
+    --sg-blur: none;
+    --sg-blur-soft: none;
+    --lg-blur: none;
+    --lg-blur-pop: none;
+    --lg-scrim-blur: none;
+    --sg-rim: none;
+    --lg-rim: none;
+    /* 环不打印，但边必须打印：`@supports` 把 hairline 切成了 transparent，
+       纸上若连边都没有，卡片/弹框就和页底糊成一片。这里换回实色边。 */
+    --sg-hairline: var(--border);
+    --lg-hairline: var(--border);
+  }
+
   /* skip-link 必须显式隐藏。
      它在屏幕上靠 `position: fixed; top: -100px` 藏到视口外 ——
      那套做法**只在连续媒体里成立**。打印是分页媒体、没有「视口」这个概念，

@@ -1,14 +1,17 @@
 # W11-styles — 全局样式与 markdown 样式
 
-### web/src/styles/main.css（1910 行）
+### web/src/styles/main.css（2145 行）
 
 **职责**：全站唯一的设计系统来源——明/暗两套主题 token、液态玻璃（--lg-\* / --sg-\*）材质、基础 reset、Element Plus 变量与组件皮肤、可访问性兜底（焦点环 / skip-link / sr-only / reduced-motion / 触控输入框 16px / 触摸目标下限）、打印样式、沉浸阅读与页面转场。
 
-**结构与"导出"**：无 JS 导出，全部是全局副作用；对外的真正接口是 `:root`（6-202）与第二段 `:root`（1051-1077）里的自定义属性：颜色 `--bg/--bg-soft/--card/--text(-2,-3)/--border/--line`、强调色五件套 `--accent` `--accent-soft` `--accent-deep` `--accent-text` `--accent-fill/--accent-contrast`、点缀色 `--amber(-text)/--teal/--blue/--rose/--violet`、字体 `--font-sans/serif/mono`、`--radius*`/`--shadow*`/`--ease*`/`--dur`、布局 `--nav-h/--content-w/--reading-w/--side-w`、安全区 `--sat/--sar/--sab/--sal`、层级 `--z-nav/--z-float/--z-scrim/--z-modal/--z-modal-2/--z-viewer/--z-toast`、玻璃材质 `--lg-*` 与 `--sg-*`。`[data-theme='dark']`（205）只做变量重映射，不改结构。
+**结构与"导出"**：无 JS 导出，全部是全局副作用；对外的真正接口是 `:root`（6-238）与第二段 `:root`（1262-1288）里的自定义属性：颜色 `--bg/--bg-soft/--card/--text(-2,-3)/--border/--line`、强调色五件套 `--accent` `--accent-soft` `--accent-deep` `--accent-text` `--accent-fill/--accent-contrast`、点缀色 `--amber(-text)/--teal/--blue/--rose/--violet`、字体 `--font-sans/serif/mono`、`--radius*`/`--shadow*`/`--ease*`/`--dur`、布局 `--nav-h/--content-w/--reading-w/--side-w`、安全区 `--sat/--sar/--sab/--sal`、层级 `--z-nav/--z-float/--z-scrim/--z-modal/--z-modal-2/--z-viewer/--z-toast`、玻璃材质 `--lg-*` 与 `--sg-*`。`[data-theme='dark']`（205）只做变量重映射，不改结构。
 
 **实际逻辑**（按块）：
 - 205-285 暗色重映射；`--accent-fill` 在暗色下仍字面量 `#ad422e`，理由是白字对比（222-228）。
-- 293-340 `.sg-liquid::after` 用 `background-position` 做 9s 循环扫光（300% 宽度 + `pointer-events:none`），reduced-motion 下 `animation:none`。
+- 337-374 `.sg-liquid::after` 用 `background-position` 做 9s 循环扫光（300% 宽度 + `pointer-events:none`），reduced-motion 下 `animation:none`。
+- 377-443 **边缘亮环（rim）**：`@supports ((-webkit-mask-composite: xor) or (mask-composite: exclude))` 内一条配方，给 `.site-nav::before` / `.card::before` / `.dock-btn::before` / `.el-message-box::before` / `.site-footer::before` 各画 1px 环带（`padding:1px` + 两层 mask 做差集 + `border-radius:inherit`，因此自动跟随圆角）。环的颜料是 `--lg-rim` / `--sg-rim`：**从 `--lg-edge` / `--sg-edge` 用 `color-mix` 派生**的竖向渐变（上 72% → 中 0 → 下 32%），所以暗色主题不用再写一遍。@supports 同时把 `--lg-hairline` / `--sg-hairline` 切成 `transparent`（让位），不支持 mask 合成的浏览器里这两个 token 仍是原实线边 —— 亮环与旧实线是两套各自完整的设计，不是「降级成半成品」。
+- 445-468 **边缘羽化 `.sg-frost`**：`backdrop-filter` + `linear-gradient` mask，让模糊沿一边渐隐（黑=画模糊，透明=底下原样透出）。**只能当兄弟层用**：塞进已有 `backdrop-filter` 的容器里会撞 backdrop root（同 `.el-overlay` 那条坑）。
+- 470-521 **材质开关**（一律改 token，不写 `!important`：scoped 选择器带 `[data-v-*]`，裸类名比不过）：`prefers-reduced-transparency` / `prefers-contrast: more` / `print`（合并在 1845 起的那个 print 块，不能另起一块，否则 `test-focus-visible.mjs` 取第一个 print 块会把后台清单截断） / `max-width: 640px` 收一档模糊半径。
 - 345-414 基础 reset + 触摸优化（`-webkit-tap-highlight-color:transparent`、`touch-action:manipulation`）+ 小号控件 min-height 32px / coarse 40px 清单。
 - 432-479 分类色对比度修正：暗色用 `[data-theme='dark'][data-theme]` 双属性把特指度抬到能压过 scoped `(0,2,0)`；浅色按**后端下发的色值字面量**（`[style*='c9900f']`）逐色点名替换。
 - 507-526 coarse 指针下 `font-size:16px !important`，注释明确这是压过 scoped `.form-input[data-v-x]` 的必要手段。
@@ -17,11 +20,11 @@
 - 704-729 字段级错误 `.field-error/.is-invalid`，与组件里的 `aria-invalid`/`aria-describedby` 配对。
 - 738-786 skip-link / sr-only 的键盘与读屏语义（skip-link 被注释要求用 JS 聚焦而非 href 锚点）。
 - 802-832 焦点环三层：全局 `:focus-visible`、输入框补环、`.search-box:focus-within` 让环画在外层胶囊。
-- 895-955 浮层栈 `.float-dock` 与 `.dock-btn` 收敛成一处规格（40px / 移动 36px），`opacity:.8` 悬停或 focus-within 恢复。
-- 957-967 `.card` 使用 `--lg-sheen + --lg-surface` 与 `contain: layout paint style`。
-- 1051-1542 Element Plus 皮肤：`:root` 变量→ `.el-overlay`（只上色、绝不上 backdrop-filter，1113-1121 说明 backdrop root 的坑）→ `.el-message` 胶囊 + `::before` 语义色条 → `.el-message-box` / `.el-dialog` → popper/select/dropdown → 表格/标签/按钮的深一档前景色（1418-1529）。
-- 1549-1558、1776-1787 两个断点（820 / 860）；1632-1771 打印白名单式 `display:none` 清单。
-- 1866-1909 沉浸阅读 `html[data-focus='on']`：用透明 + `pointer-events:none` 而非 `display:none`，避免正文跳动。
+- 1089-1148 浮层栈 `.float-dock` 与 `.dock-btn` 收敛成一处规格（40px / 移动 36px），`opacity:.8` 悬停或 focus-within 恢复。
+- 1151-1165 `.card` 使用 `--lg-sheen + --lg-surface`、`contain: layout paint style`，并显式 `position: relative`做 `::before` 亮环的锚点（`contain: paint` 本已足够，写出来是为了源码里看得见）。
+- 1262-1811 Element Plus 皮肤：`:root` 变量→ `.el-overlay`（只上色、绝不上 backdrop-filter，1325-1331 说明 backdrop root 的坑）→ `.el-message` 胶囊 + `::before` 语义色条 → `.el-message-box` / `.el-dialog` → popper/select/dropdown → 表格/标签/按钮的深一档前景色（1418-1529）。
+- 1762-1771、2011-2022 两个断点（820 / 860）；1845-2006 打印白名单式 `display:none` 清单（开头一条 `:root` 把 blur/rim 置空）。
+- 2101-2145 沉浸阅读 `html[data-focus='on']`：用透明 + `pointer-events:none` 而非 `display:none`，避免正文跳动。
 
 **项目内依赖**：被 `web/src/main.js:30` 与 `web/src/main-home.js:26` 全局引入（两个入口共享）；运行时被 `stores/theme.js` 的 `apply()` 以内联变量反向覆盖（`--accent*` 与 `--el-color-primary*`，99-107）并写 `documentElement.dataset.theme`；首屏由 `web/public/theme-init.js:9` 补 `data-theme='dark'`。类名契约由组件/指令反向依赖：`.sg-liquid`、`.dock-btn`、`.float-dock`、`.reveal/.reveal-stagger`（`directives/reveal.js`）、`.skip-link`、`.theme-transition`、`.page-fade-*`。
 

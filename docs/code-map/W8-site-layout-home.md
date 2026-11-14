@@ -16,6 +16,7 @@
 - 键盘：`Escape` 关抽屉；`Ctrl/Cmd+K` → `openSearch()`（`preventDefault` 后派发 `window` 事件 `xalor-open-search`）；`/` 仅在 target 非 `INPUT/TEXTAREA/contentEditable` 时生效。
 - 跳转主内容：`skipToMain` 只做 `#main-content.focus({preventScroll})` + `scrollIntoView`，不碰 URL —— 因为 hash 路由会把 `#main-content` 当成路由。
 - 页脚年份：`footer.replace(/©\s*\d{4}/, 当年)`，无配置时回落 `© 年份 站名`。
+- 页脚上沿的「霜」：`<div class="footer-frost sg-frost" aria-hidden="true">` 夹在 `</main>` 与 `<footer>` 之间，`height:44px` + `margin-top:-44px`（**净高 0**：页脚位置不变，霜只盖住上方 44px），遮罩前 40% 不糊 —— 只在贴近页脚那一截结霜，正文最后一行才不会整行发虚。为什么是兄弟节点而不是 `footer::before`：页脚自身带 `backdrop-filter`，是 backdrop root，它里面的模糊只能采到页脚自己、采不到正文（坑同 `.el-overlay`）。材质与基础遮罩在 `styles/main.css:445-467` 的 `.sg-frost`。
 - 启动序列：`await site.init()` → `warmFormToken()`（预热 /comments、/messages、/links 三张表单令牌）→ `requestIdleCallback`（无则 2s）预取 6 个路由 chunk → `statsApi.record()` **然后** `site.fetchStats()`（顺序刻意：先计数再读汇总）→ `applyWebSiteLd()` 写入/复用 `#jsonld-website`。卸载时移除监听、删除该 script、`resetBodyScroll()`。
 
 **项目内依赖**：`@/components/ui/XIcon.vue`、`SearchModal.vue`、`ShortcutHelp.vue`、`@/components/site/AmbientParticles.vue`、`@/stores/theme`(含 `THEME_COLORS`)、`@/stores/site`、`@/utils/siteLinks`(`homeUrl`)、`@/api`(`statsApi`)、`@/utils/format`、`@/utils/formToken`、`@/utils/scrollLock`、`@/utils/copyGuard`。
