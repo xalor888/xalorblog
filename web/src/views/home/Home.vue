@@ -44,7 +44,9 @@
         <div v-if="!home.failed" class="hero-meta">
           <span><b>{{ stats.article_count || 0 }}</b> 文章</span>
           <span><b>{{ stats.note_count || 0 }}</b> 手记</span>
-          <span v-if="runningDays"><b>{{ runningDays }}</b> 天</span>
+          <!-- 「天」必须说清是什么天：这个数字是 running_days（自 home_since_date 起的天数），
+               光写「1048 天」没人知道在数什么。title 里补上起算日。 -->
+          <span v-if="runningDays" :title="sinceHint">运行 <b>{{ runningDays }}</b> 天</span>
         </div>
         <button v-else class="hero-retry" @click="retry">
           <XIcon name="RefreshCw" :size="14" /> 内容加载失败，点击重试
@@ -161,6 +163,11 @@ const social = computed(() => {
 });
 const stats = computed(() => home.summary?.stats || {});
 const runningDays = computed(() => home.summary?.running_days || 0);
+/* 起算日是后台 `home_since_date`（默认 2024-01-01），由服务端算出 running_days 再下发 */
+const sinceHint = computed(() => {
+  const d = home.summary?.since_date;
+  return d ? `自 ${d} 起算的站点运行天数` : '站点运行天数';
+});
 const aboutExcerpt = computed(() => home.summary?.about_excerpt || '');
 // 「加载失败」和「后台还没填」是两回事，不能都显示成「还没有填写关于内容」
 const aboutText = computed(() => {

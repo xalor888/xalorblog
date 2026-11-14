@@ -75,7 +75,8 @@
   `prefers-reduced-motion` 下停），环上一道同款镜面高光弧；环心 140px 头像 + 状态点。
   折射挂在**环**上（`useLens(orbitRing, { bevel:18, maxShift:12, blur:16, dispersion:0.08 })`），
   `bevel` 取环宽而不是按短边自算 —— 自动值会是 79，等于环宽的 4 倍，位移会跨过环心。
-  统计数字各装进一枚小玻璃圆环（`--sg-*` 材质），按钮是实色胶囊；下方四个版块是**实色面板**（内容层不上玻璃）。
+  统计数字各装进一枚小玻璃圆环（`--sg-*` 材质）；第三枚是 `running_days`（服务端按 `home_since_date`，默认
+  `2024-01-01`，算出的天数），文案写成「运行 N 天」并在 `title` 里给出起算日 —— 早前只写「N 天」，读者看不出这个数字在数什么，按钮是实色胶囊；下方四个版块是**实色面板**（内容层不上玻璃）。
   骨架屏 `shimmer`、`prefers-reduced-motion` 关掉骨架动画，顶栏 `useLens(navRef)` 保持。
 - 副作用/失败模式：`watchEffect` 里写 `document.title`/meta（设置到达后再触发一次）；`onMounted` 各拉一次 summary 与手记；手记区失败只降级成一句文案（无重试按钮），名片区失败才有重试；`hero.status` 缺失会被伪装成「在线」。
 

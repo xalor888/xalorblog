@@ -106,7 +106,8 @@
         <div v-if="!home.failed" class="footer-stats">
           <span><b>{{ stats.article_count || 0 }}</b> 文章</span>
           <span><b>{{ stats.note_count || 0 }}</b> 手记</span>
-          <span v-if="runningDays"><b>{{ runningDays }}</b> 天</span>
+          <!-- 同上：这不是「1048 天前发生了什么」，而是自建站日至今的运行天数 -->
+          <span v-if="runningDays" :title="sinceHint">运行 <b>{{ runningDays }}</b> 天</span>
         </div>
 
         <div class="footer-bottom">
@@ -185,6 +186,10 @@ const socialGithub = computed(() => {
 const socialEmail = computed(() => String(home.summary?.social?.email || '').trim());
 const stats = computed(() => home.summary?.stats || {});
 const runningDays = computed(() => home.summary?.running_days || 0);
+const sinceHint = computed(() => {
+  const d = home.summary?.since_date;
+  return d ? `自 ${d} 起算的站点运行天数` : '站点运行天数';
+});
 const icp = computed(() => home.summary?.icp || '');
 const footerText = computed(() => `© ${new Date().getFullYear()} ${siteName.value}`);
 
