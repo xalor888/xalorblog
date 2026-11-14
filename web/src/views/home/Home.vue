@@ -1,8 +1,12 @@
 <template>
   <div class="home-page">
+    <!-- 名片下面需要「有东西可折射」的底图。个人主页原本只有一层彩色渐变，
+         玻璃压上去等于白玻璃盖白纸 —— 透镜再准也看不见。
+         所以这里补一条与博客同一张插画的通栏底图，向下渐隐进页面底色。 -->
+    <div class="home-hero-bg" aria-hidden="true"></div>
     <div class="home-container">
       <!-- ============ 名片 ============ -->
-      <section class="hero sg-liquid" aria-label="个人名片">
+      <section ref="heroCard" class="hero home-hero sg-liquid" aria-label="个人名片">
         <div class="hero-avatar-wrap">
           <img class="hero-avatar" :src="avatar" :alt="siteName" />
           <span class="hero-status" :class="statusClass" :title="statusText"></span>
@@ -116,6 +120,7 @@
 import { computed, onMounted, ref, watchEffect } from 'vue';
 import XIcon from '@/components/ui/XIcon.vue';
 import NoteCard from '@/components/home/NoteCard.vue';
+import { useLens } from '@/composables/useLens';
 import { useHomeStore } from '@/stores/home';
 import { noteApi } from '@/api';
 import { blogUrl } from '@/utils/siteLinks';
@@ -123,6 +128,13 @@ import { timeAgo } from '@/utils/format';
 import { applyPageMeta } from '@/utils/pageMeta';
 
 const home = useHomeStore();
+
+/* 名片是主页上唯一「压在大图上」的玻璃，参数照博客头图那组厚玻璃给：
+   模糊压到 8px、位移 44px、色散 9% —— 够厚才看得见弯折。
+   Safari / Firefox 上 `useLens` 不会挂（那两家不渲染 backdrop-filter: url(#f)），
+   它们看到的是本来的 30px 雾面。 */
+const heroCard = ref(null);
+useLens(heroCard, { bevel: 64, maxShift: 44, blur: 8, saturate: 1.25, dispersion: 0.09 });
 const notes = ref([]);
 const notesLoading = ref(true);
 const notesFailed = ref(false);
@@ -211,16 +223,51 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.home-page { width: 100%; }
+.home-page { width: 100%; position: relative; }
+
+/* 通栏底图：用 100vw 冲出 .home-container 的限宽，靠 mask 向下渐隐，不切一刀。
+   z-index 0，内容整体抬到 1 —— 卡片才在图上而不是被图盖住。 */
+.home-hero-bg {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  width: 100vw;
+  height: 470px;
+  transform: translateX(-50%);
+  background: #14110e url('@/assets/hero.webp') center 26% / cover no-repeat;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0 58%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0 58%, transparent 100%);
+  opacity: 0.82;
+  pointer-events: none;
+  z-index: 0;
+}
 
 /* ============ 名片 ============ */
 .hero {
+  position: relative;
   text-align: center;
   padding: 34px 22px 28px;
-  border: 1px solid var(--glass-border);
+  /* 名片压在一张插画上，所以材质走博客头图那套「深色玻璃」：
+     半透明暗渐变让图透进来 + 顶部镜面 + 亮边，文字转浅色才压得住。
+     边缘亮环由 `.home-hero::before` 画（见 main.css「边缘亮环」段落）。 */
+  border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: var(--radius-lg);
-  background: var(--card-trans);
-  box-shadow: var(--shadow-1);
+  background:
+    radial-gradient(130% 90% at 16% -12%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 55%),
+    linear-gradient(160deg, rgba(18, 15, 13, 0.40) 0%, rgba(12, 10, 8, 0.28) 46%, rgba(20, 17, 15, 0.46) 100%);
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(30px) saturate(1.5);
+  -webkit-backdrop-filter: blur(30px) saturate(1.5);
+  color: #fff;
+}
+
+/* 折射（Chromium）：和博客头图面板同一套厚玻璃参数 */
+.hero[data-lens] {
+  backdrop-filter: var(--lens-chain, blur(30px) saturate(1.5));
+  -webkit-backdrop-filter: var(--lens-chain, blur(30px) saturate(1.5));
 }
 .hero-avatar-wrap {
   position: relative;
@@ -255,7 +302,7 @@ onMounted(() => {
   font-size: 12px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--text-3);
+  color: rgba(255, 255, 255, 0.62);
   font-family: var(--font-mono);
 }
 .hero-title {
@@ -267,14 +314,14 @@ onMounted(() => {
 .hero-role {
   margin: 0;
   font-size: 14px;
-  color: var(--accent-deep);
+  color: #ffb4a2;
 }
 .hero-quote {
   margin: 10px auto 0;
   max-width: 30em;
   font-size: 14.5px;
   line-height: 1.75;
-  color: var(--text-2);
+  color: rgba(255, 255, 255, 0.80);
 }
 /* 站名/身份/签名都是后台自由文本：一个 120 字不带空格的串必须能断行，
    否则名片会把 .home-container 撑宽、整页横向滚动 */
@@ -296,16 +343,17 @@ onMounted(() => {
   gap: 6px;
   padding: 8px 14px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text-2);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.92);
   font-size: 13.5px;
   text-decoration: none;
   transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 .hero-btn:hover {
-  color: var(--accent-deep);
-  border-color: var(--accent);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.5);
   transform: translateY(-1px);
 }
 .hero-btn.primary {
@@ -339,10 +387,10 @@ onMounted(() => {
   gap: 22px;
   margin-top: 20px;
   font-size: 13px;
-  color: var(--text-3);
+  color: rgba(255, 255, 255, 0.62);
 }
 .hero-meta b {
-  color: var(--text);
+  color: #fff;
   font-variant-numeric: tabular-nums;
   margin-right: 3px;
 }

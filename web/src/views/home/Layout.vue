@@ -4,7 +4,7 @@
          跳过一长串导航直接读正文。实现同 site/Layout：JS 聚焦而非锚点，
          避免 hash 路由把 `#home-main` 当成路由地址。 -->
     <a class="skip-link" href="#home-main" @click.prevent="skipToMain">跳到主要内容</a>
-    <header class="home-nav sg-liquid" :class="{ scrolled }">
+    <header ref="navRef" class="home-nav sg-liquid" :class="{ scrolled }">
       <div class="home-container nav-inner">
         <router-link to="/" class="brand">
           <img class="brand-avatar" :src="avatar" alt="" />
@@ -136,6 +136,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import XIcon from '@/components/ui/XIcon.vue';
+import { useLens } from '@/composables/useLens';
 import { useThemeStore } from '@/stores/theme';
 import { useHomeStore } from '@/stores/home';
 import { blogUrl } from '@/utils/siteLinks';
@@ -152,6 +153,12 @@ function skipToMain(e) {
   main.scrollIntoView({ block: 'start', behavior: 'auto' });
 }
 const home = useHomeStore();
+
+/* 顶栏折射：这条是全宽顶栏，滚动时笔记标题、图片都从它底下过 ——
+   和博客那条不同，这里面积更大、背后往往有真内容，所以值得挂。
+   窄屏/触屏、降低透明度、增强对比下 `useLens` 会自动摘掉。 */
+const navRef = ref(null);
+useLens(navRef);
 
 const mobileOpen = ref(false);
 const scrolled = ref(false);
@@ -233,15 +240,25 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
   position: sticky;
   top: 0;
   z-index: var(--z-nav);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  background: var(--glass);
-  border-bottom: 1px solid transparent;
-  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+  /* 个人主页这套一直是旧材质（--blur / --glass / --card-trans），
+     所以两个站点看起来像两代产品。这里换成博客那边同一套 --sg-*：
+     渐变面 + 顶部镜面 + 色温 + 亮边 + 内嵌体积光 + 高饱和强模糊。 */
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  border-bottom: 1px solid var(--sg-hairline);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur);
+  -webkit-backdrop-filter: var(--sg-blur);
+  transition: box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
 }
+/* 滚动后不加不透明度，只把投影调深一档 —— 玻璃该透还是透 */
 .home-nav.scrolled {
-  border-bottom-color: var(--border);
-  background: var(--card-trans);
+  box-shadow: 0 1px 2px rgba(26, 24, 20, 0.06), var(--sg-shadow), var(--sg-inner);
+}
+/* 折射（Chromium）：`useLens` 判定引擎后才写 data-lens —— Safari/Firefox 上
+   `backdrop-filter: url(#f)` 会解析通过但不渲染，@supports 在这里是假阳性。 */
+.home-nav[data-lens] {
+  backdrop-filter: var(--lens-chain, var(--sg-blur));
+  -webkit-backdrop-filter: var(--lens-chain, var(--sg-blur));
 }
 .nav-inner {
   height: 62px;
@@ -389,8 +406,12 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
 
 /* ============ 页脚 ============ */
 .home-footer {
-  border-top: 1px solid var(--border);
-  background: var(--bg-soft);
+  position: relative;
+  border-top: 1px solid var(--sg-hairline);
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface);
+  box-shadow: var(--sg-shadow), var(--sg-inner);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
 }
 .footer-inner {
   padding: 30px 20px 26px;

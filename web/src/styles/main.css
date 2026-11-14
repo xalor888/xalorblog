@@ -407,7 +407,11 @@
   .card::before,
   .dock-btn::before,
   .el-message-box::before,
-  .site-footer::before {
+  .site-footer::before,
+  /* 个人主页（home.html 入口）的三块玻璃：名片 / 页脚。顶栏是全宽条，
+     左右两侧的边落在屏幕外、上沿又贴着视口顶——给它画环没有意义，只保留材质。 */
+  .home-hero::before,
+  .home-footer::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -425,7 +429,9 @@
   /* 页面级表面用 --sg-rim，浮层用 --lg-rim —— 两套材质亮边本就不同强度 */
   .site-nav,
   .dock-btn,
-  .site-footer {
+  .site-footer,
+  .home-hero,
+  .home-footer {
     --rim: var(--sg-rim);
   }
 
@@ -436,7 +442,8 @@
 
   /* 页脚只有一条 `border-top`，环的四边里只有上沿有意义：
      其余三边收成 0，避免在左右两侧多画两条并不存在的亮线。 */
-  .site-footer::before {
+  .site-footer::before,
+  .home-footer::before {
     padding: 1px 0 0;
   }
 }

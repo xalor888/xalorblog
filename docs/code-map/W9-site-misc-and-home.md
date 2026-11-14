@@ -69,7 +69,9 @@
 - 实际逻辑：`loadNotes()` 调 `noteApi.list({page:1,pageSize:6})`（走闸门，票据未就绪会短暂等待，于是手记区后于名片出现）；`onLike(note)` 以「抛异常即失败」契约交给 `NoteCard`，成功就回写 `note.likes`；`retry()` 同时 `home.load(true)` 与 `loadNotes()`；模板用 `home.failed` 区分「加载失败」与「后台没填」：失败时隐藏 `hero-meta` 显示重试按钮，`aboutText` 改成「内容加载失败，请点击上方重试。」。
 - 项目内依赖：`@/components/ui/XIcon.vue`、`@/components/home/NoteCard.vue`、`@/stores/home`、`@/api`（`noteApi`）、`@/utils/siteLinks`（`blogUrl`）、`@/utils/format`（`timeAgo`）、`@/utils/pageMeta`。
 - 后端约定：① `GET /api/home/summary` —— **免票**裸 `fetch`（`api/homePublic.js`，8s 超时、`credentials:'same-origin'`、不带 `X-Pass`/`X-Sig`），返回 `{site_name, site_desc, avatar, announcement, icp, home_site_url, hero:{greeting,role,quote,status}, since_date, running_days, about_excerpt, social:{github,weibo,email,extra}, links[], stats:{article_count,note_count}, recent_posts[]}`（`server/src/routes/home.js:80-113`，服务端另有 60 次/分钟独立限流 + antiBot）。② `GET /api/notes?page&pageSize`（票据+X-Sig，正文 AES-GCM 由响应拦截器解密）。③ `POST /api/notes/:id/like` → `{likes}`（服务端 IP+指纹防刷）。
-- UI/交互：无 Element Plus 组件；`sg-liquid` 玻璃名片、骨架屏 `shimmer`、`prefers-reduced-motion` 关掉骨架动画；触摸目标对 `.block-more` 用 `min-height:40px` + 负 margin 撑到 40px；`overflow-wrap:anywhere` 防长串撑宽；`duo` 在无友链时切单列；封面 `loading="lazy"` + `alt=""`。
+- UI/交互：无 Element Plus 组件；名片换成了**深色厚玻璃**：`home-hero-bg` 通栏底图（`hero.webp`，`mask` 向下渐隐）+ 半透明暗渐变面 + 白字，
+  并挂 `useLens(heroCard, { bevel:64, maxShift:44, blur:8, saturate:1.25, dispersion:0.09 })` 做真折射（Chromium 才渲染
+  `backdrop-filter: url(#f)`，Safari/Firefox 保持 30px 雾面）；亮环由 `.home-hero::before`（`main.css` 边缘亮环段落）画。骨架屏 `shimmer`、`prefers-reduced-motion` 关掉骨架动画；触摸目标对 `.block-more` 用 `min-height:40px` + 负 margin 撑到 40px；`overflow-wrap:anywhere` 防长串撑宽；`duo` 在无友链时切单列；封面 `loading="lazy"` + `alt=""`。
 - 副作用/失败模式：`watchEffect` 里写 `document.title`/meta（设置到达后再触发一次）；`onMounted` 各拉一次 summary 与手记；手记区失败只降级成一句文案（无重试按钮），名片区失败才有重试；`hero.status` 缺失会被伪装成「在线」。
 
 ### web/src/views/home/Layout.vue（507 行）
@@ -79,7 +81,9 @@
 - 实际逻辑：`isActive(item)` 自己判活跃（`exact` 比 `route.path === '/'`，否则 `startsWith`），注释说明不能用 `router-link-active`（`/notes` 下两个都会亮）；`onScroll` 用 `requestAnimationFrame` + `ticking` 节流写 `scrolled`（>16px）与 `showTop`（>480px）；`skipToMain` 只聚焦 `#home-main` 不改 hash（hash 路由下锚点会被当导航）；`onMounted` 调 `home.load()`、`onUnmounted` 解绑 scroll。
 - 项目内依赖：`@/components/ui/XIcon.vue`、`@/stores/theme`、`@/stores/home`、`@/utils/siteLinks`（`blogUrl`）；`#float-dock` 容器来自 `web/home.html:55`。
 - 后端约定：自身不发请求，summary 由 `useHomeStore().load()` → 免票 `GET /api/home/summary`；页脚备案号 `icp` 外链 `beian.miit.gov.cn`；RSS 直连 `/api/rss.xml`。
-- UI/交互：`Teleport to="#float-dock"` 并入全局浮层栈；`transition name="drawer"` / `"page"`（`mode="out-in"`、240/200ms）；`<main id="home-main" tabindex="-1">`；`aria-expanded` 在汉堡按钮上；`prefers-reduced-motion` 关掉三组过渡。
+- UI/交互：顶栏与页脚原先用的是旧材质（`--blur`/`--glass`/`--card-trans`/`--border`），与博客那边像两代产品；
+  现在统一到 `--sg-*`（渐变面 + 镜面 + 色温 + `--sg-hairline` 边 + `--sg-shadow`/`--sg-inner`），顶栏再挂 `useLens(navRef)`，
+  滚动时笔记标题/封面从它底下过就会看到边缘弯折。`Teleport to="#float-dock"` 并入全局浮层栈；`transition name="drawer"` / `"page"`（`mode="out-in"`、240/200ms）；`<main id="home-main" tabindex="-1">`；`aria-expanded` 在汉堡按钮上；`prefers-reduced-motion` 关掉三组过渡。
 - 副作用/失败模式：`home.load()` 与三个页面各自再调一次（store 幂等，但四处重复）；summary 失败时页脚统计整块隐藏、站名回落 `Xalor`；抽屉无 Escape/遮罩/焦点管理，键盘用户打开后焦点留在汉堡上。
 
 ### web/src/views/home/NoteDetail.vue（343 行）
