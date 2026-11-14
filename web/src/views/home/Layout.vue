@@ -398,6 +398,10 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll));
 .home-main {
   flex: 1;
   padding: 30px 0 56px;
+  /* flex item 的默认 min-width:auto 会取内容 min-content 宽度：
+     卡片/画带把 min-content 撑到 570+，main 于是比视口宽，整页横向滚动。
+     显式 0 才是「允许被压缩」的意思。 */
+  min-width: 0;
 }
 /* 路由切换：与博客一致的淡入上浮 */
 .page-enter-active, .page-leave-active { transition: opacity 0.24s var(--ease), transform 0.24s var(--ease); }

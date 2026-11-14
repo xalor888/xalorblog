@@ -62,7 +62,7 @@
 - UI/交互：纯 CSS 云（`flex-wrap` + 四档 `font-size/font-weight`），hover `translateY(-3px) scale(1.04)` 并反白；空标签 `opacity: .5`、`cursor: default` 且显式覆写 hover 反馈；`v-reveal` 整块入场。
 - 副作用/失败模式：请求失败 → 空云 + 「共 0 个标签」，无失败态；`weight-1` 类名在样式表中不存在（见观察）。
 
-### web/src/views/home/Home.vue（529 行）
+### web/src/views/home/Home.vue（656 行）
 
 - 职责：个人主页首页（名片 + 最近手记 + 最近文章 + 友链/关于双卡）。
 - 结构：`useHomeStore()` 的 `summary` 派生 `siteName`/`siteDesc`/`avatar`/`hero`/`social`/`stats`/`runningDays`/`aboutExcerpt`/`links`/`recentPosts`；本地状态 `notes`/`notesLoading`/`notesFailed`；`STATUS` 常量把 `hero.status` 映射成 `is-online|busy|away|offline` + 中文文案，未知值回落 `online`。
@@ -70,11 +70,12 @@
 - 项目内依赖：`@/components/ui/XIcon.vue`、`@/components/home/NoteCard.vue`、`@/stores/home`、`@/api`（`noteApi`）、`@/utils/siteLinks`（`blogUrl`）、`@/utils/format`（`timeAgo`）、`@/utils/pageMeta`。
 - 后端约定：① `GET /api/home/summary` —— **免票**裸 `fetch`（`api/homePublic.js`，8s 超时、`credentials:'same-origin'`、不带 `X-Pass`/`X-Sig`），返回 `{site_name, site_desc, avatar, announcement, icp, home_site_url, hero:{greeting,role,quote,status}, since_date, running_days, about_excerpt, social:{github,weibo,email,extra}, links[], stats:{article_count,note_count}, recent_posts[]}`（`server/src/routes/home.js:80-113`，服务端另有 60 次/分钟独立限流 + antiBot）。② `GET /api/notes?page&pageSize`（票据+X-Sig，正文 AES-GCM 由响应拦截器解密）。③ `POST /api/notes/:id/like` → `{likes}`（服务端 IP+指纹防刷）。
 - UI/交互：无 Element Plus 组件；名片换成了**深色厚玻璃**：`home-hero-bg` 通栏底图（`hero.webp`，`mask` 向下渐隐）+ 半透明暗渐变面 + 白字，
+  版式重写过一轮：名片收窄到 540px 并骑在画带下沿，下面的版块从裸行改成实色面板（内容层不上玻璃），`.post-list`/`.note-list` 的隐式 grid 列改用 `minmax(0,1fr)`（否则标题 max-content 会把行撑到视口外）。
   并挂 `useLens(heroCard, { bevel:64, maxShift:44, blur:8, saturate:1.25, dispersion:0.09 })` 做真折射（Chromium 才渲染
   `backdrop-filter: url(#f)`，Safari/Firefox 保持 30px 雾面）；亮环由 `.home-hero::before`（`main.css` 边缘亮环段落）画。骨架屏 `shimmer`、`prefers-reduced-motion` 关掉骨架动画；触摸目标对 `.block-more` 用 `min-height:40px` + 负 margin 撑到 40px；`overflow-wrap:anywhere` 防长串撑宽；`duo` 在无友链时切单列；封面 `loading="lazy"` + `alt=""`。
 - 副作用/失败模式：`watchEffect` 里写 `document.title`/meta（设置到达后再触发一次）；`onMounted` 各拉一次 summary 与手记；手记区失败只降级成一句文案（无重试按钮），名片区失败才有重试；`hero.status` 缺失会被伪装成「在线」。
 
-### web/src/views/home/Layout.vue（507 行）
+### web/src/views/home/Layout.vue（532 行）
 
 - 职责：个人主页外壳：skip-link、吸顶导航（本地路由 + 跨站链接 + 主题/RSS/汉堡）、`router-view` 页过渡、页脚品牌/链接/统计/备案、`#float-dock` 浮层（主题 + 回到顶部）。
 - 结构：`localItems`（const：`/` 首页 exact、`/notes` 手记）、`crossItems`（computed，指向 `blogUrl('articles'|'links'|'about')`）；`avatar`/`siteName`/`siteDesc`/`socialGithub`（正则只放行 `https://github.com/xxx`）/`socialEmail`/`stats`/`runningDays`/`icp`/`footerText`。

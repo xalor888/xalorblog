@@ -223,21 +223,52 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.home-page { width: 100%; position: relative; }
+/* ============================================================================
+   个人主页 · 版式
+   ----------------------------------------------------------------------------
+   上一版的问题（重写的原因）：
+     · 一张 1000px 宽、470px 高的暗色板压在图上，中间只有几行字 —— 像个灰盒子；
+     · 底图从页顶铺到卡片尾部，卡片自己也压在同一块半透明的图里，整体糊成一片；
+     · 下面的「最近手记 / 最近文章 / 朋友们」全是裸行直接落在页面底色上，
+       没有容器，读者分不清哪里是一段、哪里是两段；
+     · 名片的身份色用 #ffb4a2 压在灰玻璃上，几乎读不出颜色。
+   现在：底图收成一条 400px 的「画带」，名片**窄一半**并骑在画带下沿，
+   下面每个版块都是一张实色面板 —— 玻璃只出现在名片与顶栏（控件层），
+   内容层按 Apple HIG 保持实色，读起来才不累。
+   ============================================================================ */
 
-/* 通栏底图：用 100vw 冲出 .home-container 的限宽，靠 mask 向下渐隐，不切一刀。
-   z-index 0，内容整体抬到 1 —— 卡片才在图上而不是被图盖住。 */
+.home-page {
+  width: 100%;
+  position: relative;
+  /* 必须建立 BFC（flow-root）：名片的 `margin-top` 是「把卡片推到画带中间」用的，
+     而这个页面链路上 .home-container / .home-page 都没有 padding/border，
+     于是那个 margin 会**穿透两层父级塌陷出去**，把整页（连同绝对定位的画带）
+     往下推 72px —— 表现就是顶栏和插画之间凭空多出一条灰带。
+     flow-root 把塌陷关在 .home-page 里面。 */
+  display: flow-root;
+  /* 兜底：画带用 100vw 横铺，窄屏上如果父级 flex 的 min-content 被撑大，
+     页面会横向溢出（实测 390 宽下 scrollWidth 曾到 577）。这里裁掉溢出，
+     真正的修法在 Layout.vue 的 `.home-main { min-width: 0 }`。 */
+  max-width: 100vw;
+  overflow-x: clip;
+}
+
+/* 通栏画带：100vw 冲出 .home-container 的限宽，底部用 mask 化进页面底色。
+   再叠一层向下的暗角，让骑在下沿的名片有对比，而不是直接压在亮部上。 */
 .home-hero-bg {
   position: absolute;
   top: -30px;
   left: 50%;
   width: 100vw;
-  height: 470px;
+  height: 420px;
   transform: translateX(-50%);
-  background: #14110e url('@/assets/hero.webp') center 26% / cover no-repeat;
-  -webkit-mask-image: linear-gradient(to bottom, #000 0 58%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0 58%, transparent 100%);
-  opacity: 0.82;
+  background:
+    linear-gradient(to bottom, rgba(10, 9, 8, 0) 46%, rgba(10, 9, 8, 0.42) 78%, rgba(10, 9, 8, 0.8) 100%),
+    #14110e url('@/assets/hero.webp') center 36% / cover no-repeat;
+  /* 上沿不做渐隐：底图正好落在顶栏下沿，让它是一条干净的「画带」。
+     之前试过顶部也淡出，结果页面底色（浅灰）从缝里透出来，反而多出一条灰带。 */
+  -webkit-mask-image: linear-gradient(to bottom, #000 0 70%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0 70%, transparent 100%);
   pointer-events: none;
   z-index: 0;
 }
@@ -245,83 +276,94 @@ onMounted(() => {
 /* ============ 名片 ============ */
 .hero {
   position: relative;
+  /* 窄、且向下压：盖住画带的下沿再落回页面底色 —— 这张卡才像「浮在图上」，
+     而不是「图里挖了一块」。 */
+  max-width: 540px;
+  margin: 48px auto 0;
+  padding: 24px 22px 20px;
   text-align: center;
-  padding: 34px 22px 28px;
-  /* 名片压在一张插画上，所以材质走博客头图那套「深色玻璃」：
-     半透明暗渐变让图透进来 + 顶部镜面 + 亮边，文字转浅色才压得住。
-     边缘亮环由 `.home-hero::before` 画（见 main.css「边缘亮环」段落）。 */
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: var(--radius-lg);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  /* 三层：镜面高光 → 文字区压暗（保证白字在亮部也可读）→ 玻璃本体的暗渐变。
+     只有第二层是「为了可读性」的，它从卡片下半部开始压，上半部仍让插画透进来。 */
   background:
-    radial-gradient(130% 90% at 16% -12%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 55%),
-    linear-gradient(160deg, rgba(18, 15, 13, 0.40) 0%, rgba(12, 10, 8, 0.28) 46%, rgba(20, 17, 15, 0.46) 100%);
+    radial-gradient(120% 80% at 18% -10%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 56%),
+    linear-gradient(to bottom, rgba(10, 9, 8, 0) 30%, rgba(10, 9, 8, 0.42) 62%, rgba(10, 9, 8, 0.5) 100%),
+    linear-gradient(162deg, rgba(20, 17, 15, 0.34) 0%, rgba(14, 12, 10, 0.22) 48%, rgba(22, 19, 16, 0.38) 100%);
   box-shadow:
-    0 30px 90px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.26),
-    inset 0 -1px 1px rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(30px) saturate(1.5);
-  -webkit-backdrop-filter: blur(30px) saturate(1.5);
+    0 26px 70px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 0 40px rgba(255, 255, 255, 0.06),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.05);
   color: #fff;
+  backdrop-filter: blur(26px) saturate(1.4);
+  -webkit-backdrop-filter: blur(26px) saturate(1.4);
 }
 
-/* 折射（Chromium）：和博客头图面板同一套厚玻璃参数 */
+/* 折射（Chromium）：`useLens` 判定引擎后才写 data-lens；Safari/Firefox 上它永远不在，
+   那就是上面那条普通雾面 —— 两种形态各自完整。 */
 .hero[data-lens] {
-  backdrop-filter: var(--lens-chain, blur(30px) saturate(1.5));
-  -webkit-backdrop-filter: var(--lens-chain, blur(30px) saturate(1.5));
+  backdrop-filter: var(--lens-chain, blur(26px) saturate(1.4));
+  -webkit-backdrop-filter: var(--lens-chain, blur(26px) saturate(1.4));
 }
+
+/* 头像：外圈一圈亮线当「玻璃匙扣」，比两像素白描边更像材质 */
 .hero-avatar-wrap {
   position: relative;
-  width: 84px;
-  height: 84px;
-  margin: 0 auto 14px;
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 10px;
 }
 .hero-avatar {
-  width: 84px;
-  height: 84px;
+  width: 68px;
+  height: 68px;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid var(--card);
-  box-shadow: var(--shadow-1);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 .hero-status {
   position: absolute;
-  right: 4px;
-  bottom: 6px;
-  width: 14px;
-  height: 14px;
+  right: 3px;
+  bottom: 4px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
-  border: 2px solid var(--card);
+  border: 2px solid rgba(20, 17, 15, 0.9);
 }
-.hero-status.is-online { background: #10b981; }
-.hero-status.is-busy { background: #ef4444; }
-.hero-status.is-away { background: #f59e0b; }
+.hero-status.is-online { background: #34d399; }
+.hero-status.is-busy { background: #f87171; }
+.hero-status.is-away { background: #fbbf24; }
 .hero-status.is-offline { background: #94a3b8; }
 
 .hero-kicker {
   margin: 0;
-  font-size: 12px;
-  letter-spacing: 0.16em;
+  font-size: 11.5px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(255, 255, 255, 0.6);
   font-family: var(--font-mono);
 }
 .hero-title {
-  margin: 6px 0 4px;
-  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  margin: 4px 0 2px;
+  font-size: clamp(1.55rem, 3.4vw, 1.95rem);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.35);
 }
 .hero-role {
   margin: 0;
-  font-size: 14px;
-  color: #ffb4a2;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--accent) 42%, #fff);
 }
 .hero-quote {
-  margin: 10px auto 0;
-  max-width: 30em;
-  font-size: 14.5px;
-  line-height: 1.75;
-  color: rgba(255, 255, 255, 0.80);
+  margin: 8px auto 0;
+  max-width: 26em;
+  font-size: 14px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.76);
 }
 /* 站名/身份/签名都是后台自由文本：一个 120 字不带空格的串必须能断行，
    否则名片会把 .home-container 撑宽、整页横向滚动 */
@@ -330,77 +372,96 @@ onMounted(() => {
 .hero-quote {
   overflow-wrap: anywhere;
 }
+
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 16px;
 }
 .hero-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
+  min-height: 36px;
+  padding: 7px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.24);
   background: rgba(255, 255, 255, 0.10);
   color: rgba(255, 255, 255, 0.92);
-  font-size: 13.5px;
+  font-size: 13px;
   text-decoration: none;
-  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 .hero-btn:hover {
-  color: #fff;
   background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.5);
+  border-color: rgba(255, 255, 255, 0.46);
   transform: translateY(-1px);
 }
 .hero-btn.primary {
   background: var(--accent-fill);
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
   color: var(--accent-contrast);
 }
-.hero-btn.primary:hover { color: var(--accent-contrast); }
+.hero-btn.primary:hover { background: color-mix(in srgb, var(--accent-fill) 88%, #fff); }
 .hero-btn.ghost { background: transparent; }
 
 .hero-retry {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 20px;
-  padding: 7px 16px;
+  margin-top: 16px;
+  padding: 7px 14px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text-2);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.9);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
-  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  transition: background var(--dur) var(--ease);
 }
-.hero-retry:hover { color: var(--accent-deep); border-color: var(--accent); }
+.hero-retry:hover { background: rgba(255, 255, 255, 0.18); }
 
+/* 统计条：细线分隔，不做成第二个盒子 */
 .hero-meta {
   display: flex;
   justify-content: center;
-  gap: 22px;
-  margin-top: 20px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.62);
+  gap: 0;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.hero-meta span {
+  padding: 0 16px;
+}
+.hero-meta span + span {
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
 }
 .hero-meta b {
   color: #fff;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
-  margin-right: 3px;
+  margin-right: 4px;
 }
 
-/* ============ 版块 ============ */
-.block { margin-top: 26px; }
+/* ============ 版块：内容层用实色卡片，不用玻璃 ============ */
+.block {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: var(--shadow-1);
+}
 .block-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   margin-bottom: 12px;
 }
 .block-head h2 {
@@ -408,10 +469,12 @@ onMounted(() => {
   align-items: center;
   gap: 7px;
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.01em;
+  color: var(--text);
 }
+.block-head h2 :deep(svg) { color: var(--accent-text); }
 .block-more {
   margin-left: auto;
   display: inline-flex;
@@ -424,22 +487,18 @@ onMounted(() => {
   margin-top: -8px;
   margin-bottom: -8px;
   padding: 0 2px;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-3);
   text-decoration: none;
   transition: color var(--dur) var(--ease);
 }
-.block-more:hover { color: var(--accent-deep); }
+.block-more:hover { color: var(--accent-text); }
 
-.note-list {
-  display: grid;
-  gap: 12px;
-}
-.skeleton-list { display: grid; gap: 12px; }
+.note-list { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+.skeleton-list { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
 .skeleton {
-  height: 106px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
+  height: 100px;
+  border-radius: 14px;
   background: linear-gradient(90deg, var(--bg-soft) 25%, var(--card) 50%, var(--bg-soft) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
@@ -450,42 +509,51 @@ onMounted(() => {
 }
 .empty {
   margin: 0;
-  padding: 22px;
+  padding: 16px;
   text-align: center;
-  font-size: 13.5px;
+  font-size: 13px;
   color: var(--text-3);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
+  border: 1px dashed var(--line);
+  border-radius: 14px;
 }
 
-/* ============ 文章列表 ============ */
-.post-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+/* ============ 文章列表：行在卡片里，所以行本身不再叠一层框 ============ */
+.post-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  /* 一定要显式给列：grid 的隐式列是 `auto`，会被标题的 max-content 撑开，
+     390 宽的屏上曾经把行撑到 562（整页横向溢出 187px、标题被切在屏幕外）。
+     minmax(0, 1fr) 才允许行比内容窄，`text-overflow: ellipsis` 这时才生效。 */
+  grid-template-columns: minmax(0, 1fr);
+}
 .post-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card-trans);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 3.5%, transparent);
   text-decoration: none;
   color: inherit;
-  transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 .post-item:hover {
-  border-color: var(--accent);
+  background: var(--accent-soft);
   transform: translateX(2px);
 }
-.post-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.post-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .post-title {
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .post-summary {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -497,11 +565,10 @@ onMounted(() => {
   flex-shrink: 0;
 }
 .post-cover {
-  width: 54px;
-  height: 40px;
-  border-radius: var(--radius-sm);
+  width: 52px;
+  height: 38px;
+  border-radius: 10px;
   object-fit: cover;
-  border: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -509,32 +576,34 @@ onMounted(() => {
 .duo {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 16px;
+  margin-top: 16px;
 }
+.duo > .block { margin-top: 0; }
 /* 没有友链时只剩「关于」一张卡：单列铺满，否则右半边留一大块空白 */
 .duo.single { grid-template-columns: 1fr; }
 .link-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 6px;
 }
 .link-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 11px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--card-trans);
+  min-height: 38px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 3.5%, transparent);
   text-decoration: none;
   color: var(--text-2);
-  font-size: 13px;
-  transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+  font-size: 12.5px;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
-.link-item:hover { border-color: var(--accent); color: var(--accent-deep); }
+.link-item:hover { background: var(--accent-soft); color: var(--accent-text); }
 .link-avatar {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -544,8 +613,8 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   background: var(--accent-soft);
-  color: var(--accent-deep);
-  font-size: 12px;
+  color: var(--accent-text);
+  font-size: 11px;
   font-weight: 700;
 }
 .link-name {
@@ -555,23 +624,33 @@ onMounted(() => {
 }
 .about-text {
   margin: 0;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card-trans);
-  font-size: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 3.5%, transparent);
+  font-size: 13px;
   line-height: 1.8;
   color: var(--text-2);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
-@media (max-width: 780px) {
-  .duo { grid-template-columns: 1fr; gap: 0; }
-  .hero { padding: 26px 16px 22px; }
-  .hero-meta { gap: 16px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .skeleton { animation: none; }
+/* ============ 窄屏：画带收短，名片完全落进页面底色 ============ */
+@media (max-width: 640px) {
+  .home-hero-bg {
+    height: 300px;
+    background-position: center 24%;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0 52%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0 52%, transparent 100%);
+  }
+  .hero {
+    margin-top: 56px;
+    padding: 22px 18px 18px;
+    border-radius: 20px;
+  }
+  .hero-avatar-wrap,
+  .hero-avatar { width: 66px; height: 66px; }
+  .hero-meta { gap: 0; font-size: 12px; }
+  .hero-meta span { padding: 0 12px; }
+  .block { padding: 14px; }
+  .duo { grid-template-columns: 1fr; }
+  .post-cover { display: none; }
 }
 </style>
