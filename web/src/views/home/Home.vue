@@ -1,15 +1,23 @@
 <template>
   <div class="home-page">
-    <!-- 名片下面需要「有东西可折射」的底图。个人主页原本只有一层彩色渐变，
-         玻璃压上去等于白玻璃盖白纸 —— 透镜再准也看不见。
-         所以这里补一条与博客同一张插画的通栏底图，向下渐隐进页面底色。 -->
-    <div class="home-hero-bg" aria-hidden="true"></div>
     <div class="home-container">
-      <!-- ============ 名片 ============ -->
-      <section ref="heroCard" class="hero home-hero sg-liquid" aria-label="个人名片">
-        <div class="hero-avatar-wrap">
-          <img class="hero-avatar" :src="avatar" :alt="siteName" />
-          <span class="hero-status" :class="statusClass" :title="statusText"></span>
+      <!-- ============ 名片：圆环 ============
+           不要和博客一样的「大图 + 深色玻璃板」：这里整块不打底，
+           用一圈玻璃圆环把头像框住，信息落在环下的页面上。
+           环是 mask-composite 挖出来的环带（同 main.css 亮环那套语法），
+           所以它能吃到 backdrop-filter，也天然跟随圆形。 -->
+      <section class="hero-zone" aria-label="个人名片">
+        <div class="orbit">
+          <!-- 环外再走一条强调色弧：这是「圆环」这套视觉的签名，
+               也让淡色环在一张浅底上真的看得见边缘 -->
+          <div class="orbit-arc" aria-hidden="true"></div>
+          <div ref="orbitRing" class="orbit-ring">
+            <span class="orbit-sheen" aria-hidden="true"></span>
+          </div>
+          <div class="orbit-core">
+            <img class="hero-avatar" :src="avatar" :alt="siteName" />
+            <span class="hero-status" :class="statusClass" :title="statusText"></span>
+          </div>
         </div>
 
         <p class="hero-kicker">{{ hero.greeting || "Hi, I'm" }}</p>
@@ -19,16 +27,16 @@
 
         <div class="hero-actions">
           <a v-if="social.github" class="hero-btn primary" :href="social.github" target="_blank" rel="noopener noreferrer">
-            <XIcon name="Github" :size="17" /> GitHub
+            <XIcon name="Github" :size="16" /> GitHub
           </a>
           <a v-if="social.email" class="hero-btn" :href="`mailto:${social.email}`">
-            <XIcon name="Mail" :size="17" /> 邮箱
+            <XIcon name="Mail" :size="16" /> 邮箱
           </a>
           <a v-for="s in social.extra" :key="s.url" class="hero-btn" :href="s.url" target="_blank" rel="noopener noreferrer">
-            <XIcon name="Link2" :size="16" /> {{ s.label }}
+            <XIcon name="Link2" :size="15" /> {{ s.label }}
           </a>
           <a class="hero-btn ghost" :href="blogUrl('articles')">
-            阅读文章 <XIcon name="ArrowUpRight" :size="15" />
+            阅读文章 <XIcon name="ArrowUpRight" :size="14" />
           </a>
         </div>
 
@@ -129,12 +137,11 @@ import { applyPageMeta } from '@/utils/pageMeta';
 
 const home = useHomeStore();
 
-/* 名片是主页上唯一「压在大图上」的玻璃，参数照博客头图那组厚玻璃给：
-   模糊压到 8px、位移 44px、色散 9% —— 够厚才看得见弯折。
-   Safari / Firefox 上 `useLens` 不会挂（那两家不渲染 backdrop-filter: url(#f)），
-   它们看到的是本来的 30px 雾面。 */
-const heroCard = ref(null);
-useLens(heroCard, { bevel: 64, maxShift: 44, blur: 8, saturate: 1.25, dispersion: 0.09 });
+/* 折射挂在**环**上，不是挂在整块名片上：环带只有 18px 厚，
+   所以 bevel 就取环宽（18）、位移只给 12 —— 再大就会跨过环心、把中间的空洞也拖歪。
+   参数显式给，别让它按短边自动算（自动值会是 79，等于环宽的 4 倍）。 */
+const orbitRing = ref(null);
+useLens(orbitRing, { bevel: 18, maxShift: 12, blur: 16, saturate: 1.4, dispersion: 0.08 });
 const notes = ref([]);
 const notesLoading = ref(true);
 const notesFailed = ref(false);
@@ -224,149 +231,173 @@ onMounted(() => {
 
 <style scoped>
 /* ============================================================================
-   个人主页 · 版式
+   个人主页 · 圆环名片
    ----------------------------------------------------------------------------
-   上一版的问题（重写的原因）：
-     · 一张 1000px 宽、470px 高的暗色板压在图上，中间只有几行字 —— 像个灰盒子；
-     · 底图从页顶铺到卡片尾部，卡片自己也压在同一块半透明的图里，整体糊成一片；
-     · 下面的「最近手记 / 最近文章 / 朋友们」全是裸行直接落在页面底色上，
-       没有容器，读者分不清哪里是一段、哪里是两段；
-     · 名片的身份色用 #ffb4a2 压在灰玻璃上，几乎读不出颜色。
-   现在：底图收成一条 400px 的「画带」，名片**窄一半**并骑在画带下沿，
-   下面每个版块都是一张实色面板 —— 玻璃只出现在名片与顶栏（控件层），
-   内容层按 Apple HIG 保持实色，读起来才不累。
+   不再沿用博客那套「通栏大图 + 深色玻璃板」—— 那是博客的语言，搬到这里只是
+   把同一个版式再做一遍。这一版只用**一圈玻璃环**：头像在环心，信息落在环下，
+   整页没有一块压在图上的深色底板。
+
+   环的做法：`padding: 18px` + 两层 mask（content-box ⊕ border-box）挖出环带，
+   `border-radius: 50%` 让它天然是圆的；环上同时开 `backdrop-filter`，
+   所以环带里的背景是被折射/模糊过的，而不是涂一层白。
    ============================================================================ */
 
 .home-page {
   width: 100%;
   position: relative;
-  /* 必须建立 BFC（flow-root）：名片的 `margin-top` 是「把卡片推到画带中间」用的，
-     而这个页面链路上 .home-container / .home-page 都没有 padding/border，
-     于是那个 margin 会**穿透两层父级塌陷出去**，把整页（连同绝对定位的画带）
-     往下推 72px —— 表现就是顶栏和插画之间凭空多出一条灰带。
-     flow-root 把塌陷关在 .home-page 里面。 */
-  display: flow-root;
-  /* 兜底：画带用 100vw 横铺，窄屏上如果父级 flex 的 min-content 被撑大，
-     页面会横向溢出（实测 390 宽下 scrollWidth 曾到 577）。这里裁掉溢出，
-     真正的修法在 Layout.vue 的 `.home-main { min-width: 0 }`。 */
+  /* 底部浮钮 / 环上的微光都用绝对定位，窄屏时别让它们把页面撑出横向滚动 */
   max-width: 100vw;
   overflow-x: clip;
 }
 
-/* 通栏画带：100vw 冲出 .home-container 的限宽，底部用 mask 化进页面底色。
-   再叠一层向下的暗角，让骑在下沿的名片有对比，而不是直接压在亮部上。 */
-.home-hero-bg {
-  position: absolute;
-  top: -30px;
-  left: 50%;
-  width: 100vw;
-  height: 420px;
-  transform: translateX(-50%);
-  background:
-    linear-gradient(to bottom, rgba(10, 9, 8, 0) 46%, rgba(10, 9, 8, 0.42) 78%, rgba(10, 9, 8, 0.8) 100%),
-    #14110e url('@/assets/hero.webp') center 36% / cover no-repeat;
-  /* 上沿不做渐隐：底图正好落在顶栏下沿，让它是一条干净的「画带」。
-     之前试过顶部也淡出，结果页面底色（浅灰）从缝里透出来，反而多出一条灰带。 */
-  -webkit-mask-image: linear-gradient(to bottom, #000 0 70%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0 70%, transparent 100%);
-  pointer-events: none;
-  z-index: 0;
-}
-
 /* ============ 名片 ============ */
-.hero {
-  position: relative;
-  /* 窄、且向下压：盖住画带的下沿再落回页面底色 —— 这张卡才像「浮在图上」，
-     而不是「图里挖了一块」。 */
-  max-width: 540px;
-  margin: 48px auto 0;
-  padding: 24px 22px 20px;
+.hero-zone {
   text-align: center;
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  /* 三层：镜面高光 → 文字区压暗（保证白字在亮部也可读）→ 玻璃本体的暗渐变。
-     只有第二层是「为了可读性」的，它从卡片下半部开始压，上半部仍让插画透进来。 */
-  background:
-    radial-gradient(120% 80% at 18% -10%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 56%),
-    linear-gradient(to bottom, rgba(10, 9, 8, 0) 30%, rgba(10, 9, 8, 0.42) 62%, rgba(10, 9, 8, 0.5) 100%),
-    linear-gradient(162deg, rgba(20, 17, 15, 0.34) 0%, rgba(14, 12, 10, 0.22) 48%, rgba(22, 19, 16, 0.38) 100%);
-  box-shadow:
-    0 26px 70px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 0 40px rgba(255, 255, 255, 0.06),
-    inset 0 -1px 1px rgba(255, 255, 255, 0.05);
-  color: #fff;
-  backdrop-filter: blur(26px) saturate(1.4);
-  -webkit-backdrop-filter: blur(26px) saturate(1.4);
+  padding: 10px 0 4px;
 }
 
-/* 折射（Chromium）：`useLens` 判定引擎后才写 data-lens；Safari/Firefox 上它永远不在，
-   那就是上面那条普通雾面 —— 两种形态各自完整。 */
-.hero[data-lens] {
-  backdrop-filter: var(--lens-chain, blur(26px) saturate(1.4));
-  -webkit-backdrop-filter: var(--lens-chain, blur(26px) saturate(1.4));
-}
-
-/* 头像：外圈一圈亮线当「玻璃匙扣」，比两像素白描边更像材质 */
-.hero-avatar-wrap {
+.orbit {
   position: relative;
-  width: 68px;
-  height: 68px;
-  margin: 0 auto 10px;
+  width: 240px;
+  height: 240px;
+  margin: 2px auto 8px;
+}
+
+/* 环带本体：玻璃材质 + 亮边，挖空环心 */
+.orbit-ring,
+.orbit-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  padding: 16px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.orbit-ring {
+  /* 背后是一张很浅的纸，纯白玻璃几乎看不见 —— 这里把面加一点色温与描边，
+     环才有「一圈实体」的边界，而不是一团雾。 */
+  background: var(--sg-sheen), var(--sg-tint), var(--sg-surface),
+    color-mix(in srgb, var(--accent) 7%, transparent);
+  border: 1px solid var(--sg-edge);
+  box-shadow: var(--sg-inner), 0 18px 44px rgba(26, 24, 20, 0.10);
+  backdrop-filter: var(--sg-blur-soft);
+  -webkit-backdrop-filter: var(--sg-blur-soft);
+}
+
+/* 折射（Chromium）：`useLens` 判定引擎后才写 data-lens；
+   Safari / Firefox 上它永远不在，看到的就是上面那条普通雾面环。 */
+.orbit-ring[data-lens] {
+  backdrop-filter: var(--lens-chain, var(--sg-blur-soft));
+  -webkit-backdrop-filter: var(--lens-chain, var(--sg-blur-soft));
+}
+
+/* 强调色弧：环外 6px 处一条 2px 宽的弧，占圆周约 26%，缓慢自转 */
+.orbit-arc {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  padding: 2px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  background: conic-gradient(
+    from 0deg,
+    color-mix(in srgb, var(--accent) 85%, transparent) 0deg,
+    color-mix(in srgb, var(--accent) 0%, transparent) 92deg,
+    transparent 360deg
+  );
+  animation: orbit-spin 18s linear infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbit-arc { animation: none; }
+}
+
+/* 环上一道缓慢绕行的镜面高光 —— 「液态」的那口气，只画在环带上 */
+.orbit-sheen {
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 255, 255, 0) 0deg,
+    rgba(255, 255, 255, 0.55) 54deg,
+    rgba(255, 255, 255, 0) 128deg,
+    rgba(255, 255, 255, 0) 250deg,
+    rgba(255, 255, 255, 0.3) 310deg,
+    rgba(255, 255, 255, 0) 360deg
+  );
+  animation: orbit-spin 14s linear infinite;
+  pointer-events: none;
+}
+@keyframes orbit-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbit-sheen { animation: none; }
+}
+
+/* 环心：头像 + 状态点 */
+.orbit-core {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
 }
 .hero-avatar {
-  width: 68px;
-  height: 68px;
+  width: 140px;
+  height: 140px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  border: 1px solid var(--line);
+  background: var(--card);
+  box-shadow:
+    0 14px 34px rgba(26, 24, 20, 0.16),
+    0 0 0 1px color-mix(in srgb, var(--card) 90%, transparent);
 }
 .hero-status {
   position: absolute;
-  right: 3px;
-  bottom: 4px;
-  width: 13px;
-  height: 13px;
+  right: 44px;
+  bottom: 48px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
-  border: 2px solid rgba(20, 17, 15, 0.9);
+  border: 2px solid var(--card);
 }
-.hero-status.is-online { background: #34d399; }
-.hero-status.is-busy { background: #f87171; }
-.hero-status.is-away { background: #fbbf24; }
+.hero-status.is-online { background: #10b981; }
+.hero-status.is-busy { background: #ef4444; }
+.hero-status.is-away { background: #f59e0b; }
 .hero-status.is-offline { background: #94a3b8; }
 
 .hero-kicker {
-  margin: 0;
+  margin: 10px 0 0;
   font-size: 11.5px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
   font-family: var(--font-mono);
 }
 .hero-title {
   margin: 4px 0 2px;
-  font-size: clamp(1.55rem, 3.4vw, 1.95rem);
+  font-size: clamp(1.6rem, 4vw, 2.05rem);
   font-weight: 700;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
   line-height: 1.25;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.35);
+  color: var(--text);
 }
 .hero-role {
   margin: 0;
   font-size: 13px;
   letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--accent) 42%, #fff);
+  color: var(--accent-text);
 }
 .hero-quote {
   margin: 8px auto 0;
-  max-width: 26em;
+  max-width: 24em;
   font-size: 14px;
-  line-height: 1.7;
-  color: rgba(255, 255, 255, 0.76);
+  line-height: 1.75;
+  color: var(--text-2);
 }
-/* 站名/身份/签名都是后台自由文本：一个 120 字不带空格的串必须能断行，
-   否则名片会把 .home-container 撑宽、整页横向滚动 */
+/* 站名/身份/签名都是后台自由文本：一个 120 字不带空格的串必须能断行 */
 .hero-title,
 .hero-role,
 .hero-quote {
@@ -387,26 +418,28 @@ onMounted(() => {
   min-height: 36px;
   padding: 7px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-2);
   font-size: 13px;
   text-decoration: none;
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
     transform var(--dur) var(--ease);
 }
 .hero-btn:hover {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.46);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
   transform: translateY(-1px);
 }
 .hero-btn.primary {
   background: var(--accent-fill);
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  border-color: transparent;
   color: var(--accent-contrast);
 }
-.hero-btn.primary:hover { background: color-mix(in srgb, var(--accent-fill) 88%, #fff); }
+.hero-btn.primary:hover { color: var(--accent-contrast); }
 .hero-btn.ghost { background: transparent; }
+.hero-btn.ghost:hover { background: var(--accent-soft); }
 
 .hero-retry {
   display: inline-flex;
@@ -415,38 +448,43 @@ onMounted(() => {
   margin-top: 16px;
   padding: 7px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.26);
-  background: rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-2);
   font-family: inherit;
   font-size: 12.5px;
   cursor: pointer;
-  transition: background var(--dur) var(--ease);
 }
-.hero-retry:hover { background: rgba(255, 255, 255, 0.18); }
+.hero-retry:hover { border-color: var(--accent); color: var(--accent-text); }
 
-/* 统计条：细线分隔，不做成第二个盒子 */
+/* 统计：每个数字放进一枚小圆环里，和上面的环呼应 */
 .hero-meta {
   display: flex;
   justify-content: center;
-  gap: 0;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  gap: 18px;
+  margin-top: 18px;
   font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
 }
 .hero-meta span {
-  padding: 0 16px;
-}
-.hero-meta span + span {
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 .hero-meta b {
-  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--sg-sheen), var(--sg-surface);
+  border: 1px solid var(--sg-hairline);
+  box-shadow: var(--sg-inner);
+  color: var(--text);
+  font-size: 12px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
-  margin-right: 4px;
 }
 
 /* ============ 版块：内容层用实色卡片，不用玻璃 ============ */
@@ -632,23 +670,19 @@ onMounted(() => {
   color: var(--text-2);
 }
 
-/* ============ 窄屏：画带收短，名片完全落进页面底色 ============ */
+/* ============ 窄屏：环收小一档，其余照旧 ============ */
 @media (max-width: 640px) {
-  .home-hero-bg {
-    height: 300px;
-    background-position: center 24%;
-    -webkit-mask-image: linear-gradient(to bottom, #000 0 52%, transparent 100%);
-    mask-image: linear-gradient(to bottom, #000 0 52%, transparent 100%);
+  .orbit { width: 200px; height: 200px; }
+  .orbit-ring, .orbit-sheen { padding: 13px; }
+  .hero-avatar {
+    width: 116px;
+    height: 116px;
+    box-shadow:
+      0 10px 24px rgba(26, 24, 20, 0.14),
+      0 0 0 8px color-mix(in srgb, var(--card) 55%, transparent);
   }
-  .hero {
-    margin-top: 56px;
-    padding: 22px 18px 18px;
-    border-radius: 20px;
-  }
-  .hero-avatar-wrap,
-  .hero-avatar { width: 66px; height: 66px; }
-  .hero-meta { gap: 0; font-size: 12px; }
-  .hero-meta span { padding: 0 12px; }
+  .hero-status { right: 40px; bottom: 44px; }
+  .hero-meta { gap: 14px; font-size: 12px; }
   .block { padding: 14px; }
   .duo { grid-template-columns: 1fr; }
   .post-cover { display: none; }

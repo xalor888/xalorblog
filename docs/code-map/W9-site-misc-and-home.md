@@ -69,10 +69,14 @@
 - 实际逻辑：`loadNotes()` 调 `noteApi.list({page:1,pageSize:6})`（走闸门，票据未就绪会短暂等待，于是手记区后于名片出现）；`onLike(note)` 以「抛异常即失败」契约交给 `NoteCard`，成功就回写 `note.likes`；`retry()` 同时 `home.load(true)` 与 `loadNotes()`；模板用 `home.failed` 区分「加载失败」与「后台没填」：失败时隐藏 `hero-meta` 显示重试按钮，`aboutText` 改成「内容加载失败，请点击上方重试。」。
 - 项目内依赖：`@/components/ui/XIcon.vue`、`@/components/home/NoteCard.vue`、`@/stores/home`、`@/api`（`noteApi`）、`@/utils/siteLinks`（`blogUrl`）、`@/utils/format`（`timeAgo`）、`@/utils/pageMeta`。
 - 后端约定：① `GET /api/home/summary` —— **免票**裸 `fetch`（`api/homePublic.js`，8s 超时、`credentials:'same-origin'`、不带 `X-Pass`/`X-Sig`），返回 `{site_name, site_desc, avatar, announcement, icp, home_site_url, hero:{greeting,role,quote,status}, since_date, running_days, about_excerpt, social:{github,weibo,email,extra}, links[], stats:{article_count,note_count}, recent_posts[]}`（`server/src/routes/home.js:80-113`，服务端另有 60 次/分钟独立限流 + antiBot）。② `GET /api/notes?page&pageSize`（票据+X-Sig，正文 AES-GCM 由响应拦截器解密）。③ `POST /api/notes/:id/like` → `{likes}`（服务端 IP+指纹防刷）。
-- UI/交互：无 Element Plus 组件；名片换成了**深色厚玻璃**：`home-hero-bg` 通栏底图（`hero.webp`，`mask` 向下渐隐）+ 半透明暗渐变面 + 白字，
-  版式重写过一轮：名片收窄到 540px 并骑在画带下沿，下面的版块从裸行改成实色面板（内容层不上玻璃），`.post-list`/`.note-list` 的隐式 grid 列改用 `minmax(0,1fr)`（否则标题 max-content 会把行撑到视口外）。
-  并挂 `useLens(heroCard, { bevel:64, maxShift:44, blur:8, saturate:1.25, dispersion:0.09 })` 做真折射（Chromium 才渲染
-  `backdrop-filter: url(#f)`，Safari/Firefox 保持 30px 雾面）；亮环由 `.home-hero::before`（`main.css` 边缘亮环段落）画。骨架屏 `shimmer`、`prefers-reduced-motion` 关掉骨架动画；触摸目标对 `.block-more` 用 `min-height:40px` + 负 margin 撑到 40px；`overflow-wrap:anywhere` 防长串撑宽；`duo` 在无友链时切单列；封面 `loading="lazy"` + `alt=""`。
+- UI/交互：无 Element Plus 组件。名片是一套**圆环**版式（不复用博客那套「通栏大图 + 深色玻璃板」）：
+  `.orbit` 240px 环带（`padding:16px` + content-box⊕border-box 的两层 mask 挖空，`border-radius:50%`，
+  所以天然是圆的）+ `backdrop-filter`；环外 8px 处一条 `conic-gradient` 强调色弧（自转 18s，
+  `prefers-reduced-motion` 下停），环上一道同款镜面高光弧；环心 140px 头像 + 状态点。
+  折射挂在**环**上（`useLens(orbitRing, { bevel:18, maxShift:12, blur:16, dispersion:0.08 })`），
+  `bevel` 取环宽而不是按短边自算 —— 自动值会是 79，等于环宽的 4 倍，位移会跨过环心。
+  统计数字各装进一枚小玻璃圆环（`--sg-*` 材质），按钮是实色胶囊；下方四个版块是**实色面板**（内容层不上玻璃）。
+  骨架屏 `shimmer`、`prefers-reduced-motion` 关掉骨架动画，顶栏 `useLens(navRef)` 保持。
 - 副作用/失败模式：`watchEffect` 里写 `document.title`/meta（设置到达后再触发一次）；`onMounted` 各拉一次 summary 与手记；手记区失败只降级成一句文案（无重试按钮），名片区失败才有重试；`hero.status` 缺失会被伪装成「在线」。
 
 ### web/src/views/home/Layout.vue（532 行）

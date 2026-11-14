@@ -14,8 +14,10 @@ import { onBeforeUnmount, onMounted } from 'vue';
 import { canRefract, mountLens, unmountLens, nextLensId } from '@/utils/lensFilter';
 
 export function useLens(elRef, options = {}) {
-  const bevel = options.bevel ?? 18;
-  const maxShift = options.maxShift ?? 10;
+  // 显式给了就听显式的：环带这种「厚度由形状决定」的面板，auto 算出来的
+  // 30% 短边会远大于环宽，位移会跨过整个环带、把中间的雾面也拖走。
+  const bevelOption = options.bevel;
+  const shiftOption = options.maxShift;
   // 可选：把雾面强度/饱和度/色散也交出来。默认沿用元素自己的设计值 + 6% 色散；
   // 面板这种「厚玻璃」可以显式给一组更接近参考项目的参数（模糊更浅、位移更大）。
   const blurOption = options.blur;
@@ -83,8 +85,8 @@ export function useLens(elRef, options = {}) {
       width: rect.width,
       height: rect.height,
       radius,
-      bevel: Math.min(Math.max(bevel, autoBevel), Math.floor(shortSide / 3)),
-      maxShift: Math.max(maxShift, autoShift),
+      bevel: Math.min(bevelOption ?? autoBevel, Math.floor(shortSide / 3)),
+      maxShift: shiftOption ?? autoShift,
       // 雾面主体保持设计值（玻璃该有的厚度），清边那层才压到 3-6px：
       // 弯折只在边缘发生，中间那片仍然是雾。
       blur: blurOption ?? Math.min(blurPx, 30),
