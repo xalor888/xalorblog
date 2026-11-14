@@ -6,7 +6,7 @@
       <div class="hero-veil" aria-hidden="true"></div>
       <div class="hero-dots" aria-hidden="true"></div>
 
-      <div class="hero-card sg-liquid">
+      <div ref="heroCard" class="hero-card sg-liquid">
         <p class="hero-kicker">XALOR</p>
         <!-- 侧栏卡片标题用 h2 而不是 h3。
              整页只有 hero 的 h1 与这些卡片标题，从 h1 直接跳到 h3 是**层级跳级**：
@@ -191,6 +191,7 @@ import XIcon from '@/components/ui/XIcon.vue';
 import ArticleCard from '@/components/site/ArticleCard.vue';
 import SkeletonList from '@/components/ui/SkeletonList.vue';
 import { articleApi, categoryApi, tagApi, commentApi, hitokotoApi } from '@/api';
+import { useLens } from '@/composables/useLens';
 import { useSiteStore } from '@/stores/site';
 import { formatNumber } from '@/utils/format';
 import { applyPageMeta } from '@/utils/pageMeta';
@@ -213,6 +214,19 @@ watchEffect(() => {
   });
 });
 const heroBg = ref(null);
+/* 头图上的玻璃面板是整站最该折射的一块：920×420 压在插画上，和参考项目里
+   「拖一块玻璃在照片上」是同一个场景。参数按尺寸自算（见 useLens），
+   导航条那条 74px 的条子用同一套但算出来的 bevel/位移更小。 */
+const heroCard = ref(null);
+useLens(heroCard, {
+  bevel: 64,
+  maxShift: 44,
+  // 头图面板做成「厚玻璃」：模糊压到 8px、饱和降一点、色散 9% ——
+  // 面板够大、底下又是插画，这组参数才真的有透镜感（和参考项目 demo 同量级）。
+  blur: 8,
+  saturate: 1.25,
+  dispersion: 0.09,
+});
 const articles = ref([]);
 const categories = ref([]);
 const tags = ref([]);
@@ -562,6 +576,13 @@ onUnmounted(() => {
     inset 0 -1px 1px rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(30px) saturate(1.5);
   -webkit-backdrop-filter: blur(30px) saturate(1.5);
+}
+
+/* 折射（Chromium）：`useLens` 判定引擎后才写这个属性，Safari/Firefox 上它永远不在，
+   于是它们看到的仍是上面那条普通模糊 —— 不是一个残废版，是另一种完整形态。 */
+.hero-card[data-lens] {
+  backdrop-filter: var(--lens-chain, blur(30px) saturate(1.5));
+  -webkit-backdrop-filter: var(--lens-chain, blur(30px) saturate(1.5));
 }
 
 /* 让正文压在流动高光之上，光带只在玻璃"表面"流动、不糊字 */

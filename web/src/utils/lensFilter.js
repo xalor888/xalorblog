@@ -1,46 +1,42 @@
 /**
  * 液态玻璃 · 折射（SVG feDisplacementMap）
  * ------------------------------------------------------------
- * 前面那版只有「亮环 + 模糊」——边有方向了，但底下的像素**没有被弯折**。
- * 真玻璃会弯折背景：边缘一圈像透镜一样把后面的图像压进去。这件事 blur 做不到，
- * blur 只会把像素平均掉；要位移就得用 `feDisplacementMap`。
+ * 亮环只让「边」有方向；模糊只把像素平均。这两件事都不叫折射。
+ * 真玻璃会**弯折**背后的内容，而且边缘那一圈会稍微「分开」颜色（色散）——
+ * 这就是 Apple 那张图里玻璃边看起来有厚度、有彩色细边的原因。
  *
- * 唯一能「对着真实页面」位移的通道是 `backdrop-filter: url(#filter)`：
- * 它的输入是元素背后**已经合成好的页面**，所以滤镜里看到的弯折是真的。
+ * 唯一能对着真实页面位移的通道是 `backdrop-filter: url(#filter)`：
+ * 它的输入是元素背后**已经合成好的页面**，所以弯折是真的，不是贴图。
  *
- * ⚠ 这条路只有 Chromium 走得了：
- *   · Safari / Firefox 会**解析通过** `backdrop-filter: url(#f)` 然后什么都不画
- *     （不是降级，是完全没有）—— 所以 `@supports` 在这里是假阳性，**只能用引擎判定**；
- *   · 判据放在 `canRefract()` 里，理由写在那儿。
+ * ⚠ 只有 Chromium 渲染 `backdrop-filter: url(#f)`：
+ *   Safari / Firefox 会**解析通过**然后什么都不画 —— `@supports` 在这里是假阳性，
+ *   所以能不能挂由 `canRefract()`（引擎判定）说了算，CSS 侧只认 `data-lens` 属性。
  *
- * 位移图不是预生成贴图，也不是 html2canvas 快照（那两种都跟背景无关 / 会过期），
- * 而是**按元素当前的尺寸和圆角现算一张高度图**：圆角矩形有向距离场 → 边缘 18px 环带
- * 内给出指向内侧的位移向量。规则：
- *   · 中段位移为 0（中间保持普通模糊，正文压在下面也不会糊成水波）；
- *   · 越贴边越强（`u^2` 曲线，边缘最陡）；
- *   · 只在尺寸/圆角/DPR 变化时重建，滚动时不重算。
+ * 滤镜链（一次构建，尺寸变了才重建）：
+ *
+ *   soft  = blur(SourceGraphic, 设计模糊) → saturate      ← 整块雾面
+ *   rim   = blur(SourceGraphic, 浅模糊)   → saturate      ← 只有边缘那圈是清的
+ *   map   = 现算的圆角矩形距离场位移图（R/G 位移，B 当环带权重）
+ *   三个位移通道 dR / dG / dB（scale 依次 +6% / +12%）= 色散
+ *   sum   = dR ⊕ dG ⊕ dB
+ *   rim   = sum ∩ 环带权重
+ *   out   = rim over soft
+ *
+ * 为什么要分两层：只把一张均匀模糊的底图位移出去，屏幕上是一片更脏的灰 ——
+ * 位移看不见。清的那层只在边缘，弯折才看得见，中间仍是雾面（正文不会糊成水波）。
  */
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const SAT_MATRIX = 'saturate';
 
-/** 单例 <svg>：所有折射滤镜挂在这一个节点下，挂在 body 上，`display:none` 不影响滤镜生效 */
 let host = null;
 let seq = 0;
-
-/** 已建过的滤镜：id → 生成时的几何参数，用来跳过无意义的重建 */
 const built = new Map();
 
 /**
  * 引擎判定：能不能真的渲染 `backdrop-filter: url(#f)`。
- *
- * 为什么不用 @supports —— 上面写的那个假阳性。为什么不用「量像素」——
- *
- * backdrop-filter 的结果读不出来（getDisplayMedia 要权限、html2canvas 拍不到滤镜），
- * 所以没有任何运行时探针能区分「画了」和「没画」。剩下的唯一事实是引擎身份：
- * Chromium 家族能画，WebKit 与 Gecko 不能。
- *
- * 这里把 iOS 上的 Chrome/Edge/Firefox 都排除掉（CriOS / EdgiOS / FxiOS）——
- * 它们的 UA 里带 Chrome 字样，但内核是 WebKit，一样画不出来。
+ * 没有任何运行时探针能区分「画了」和「没画」（backdrop-filter 的结果读不出来），
+ * 剩下的事实只有引擎身份 —— 顺带排除 iOS 上的 Chrome/Edge/Firefox（UA 带 Chrome 但内核是 WebKit）。
  */
 export function canRefract() {
   if (typeof navigator === 'undefined') return false;
@@ -61,6 +57,12 @@ function ensureHost() {
   return host;
 }
 
+function el(name, attrs = {}) {
+  const node = document.createElementNS(SVG_NS, name);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+  return node;
+}
+
 /** 圆角矩形的有向距离场：内部为负、外部为正，|值| = 到边界的距离 */
 function signedDistance(x, y, hw, hh, r) {
   const qx = Math.abs(x) - (hw - r);
@@ -71,10 +73,8 @@ function signedDistance(x, y, hw, hh, r) {
 }
 
 /**
- * 生成位移图（dataURL）。
- * 编码约定（feDisplacementMap 的约定）：R/G 通道 128 = 不位移，
- * 差多少就位移多少，`scale` 会把 (通道值/255 - 0.5) 再放大一倍 —— 所以
- * 这里按 maxShift 归一化，滤镜那边用 `scale = 2 * maxShift` 就能得到像素级位移。
+ * 位移图：R/G = 位移向量（128 为原点），B = 环带权重（0 = 中段，255 = 贴边）。
+ * B 空着不用是故意的 —— feDisplacementMap 只读 R/G，B 正好留给「只在边缘生效」的遮罩。
  */
 function buildMapUrl(w, h, radius, bevel, maxShift) {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -91,7 +91,6 @@ function buildMapUrl(w, h, radius, bevel, maxShift) {
   const hw = w / 2;
   const hh = h / 2;
   const r = Math.max(0, Math.min(radius, hw, hh));
-  // 位移图按 CSS 像素算，写进设备像素网格时乘 dpr
   for (let py = 0; py < mh; py++) {
     const y = py / dpr - hh;
     for (let px = 0; px < mw; px++) {
@@ -99,26 +98,28 @@ function buildMapUrl(w, h, radius, bevel, maxShift) {
       const i = (py * mw + px) * 4;
       data[i + 3] = 255;
       const d = signedDistance(x, y, hw, hh, r);
-      if (d >= 0) { data[i] = 128; data[i + 1] = 128; continue; } // 形状外：不位移
-      const inside = -d;                                           // 到边界的内向距离
-      if (inside >= bevel) { data[i] = 128; data[i + 1] = 128; continue; }
-      // 边缘最陡 → 中段归零；指数 2 让过渡更像透镜而不是斜坡
+      if (d >= 0) {
+        data[i] = 128;
+        data[i + 1] = 128;
+        continue;
+      }
+      const inside = -d;
+      if (inside >= bevel) {
+        data[i] = 128;
+        data[i + 1] = 128;
+        continue;
+      }
+      // 越贴边越陡：透镜的曲率集中在最外圈
       const u = 1 - inside / bevel;
       const strength = u * u;
-      // 内向法线 = -∇sdf（数值差分，步长半个设备像素就够）
       const eps = 0.5;
       const gx = signedDistance(x + eps, y, hw, hh, r) - signedDistance(x - eps, y, hw, hh, r);
       const gy = signedDistance(x, y + eps, hw, hh, r) - signedDistance(x, y - eps, hw, hh, r);
       const len = Math.hypot(gx, gy) || 1;
       const nx = -gx / len;
       const ny = -gy / len;
-      const shift = strength * maxShift;
-      data[i] = 128 + Math.round((nx * shift) / maxShift * 127);
-      data[i + 1] = 128 + Math.round((ny * shift) / maxShift * 127);
-      // B 不做位移（feDisplacementMap 只读 R/G），借它当「环带权重」：
-      // 滤镜里用 feColorMatrix 把 B 提成 alpha，就得到一条只在边缘生效的遮罩。
-      // 有它才能做到「中间是雾、边缘是透镜」—— 只靠一张均匀模糊的底图，位移出来
-      // 只是一片更脏的灰，看不出弯折（这正是第一版的毛病）。
+      data[i] = 128 + Math.round(nx * strength * 127);
+      data[i + 1] = 128 + Math.round(ny * strength * 127);
       data[i + 2] = Math.round(strength * 255);
     }
   }
@@ -126,123 +127,119 @@ function buildMapUrl(w, h, radius, bevel, maxShift) {
   return canvas.toDataURL('image/png');
 }
 
+/** 只保留一个颜色通道，alpha 置 1（给色散求和用） */
+function channelMatrix(channel) {
+  const rows = ['0 0 0 0 0', '0 0 0 0 0', '0 0 0 0 0'];
+  rows[channel] = channel === 0 ? '1 0 0 0 0' : channel === 1 ? '0 1 0 0 0' : '0 0 1 0 0';
+  return `${rows.join('  ')}  0 0 0 0 1`;
+}
+
 /**
- * 为一个元素装折射滤镜。返回 `url(#id)`，调用方把它拼进 backdrop-filter。
- * 同尺寸重复调用会命中缓存，不重建位移图（resize 抖动时不至于每帧算一遍）。
+ * 建滤镜。参数变化（尺寸 / 圆角 / 模糊 / 色散）就整条重建 ——
+ * 重建比「原地改属性」简单得多，而这些参数只在 resize 时变。
  */
-export function mountLens({ id, width, height, radius, bevel = 18, maxShift = 10, blur = 26, rimBlur = 3.5, saturate = 1.75 }) {
-  if (!canRefract()) return null;
-  const key = `${Math.round(width)}x${Math.round(height)}r${Math.round(radius)}b${bevel}f${blur}rf${rimBlur}s${saturate}`;
-  const prev = built.get(id);
-  if (prev && prev.key === key) return `url(#${id})`;
-
+function buildFilter({ id, width, height, radius, bevel, maxShift, blur, rimBlur, saturate, dispersion }) {
   const svg = ensureHost();
-  let filter = svg.querySelector(`#${id}`);
-  if (!filter) {
-    filter = document.createElementNS(SVG_NS, 'filter');
-    filter.setAttribute('id', id);
-    filter.setAttribute('x', '0');
-    filter.setAttribute('y', '0');
-    filter.setAttribute('width', '100%');
-    filter.setAttribute('height', '100%');
-    filter.setAttribute('filterUnits', 'objectBoundingBox');
-    filter.setAttribute('primitiveUnits', 'userSpaceOnUse');
-    filter.setAttribute('color-interpolation-filters', 'sRGB');
+  const old = svg.querySelector(`#${id}`);
+  if (old) old.remove();
 
-    /* 滤镜链的顺序就是「材质」的顺序：
-       ① feGaussianBlur —— 磨砂；
-       ② feColorMatrix saturate —— 把模糊平均掉的饱和度补回来；
-       ③ feDisplacementMap —— 对**已经糊好**的那层做边缘位移。
-       为什么模糊必须烘进来而不是留在 CSS 里：实测 `backdrop-filter: url(#f) blur(26px)`
-       在 Chrome 里后面的 blur 会被吃掉（整条链只剩 url），玻璃会变得透亮、
-       背景文字重新可读 —— 那不是折射，是穿帮。所以模糊进 SVG，CSS 只给一个 url()。 */
-    /* 材质分两层，最后叠起来：
-       ① soft —— 整块雾面（stdDeviation = 设计模糊值）；
-       ② rim  —— 只有边缘那圈，模糊**刻意浅**（rimBlur），位移作用在它上面，
-          所以弯折看得见；中间那片仍然是雾，正文压过去不会糊成水波。
-       把两层合成用的权重来自位移图的 B 通道（见 buildMapUrl 里那段注释）。 */
-    const softBlur = document.createElementNS(SVG_NS, 'feGaussianBlur');
-    softBlur.setAttribute('in', 'SourceGraphic');
-    softBlur.setAttribute('result', 'soft0');
+  const filter = el('filter', {
+    id,
+    x: '0',
+    y: '0',
+    width: '100%',
+    height: '100%',
+    filterUnits: 'objectBoundingBox',
+    primitiveUnits: 'userSpaceOnUse',
+    'color-interpolation-filters': 'sRGB',
+  });
 
-    const softSat = document.createElementNS(SVG_NS, 'feColorMatrix');
-    softSat.setAttribute('in', 'soft0');
-    softSat.setAttribute('type', 'saturate');
-    softSat.setAttribute('result', 'soft');
+  const mapUrl = buildMapUrl(width, height, radius, bevel, maxShift);
+  if (!mapUrl) return null;
 
-    const rimBlur = document.createElementNS(SVG_NS, 'feGaussianBlur');
-    rimBlur.setAttribute('in', 'SourceGraphic');
-    rimBlur.setAttribute('result', 'rim0');
+  // ① 雾面主体
+  const soft0 = el('feGaussianBlur', { in: 'SourceGraphic', stdDeviation: blur, result: 'soft0' });
+  const soft = el('feColorMatrix', { in: 'soft0', type: SAT_MATRIX, values: saturate, result: 'soft' });
+  // ② 清边（只在环带里露出）
+  const rim0 = el('feGaussianBlur', { in: 'SourceGraphic', stdDeviation: rimBlur, result: 'rim0' });
+  const rim = el('feColorMatrix', { in: 'rim0', type: SAT_MATRIX, values: saturate, result: 'rim' });
+  // ③ 位移图 + 环带权重（B 通道 → alpha）
+  const img = el('feImage', {
+    href: mapUrl,
+    result: 'map',
+    preserveAspectRatio: 'none',
+    x: '0',
+    y: '0',
+    width: '100%',
+    height: '100%',
+  });
+  const mask = el('feColorMatrix', {
+    in: 'map',
+    type: 'matrix',
+    // A_out = B_in：只留下环带那一圈
+    values: '0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 1 0 0',
+    result: 'rimMask',
+  });
 
-    const rimSat = document.createElementNS(SVG_NS, 'feColorMatrix');
-    rimSat.setAttribute('in', 'rim0');
-    rimSat.setAttribute('type', 'saturate');
-    rimSat.setAttribute('result', 'rim');
+  // ④ 色散：R / G / B 各位移一次，scale 递增；dispersion=0 时三通道同 scale（等价单次位移）
+  const base = maxShift * 2;
+  const channels = [0, 1, 2].map((ch) => {
+    const scale = base * (1 + dispersion * ch);
+    const disp = el('feDisplacementMap', {
+      in: 'rim',
+      in2: 'map',
+      scale: Number(scale.toFixed(2)),
+      xChannelSelector: 'R',
+      yChannelSelector: 'G',
+      result: `d${ch}`,
+    });
+    const keep = el('feColorMatrix', {
+      in: `d${ch}`,
+      type: 'matrix',
+      values: channelMatrix(ch),
+      result: `c${ch}`,
+    });
+    return [disp, keep];
+  });
 
-    /* B 通道 → alpha：只在环带上保留锐边层 */
-    const rimMask = document.createElementNS(SVG_NS, 'feColorMatrix');
-    rimMask.setAttribute('in', 'map');
-    rimMask.setAttribute('type', 'matrix');
-    rimMask.setAttribute('values', '0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 1 0 0');
-    rimMask.setAttribute('result', 'rimMask');
-
-    const imgEl = document.createElementNS(SVG_NS, 'feImage');
-    imgEl.setAttribute('result', 'map');
-    // 拉伸铺满滤镜区域：位移图不必与元素尺寸逐像素对齐，尺寸变了也不会留空隙
-    imgEl.setAttribute('preserveAspectRatio', 'none');
-    imgEl.setAttribute('x', '0');
-    imgEl.setAttribute('y', '0');
-    imgEl.setAttribute('width', '100%');
-    imgEl.setAttribute('height', '100%');
-
-    const disp = document.createElementNS(SVG_NS, 'feDisplacementMap');
-    disp.setAttribute('in', 'rim');
-    disp.setAttribute('in2', 'map');
-    disp.setAttribute('xChannelSelector', 'R');
-    disp.setAttribute('yChannelSelector', 'G');
-    disp.setAttribute('result', 'rimDisp');
-
-    const cut = document.createElementNS(SVG_NS, 'feComposite');
-    cut.setAttribute('in', 'rimDisp');
-    cut.setAttribute('in2', 'rimMask');
-    cut.setAttribute('operator', 'in');
-    cut.setAttribute('result', 'rimFinal');
-
-    const over = document.createElementNS(SVG_NS, 'feComposite');
-    over.setAttribute('in', 'rimFinal');
-    over.setAttribute('in2', 'soft');
-    over.setAttribute('operator', 'over');
-
-    filter.appendChild(softBlur);
-    filter.appendChild(softSat);
-    filter.appendChild(imgEl);
-    filter.appendChild(rimMask);
-    filter.appendChild(rimBlur);
-    filter.appendChild(rimSat);
+  filter.appendChild(soft0);
+  filter.appendChild(soft);
+  filter.appendChild(rim0);
+  filter.appendChild(rim);
+  filter.appendChild(img);
+  filter.appendChild(mask);
+  channels.forEach(([disp, keep]) => {
     filter.appendChild(disp);
-    filter.appendChild(cut);
-    filter.appendChild(over);
-    svg.appendChild(filter);
-  }
+    filter.appendChild(keep);
+  });
+  // 求和必须在输入之后就位（滤镜原语按声明顺序求值，引用后面的结果无效）
+  filter.appendChild(el('feComposite', { in: 'c0', in2: 'c1', operator: 'arithmetic', k1: 0, k2: 1, k3: 1, k4: 0, result: 'sum1' }));
+  filter.appendChild(el('feComposite', { in: 'sum1', in2: 'c2', operator: 'arithmetic', k1: 0, k2: 1, k3: 1, k4: 0, result: 'sum2' }));
 
-  const url = buildMapUrl(width, height, radius, bevel, maxShift);
-  if (!url) return null;
-  const imgEl = filter.querySelector('feImage');
-  imgEl.setAttribute('href', url);
-  const blurs = filter.querySelectorAll('feGaussianBlur');
-  blurs[0].setAttribute('stdDeviation', String(blur));
-  blurs[1].setAttribute('stdDeviation', String(rimBlur));
-  const sats = filter.querySelectorAll('feColorMatrix[type="saturate"]');
-  sats[0].setAttribute('values', String(saturate));
-  sats[1].setAttribute('values', String(saturate));
-  // 单位是 userSpaceOnUse（CSS px）；scale 取 2×maxShift，与上面的编码约定对应
-  filter.querySelector('feDisplacementMap').setAttribute('scale', String(maxShift * 2));
-  filter.setAttribute('data-geometry', key);
-  built.set(id, { key });
+  const cut = el('feComposite', {
+    in: 'sum2',
+    in2: 'rimMask',
+    operator: 'in',
+    result: 'rimFinal',
+  });
+  const over = el('feComposite', { in: 'rimFinal', in2: 'soft', operator: 'over' });
+
+  filter.appendChild(cut);
+  filter.appendChild(over);
+  svg.appendChild(filter);
   return `url(#${id})`;
 }
 
-/** 卸载滤镜：连带把没用的 <svg> 宿主一起收掉，避免挂钩子留在 body 上 */
+export function mountLens(options) {
+  if (!canRefract()) return null;
+  const { id, width, height, radius, bevel = 18, maxShift = 10, blur = 26, rimBlur = 4, saturate = 1.7, dispersion = 0.06 } = options;
+  const key = `${Math.round(width)}x${Math.round(height)}r${Math.round(radius)}b${bevel}s${maxShift}f${blur}rf${rimBlur}t${saturate}d${dispersion}`;
+  if (built.get(id) === key) return `url(#${id})`;
+  const url = buildFilter({ id, width, height, radius, bevel, maxShift, blur, rimBlur, saturate, dispersion });
+  if (url) built.set(id, key);
+  return url;
+}
+
 export function unmountLens(id) {
   if (!id) return;
   built.delete(id);
@@ -255,7 +252,6 @@ export function unmountLens(id) {
   }
 }
 
-/** 供调试/演示用：给一个没被占用过的 id */
 export function nextLensId() {
   seq += 1;
   return `xalor-lens-${seq}`;

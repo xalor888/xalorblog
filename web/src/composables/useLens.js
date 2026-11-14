@@ -16,6 +16,11 @@ import { canRefract, mountLens, unmountLens, nextLensId } from '@/utils/lensFilt
 export function useLens(elRef, options = {}) {
   const bevel = options.bevel ?? 18;
   const maxShift = options.maxShift ?? 10;
+  // 可选：把雾面强度/饱和度/色散也交出来。默认沿用元素自己的设计值 + 6% 色散；
+  // 面板这种「厚玻璃」可以显式给一组更接近参考项目的参数（模糊更浅、位移更大）。
+  const blurOption = options.blur;
+  const saturateOption = options.saturate;
+  const dispersion = options.dispersion ?? 0.06;
 
   const desktop =
     typeof window !== 'undefined' && window.matchMedia
@@ -61,6 +66,12 @@ export function useLens(elRef, options = {}) {
       return;
     }
     if (!id) id = nextLensId();
+    // 尺寸驱动参数：透镜的厚度必须跟面板成比例，写死一个数只对某一种尺寸成立。
+    // 一块 920×420 的 hero 面板和一条 74px 的导航条，用同一组 bevel/位移，
+    // 小的一条几乎看不出来 —— 这就是「做了但没效果」的来路。
+    const shortSide = Math.min(rect.width, rect.height);
+    const autoBevel = Math.round(Math.min(56, Math.max(14, rect.height * 0.30)));
+    const autoShift = Math.round(Math.min(34, Math.max(8, rect.height * 0.16)));
     const radius = parseFloat(cs.borderTopLeftRadius) || 12;
     // 把「磨砂」从 CSS 搬进滤镜：`backdrop-filter: url(#f) blur(26px)` 在 Chrome 里
     // 后面的 blur 会被吃掉（整条链只剩 url），玻璃直接变透亮。所以 blur 与 saturate
@@ -72,14 +83,13 @@ export function useLens(elRef, options = {}) {
       width: rect.width,
       height: rect.height,
       radius,
-      bevel: Math.min(bevel, Math.floor(Math.min(rect.width, rect.height) / 3)),
-      maxShift,
-      // 滤镜里的模糊**故意比设计值浅**（14px 上限）：太糊的底图位移上去什么都看不见，
-      // 结果是「花了钱没效果」。14px 仍足以让背景文字不可读，但边缘那圈被压过
-      // 的曲线还在。饱和拉到设计值，观感依旧是一块磨砂玻璃。
-      blur: Math.min(blurPx, 14),
-      // 锐边那层：跟着设计模糊走（约 22%），但有上下限 —— 太清会像没糊的玻璃，
-      // 太糊又回到「位移看不见」的老问题。
+      bevel: Math.min(Math.max(bevel, autoBevel), Math.floor(shortSide / 3)),
+      maxShift: Math.max(maxShift, autoShift),
+      // 雾面主体保持设计值（玻璃该有的厚度），清边那层才压到 3-6px：
+      // 弯折只在边缘发生，中间那片仍然是雾。
+      blur: blurOption ?? Math.min(blurPx, 30),
+      saturate: saturateOption ?? satAmt,
+      dispersion,
       rimBlur: Math.min(6, Math.max(2, blurPx * 0.22)),
       saturate: satAmt,
     });

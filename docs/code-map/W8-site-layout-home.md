@@ -17,7 +17,9 @@
 - 跳转主内容：`skipToMain` 只做 `#main-content.focus({preventScroll})` + `scrollIntoView`，不碰 URL —— 因为 hash 路由会把 `#main-content` 当成路由。
 - 顶栏折射（Chromium 专属）：`useLens(navRef, { bevel: 24, maxShift: 14 })`（`composables/useLens.js`）
   + `utils/lensFilter.js`（现算圆角矩形距离场 → `feImage` 位移图 → `feGaussianBlur → feColorMatrix → feDisplacementMap`），
-  通过 `backdrop-filter: url(#xalor-lens-N)` 对**真实页面**做边缘位移。材质分两层合成：中间整块雾面（`stdDeviation` = 设计值），
+  通过 `backdrop-filter: url(#xalor-lens-N)` 对**真实页面**做边缘位移；同一套 `useLens` 也挂在首页头图面板
+  （`views/site/Home.vue` 的 `.hero-card`，参数是「厚玻璃」：`bevel 64 / maxShift 44 / blur 8 / 色散 9%`，
+  因为面板够大、底下是插画；导航条那条 74px 窄条用尺寸自算的轻参数，免得挡住滚动中的正文）。材质分两层合成：中间整块雾面（`stdDeviation` = 设计值），
   边缘 24px 环带用更浅的模糊（≈22% 设计值）再位移 —— 只靠一张均匀模糊的底图，位移出来只是一片脏灰，看不出弯折；
   两层之间的权重借用位移图的 **B 通道**（`feDisplacementMap` 只读 R/G）。
   ⚠ 只有 Chromium 会渲染 `backdrop-filter: url(#f)`；Safari / Firefox **解析通过但什么都不画**，所以 `@supports` 是假阳性，
